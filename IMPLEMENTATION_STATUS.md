@@ -19,31 +19,40 @@ fails the build if they do.
 cited. A file that looks finished but has never been compiled is `in progress`, however
 complete it appears.
 
-**Last updated:** 2026-07-25 · **Current milestone:** M0 · **Current version:** 0.1.0 (unreleased)
+**Last updated:** 2026-07-25 · **Current milestone:** M0 — **PASSED** · **Next:** M1 ·
+**Current version:** 0.1.0 (unreleased) · **Commit:** `59c7f69`
 
 ---
 
-## M0 — Walking skeleton
+## M0 — Walking skeleton · **PASSED 2026-07-25**
 
 | Requirement | Status | Evidence / note |
 |---|---|---|
-| NeoForge MDK initialised for 1.21.1 | `in progress` | Project scaffolded from `MDK-1.21.1-NeoGradle`. Awaiting first green `compileJava`. |
-| NeoForge patch version verified and recorded | `implemented` | ADR-0001. Verified 2026-07-25 against `maven.neoforged.net` metadata; latest 21.1.x was `21.1.243`, pinned `21.1.235`. |
+| NeoForge MDK initialised for 1.21.1 | `tested` | `./gradlew clean build` exit 0. |
+| NeoForge patch version verified and recorded | `implemented` | ADR-0001. Verified 2026-07-25 against `maven.neoforged.net` metadata; latest 21.1.x was `21.1.243`, pinned `21.1.235` so the compiler enforces the `[21.1.235,)` support range. |
 | Gradle wrapper pinned | `implemented` | `gradle-9.2.1-bin`, wrapper JAR committed. |
-| Java 21 toolchain, UTF-8 | `in progress` | Declared in `build.gradle`. Proven by the first successful compile. |
-| Archive base name `NexusCore-<version>.jar` | `in progress` | `base.archivesName = NexusCore`. Proven by inspecting `build/libs`. |
-| `neoforge.mods.toml` (only metadata file) | `in progress` | Written; token expansion proven by `generatedMetadataHasNoUnexpandedTokens`. |
-| `@Mod` entry point | `in progress` | `NexusCore.java`. Bootstrap only. |
-| Exactly one command: `/nexus version` | `in progress` | `NexusVersionCommand.java`. |
-| Stub-marker gate (§2.4) | `implemented` | `stubMarkerCheck` task in `build.gradle`, wired into `check`. |
-| Formatting and static analysis | `implemented` | Checkstyle 10.21.1, `config/checkstyle/checkstyle.xml`. ADR-0005. |
-| CI workflow | `implemented` | `.github/workflows/build.yml`. |
+| Java 21 toolchain, UTF-8 | `tested` | Compiles under JDK 21.0.11; server ran on the same toolchain. |
+| Archive base name `NexusCore-<version>.jar` | `tested` | `build/libs/NexusCore-0.1.0.jar`, 5236 bytes. |
+| `neoforge.mods.toml` (only metadata file) | `tested` | `NexusVersionCommandTest.generatedMetadataHasNoUnexpandedTokens`; JAR listing shows exactly one metadata file and no legacy `mods.toml`. |
+| `@Mod` entry point, bootstrap only | `tested` | Server log: `[co.mw.ne.NexusCore/]: NexusCore Administration Framework 0.1.0 bootstrapped`. |
+| Exactly one command: `/nexus version` | `tested` | Real dedicated server console returned `NexusCore Administration Framework version 0.1.0`. |
+| Stub-marker gate (§2.4) | `tested` | Passes clean (2 files, 0 violations) **and proven to fail**: an injected `// TODO` produced `Stub-marker gate failed (§2.4): 1 violation(s)`, BUILD FAILED. |
+| Formatting and static analysis | `tested` | Checkstyle 10.21.1 passes clean **and proven to fail** on an injected violation. ADR-0005. |
+| CI workflow | `implemented` | `.github/workflows/build.yml` — build, packaged-JAR inspection, checksums, report upload. Not yet executed on a runner; no remote configured. |
 | `IMPLEMENTATION_STATUS.md`, `RELEASE_CHECKLIST.md` | `implemented` | This file and `RELEASE_CHECKLIST.md`. |
 | ADR-0001 … ADR-0004 (plus ADR-0005) | `implemented` | `docs/architecture/`. |
-| Exit: `./gradlew clean build` green from clean checkout | `planned` | Not yet claimed. |
-| Exit: `build/libs/NexusCore-0.1.0.jar` exists | `planned` | Not yet claimed. |
-| Exit: `runServer` reaches "Done", zero NexusCore errors, clean shutdown | `planned` | Not yet claimed. |
-| Exit: JAR loads in a **real** dedicated server | `planned` | Not yet claimed. Requires a NeoForge 21.1.235 server install. |
+| Exit: `./gradlew clean build` green from clean checkout | `tested` | Exit code 0. 37 tasks. 4 tests passed, 0 failed, 0 skipped. |
+| Exit: `build/libs/NexusCore-0.1.0.jar` exists | `tested` | 5236 bytes · SHA-256 `fafa4eec250cc52a9e06372e86583bad9c5eca1713aea42ef666b3eb38c58b23`. Identical hash across two independent clean builds — reproducible archive settings verified. |
+| Exit: `runServer` reaches "Done", zero NexusCore errors, clean shutdown | `tested` | `Done (0.573s)!` · zero `/ERROR]` lines · `stop` typed into the console · BUILD SUCCESSFUL, exit 0. |
+| Exit: JAR loads in a **real** dedicated server | `tested` | Standalone NeoForge 21.1.235 install at `testserver/`, JAR in `mods/`. `Done (0.544s)!` · zero `/ERROR]` lines · `/nexus version` answered · clean shutdown, exit 0. |
+
+### Fixed during M0
+
+| Problem | Resolution |
+|---|---|
+| `processResources` failed: a dollar-brace sequence in a **comment** inside `neoforge.mods.toml` was evaluated as a Groovy expression by the template engine. | Comment rewritten, and the file now carries an explicit warning about the template engine so the trap is not re-entered. |
+| `./gradlew runServer` could not be shut down cleanly: NeoGradle's run tasks are `JavaExec` tasks, and Gradle gives `JavaExec` an **empty** standard input, so nothing typed into the console reached the server. Only SIGTERM worked, which exits 143 and reports BUILD FAILED. | `build.gradle` now forwards `System.in` to any `run*` task at execution time. `stop` works, and the exit condition is genuinely verifiable rather than approximated. |
+| One `/ERROR]` line on the test server: `No key layers in MapLike[{}]`. | Caused by the **test** `server.properties` requesting `level-type=minecraft:flat` with no `generator-settings`. Vanilla, not NexusCore. Test config corrected; the transcript is now zero-error. |
 
 ### Known interim states carried into M1
 
@@ -51,7 +60,9 @@ complete it appears.
 |---|---|---|
 | Player-facing text uses a literal component, not a translation key | `implemented` | Deliberate, per ADR-0003. A vanilla client cannot resolve a NexusCore translation key, and v0.1 is server-only. The format string and the `en_us.json` value are held equal by `NexusVersionCommandTest.formatStringMatchesLanguageFile`. `MessageService` (M1) replaces this with server-side catalogue resolution. |
 | `gameTestServer` run config not wired into CI | `planned` | Correct until M5. It fails by design when no GameTests are registered. |
-| `runClient` unused | `planned` | Correct until M9. Kept working so the toolchain does not rot. |
+| `runClient` unused | `planned` | Correct until M9. Kept working so the toolchain does not rot. `runClient` has **not** been executed — this machine has not been verified as able to run a graphical client. |
+| Automated "dedicated server loads zero client classes" test | `planned` | M9 exit condition. Current evidence is weaker but sufficient for M0: the JAR contains no `client/` package at all (12 entries, all listed in the release checklist), and the dedicated server loaded it without error. |
+| CI workflow never executed | `planned` | No git remote is configured, so `.github/workflows/build.yml` has not run on a GitHub runner. Its steps mirror what was run locally, but that is not the same as a green CI badge. |
 
 ---
 

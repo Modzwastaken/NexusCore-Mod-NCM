@@ -1,0 +1,46 @@
+# NexusCore Administration Framework — mod metadata.
+#
+# This is the ONLY metadata file NexusCore registers (§4.3). There is no legacy mods.toml.
+# Every placeholder token below is expanded from gradle.properties by the ProcessResources
+# task, so the versions here cannot drift from the versions the project is compiled against.
+# A token naming a property that does not exist is a hard build failure, by design.
+#
+# Note: this file is processed by Groovy's template engine. A dollar-brace sequence anywhere
+# in it — including inside a comment — is evaluated as an expression, so do not write one
+# unless it names a real property.
+#
+# Per §18.4 no website, issue tracker, or update URL is declared. Those fields are omitted
+# deliberately until a real URL exists; a placeholder URL is worse than no URL.
+
+modLoader = "javafml"
+loaderVersion = "${loader_version_range}"
+license = "${mod_license}"
+
+[[mods]]
+modId = "${mod_id}"
+version = "${mod_version}"
+displayName = "${mod_display_name}"
+authors = "${mod_authors}"
+description = '''
+NexusCore is a native server administration framework for Minecraft Java Edition:
+permissions, economy, moderation, teleportation, player utilities, staff tools,
+configuration, storage, and audit logging in one mod, with no Bukkit/Spigot plugin and no
+other administration mod required.
+
+v0.1 is server-only. Install this JAR on the dedicated server; players join with an
+unmodified vanilla client.
+'''
+
+[[dependencies.${mod_id}]]
+modId = "neoforge"
+type = "required"
+versionRange = "${neo_version_range}"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.${mod_id}]]
+modId = "minecraft"
+type = "required"
+versionRange = "${minecraft_version_range}"
+ordering = "NONE"
+side = "BOTH"

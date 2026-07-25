@@ -1,0 +1,107 @@
+name: Build
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # §17.2 — a clean checkout must build. `build` runs test, checkstyleMain,
+      # checkstyleTest, and the §2.4 stub-marker gate via `check`.
+      - name: Build
+        run: ./gradlew clean build --stacktrace
+
+      # §17.2 — the JAR must contain the expected metadata and resources, and must not
+      # contain development leftovers. This inspects the packaged artifact, not the
+      # source tree (§20.1 step 7).
+      - name: Inspect packaged JAR
+        run: |
+          set -euo pipefail
+          jar=$(ls build/libs/NexusCore-*.jar | grep -vE -- '-(sources|javadoc)\.jar$')
+          echo "Inspecting $jar"
+          unzip -l "$jar"
+
+          echo '--- required entries ---'
+          for entry in \
+            'META-INF/neoforge.mods.toml' \
+            'assets/nexuscore/lang/en_us.json' \
+            'com/mwtstudios/nexuscore/NexusCore.class'
+          do
+            unzip -l "$jar" | grep -qF "$entry" || { echo "MISSING: $entry"; exit 1; }
+          done
+
+          echo '--- forbidden entries ---'
+          if unzip -l "$jar" | grep -qiE 'mods\.toml$|/test/|secrets|\.env$'; then
+            echo 'JAR contains a legacy mods.toml, test fixtures, or a secrets file'
+            exit 1
+          fi
+
+          echo '--- unexpanded gradle tokens ---'
+          if unzip -p "$jar" META-INF/neoforge.mods.toml | grep -q '\${'; then
+            echo 'neoforge.mods.toml contains an unexpanded ${...} token'
+            exit 1
+          fi
+
+          echo '--- absolute local paths ---'
+          if unzip -p "$jar" META-INF/neoforge.mods.toml | grep -qE '/home/|/Users/|C:\\'; then
+            echo 'neoforge.mods.toml leaks an absolute local path'
+            exit 1
+          fi
+
+          echo 'JAR inspection passed'
+
+      - name: Checksums
+        run: |
+          cd build/libs
+          sha256sum NexusCore-*.jar | tee checksums.txt
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexuscore-build
+          path: |
+            build/libs/*.jar
+            build/libs/checksums.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexuscore-reports
+          path: |
+            build/reports/tests/**
+            build/reports/checkstyle/**
+            build/reports/stub-markers/**
+            build/test-results/**
+          if-no-files-found: warn
+          retention-days: 14

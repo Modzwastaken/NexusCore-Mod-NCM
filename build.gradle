@@ -1,0 +1,211 @@
+plugins {
+    id 'java-library'
+    id 'checkstyle'
+    id 'net.neoforged.gradle.userdev' version '7.1.38'
+}
+
+version = mod_version
+group = mod_group_id
+
+base {
+    // §18.3 — the archive base name must produce exactly NexusCore-<version>.jar
+    archivesName = mod_archive_base_name
+}
+
+// §4.1 — Java 21, matching the JRE Mojang ships for 1.21.1.
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
+    withSourcesJar()
+    withJavadocJar()
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // The pinned NeoForge userdev artifact. See ADR-0001.
+    implementation "net.neoforged:neoforge:${neo_version}"
+
+    testImplementation platform("org.junit:junit-bom:${junit_version}")
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+sourceSets.main.resources {
+    exclude('**/*.bbmodel')
+}
+
+// Default run configurations. `runServer` is the milestone-exit verification target;
+// `runClient` is not used until M9 but is kept working so the toolchain stays honest.
+runs {
+    configureEach {
+        systemProperty 'forge.logging.markers', ''
+        systemProperty 'forge.logging.console.level', 'info'
+        workingDirectory project.layout.projectDirectory.dir('run').dir(name)
+        modSource project.sourceSets.main
+    }
+
+    client {
+        systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+    }
+
+    server {
+        systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+        argument '--nogui'
+    }
+
+    // Runs every registered GameTest headlessly and exits. Wired into CI from M5,
+    // when the first GameTests exist. Running it before then fails by design.
+    gameTestServer {
+        systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+    }
+}
+
+// NeoGradle's run tasks are JavaExec tasks, and Gradle gives JavaExec an *empty* standard
+// input by default. Without this, `./gradlew runServer` starts a dedicated server whose
+// console cannot be typed into — no `stop`, no commands, no clean shutdown, only SIGTERM
+// and a non-zero exit. Forward the real console so the development server behaves like a
+// server. `System.in` is not serialisable, so this is applied at execution time.
+tasks.withType(JavaExec).configureEach {
+    if (name.startsWith('run')) {
+        doFirst {
+            standardInput = System.in
+        }
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    // §17.2 — NexusCore-introduced warnings are reviewed, not hidden.
+    options.compilerArgs.addAll(['-Xlint:all,-processing,-serial'])
+}
+
+tasks.withType(Javadoc).configureEach {
+    options.encoding = 'UTF-8'
+    options.addStringOption('Xdoclint:none', '-quiet')
+}
+
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+        showStandardStreams = false
+    }
+}
+
+// §18.5 — reproducible archives: stable entry order, no embedded build timestamps.
+tasks.withType(AbstractArchiveTask).configureEach {
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+}
+
+// Static analysis and formatting gate (§17.2). Checkstyle covers both: the ruleset in
+// config/checkstyle/checkstyle.xml contains formatting rules as well as correctness rules.
+// See docs/architecture/ADR-0005.md.
+checkstyle {
+    toolVersion = '10.21.1'
+    configFile = rootProject.file('config/checkstyle/checkstyle.xml')
+    maxWarnings = 0
+    ignoreFailures = false
+}
+
+// Token expansion for neoforge.mods.toml. A missing property is a hard error, which is
+// what keeps gradle.properties and the metadata from drifting apart.
+tasks.withType(ProcessResources).configureEach {
+    var replaceProperties = [
+            minecraft_version      : minecraft_version,
+            minecraft_version_range: minecraft_version_range,
+            neo_version            : neo_version,
+            neo_version_range      : neo_version_range,
+            loader_version_range   : loader_version_range,
+            mod_id                 : mod_id,
+            mod_name               : mod_name,
+            mod_display_name       : mod_display_name,
+            mod_license            : mod_license,
+            mod_version            : mod_version,
+            mod_authors            : mod_authors,
+    ]
+    inputs.properties replaceProperties
+
+    filesMatching(['META-INF/neoforge.mods.toml']) {
+        expand replaceProperties
+    }
+}
+
+// §2.4 — the stub-marker gate. Deliberate, and not to be disabled.
+tasks.register('stubMarkerCheck', StubMarkerCheck) {
+    group = 'verification'
+    description = 'Fails the build if stub markers appear in production sources (§2.4).'
+    sources.from(sourceSets.main.java)
+    report = layout.buildDirectory.file('reports/stub-markers/report.txt')
+}
+
+tasks.named('check') {
+    dependsOn 'stubMarkerCheck'
+}
+
+/**
+ * Scans production Java sources for the markers forbidden by §2.4 of the master build
+ * prompt. Unfinished work is recorded in IMPLEMENTATION_STATUS.md, never in the source
+ * tree, so that "what is left to do" has exactly one location.
+ */
+abstract class StubMarkerCheck extends DefaultTask {
+
+    /** Case-sensitive markers. */
+    private static final List<String> EXACT_MARKERS = ['TODO', 'FIXME', 'UnsupportedOperationException']
+
+    /** Case-insensitive markers. */
+    private static final List<String> LOOSE_MARKERS = ['coming soon']
+
+    @InputFiles
+    @PathSensitive(PathSensitivity.RELATIVE)
+    abstract ConfigurableFileCollection getSources()
+
+    @OutputFile
+    abstract RegularFileProperty getReport()
+
+    @TaskAction
+    void scan() {
+        List<String> violations = []
+        int scanned = 0
+
+        for (File file : sources.files.sort { it.absolutePath }) {
+            if (!file.isFile() || !file.name.endsWith('.java')) {
+                continue
+            }
+            scanned++
+            int lineNumber = 0
+            for (String line : file.readLines('UTF-8')) {
+                lineNumber++
+                String lower = line.toLowerCase(Locale.ROOT)
+                for (String marker : EXACT_MARKERS) {
+                    if (line.contains(marker)) {
+                        violations.add("${file.absolutePath}:${lineNumber}: forbidden marker '${marker}' -> ${line.trim()}" as String)
+                    }
+                }
+                for (String marker : LOOSE_MARKERS) {
+                    if (lower.contains(marker)) {
+                        violations.add("${file.absolutePath}:${lineNumber}: forbidden marker '${marker}' -> ${line.trim()}" as String)
+                    }
+                }
+            }
+        }
+
+        File reportFile = report.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.setText(violations.isEmpty()
+                ? "stub-marker check: ${scanned} file(s) scanned, 0 violations\n"
+                : violations.join('\n') + '\n', 'UTF-8')
+
+        if (!violations.isEmpty()) {
+            throw new GradleException(
+                    "Stub-marker gate failed (§2.4): ${violations.size()} violation(s) in ${scanned} file(s).\n"
+                            + violations.join('\n')
+                            + "\nRecord unfinished work in IMPLEMENTATION_STATUS.md instead.")
+        }
+
+        logger.lifecycle("stub-marker gate: ${scanned} file(s) scanned, 0 violations")
+    }
+}

@@ -8,7 +8,7 @@ features and stay data-compatible; major releases may change data formats and mu
 migration. **The version number carries no completeness promise** — see
 [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for what actually exists.
 
-## [1.0.1] — 2026-07-26 — security patch
+## [1.0.1] — 2026-07-26 — hotfix — security fixes
 
 **Fixes only. No new features, no data-format change.** Everyone running v1.0.0 should take
 this build. Branched from the `v1.0.0` tag, so it carries no in-progress work.

@@ -53,7 +53,20 @@ public final class VanillaCommands {
     public static final String NODE_TP = "nexuscore.command.teleport.tp";
 
     /** Permission for the game-mode command NexusCore takes over from vanilla. */
-    public static final String NODE_GAMEMODE = "nexuscore.command.player.gamemode";
+    /**
+     * Deliberately <b>not</b> under {@code nexuscore.command.player.*}.
+     *
+     * <p>It was, and that was a privilege escalation introduced by the v1.0 vanilla takeover.
+     * The shipped {@code moderator} group is granted {@code nexuscore.command.player.*}, so the
+     * moment NexusCore took ownership of {@code /gamemode} every moderator could put themselves
+     * in creative — an ability that, before the takeover, needed vanilla operator level 2.
+     *
+     * <p>Moving the node rather than editing the shipped group is what makes this fix reach
+     * servers that already exist: default groups are only written when {@code permissions.json}
+     * is absent, so an installed server keeps its {@code player.*} grant forever. That grant no
+     * longer matches this node.
+     */
+    public static final String NODE_GAMEMODE = "nexuscore.command.staff.gamemode";
 
     private VanillaCommands() {
         // Utility holder.

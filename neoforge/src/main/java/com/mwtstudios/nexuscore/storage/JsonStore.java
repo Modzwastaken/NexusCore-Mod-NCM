@@ -3,6 +3,7 @@ package com.mwtstudios.nexuscore.storage;
 import java.io.IOException;
 import java.io.Reader;
 import java.io.Writer;
+import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -149,7 +150,17 @@ public final class JsonStore {
             Files.createDirectories(file.getParent());
             try (FileChannel channel = FileChannel.open(file,
                     StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.APPEND)) {
-                channel.write(StandardCharsets.UTF_8.encode(line + "\n"));
+                // FileChannel.write is documented to write "up to" the buffer's remaining bytes,
+                // so a single call can be a short write. Ignoring the return value truncated the
+                // record and still reported success — in a hash-chained log, that is a silently
+                // corrupted chain in the one file whose whole purpose is being tamper-evident.
+                ByteBuffer buffer = StandardCharsets.UTF_8.encode(line + "\n");
+                while (buffer.hasRemaining()) {
+                    if (channel.write(buffer) <= 0) {
+                        throw new IOException("append stalled with " + buffer.remaining()
+                                + " byte(s) of the record unwritten");
+                    }
+                }
                 channel.force(true);
             }
         } catch (IOException e) {

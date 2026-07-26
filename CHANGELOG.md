@@ -8,6 +8,64 @@ features and stay data-compatible; major releases may change data formats and mu
 migration. **The version number carries no completeness promise** — see
 [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for what actually exists.
 
+## [1.0.1] — 2026-07-26 — security patch
+
+**Fixes only. No new features, no data-format change.** Everyone running v1.0.0 should take
+this build. Branched from the `v1.0.0` tag, so it carries no in-progress work.
+
+### Fixed
+
+- **`/teleport` bypassed NexusCore completely.** Vanilla registers `teleport` as the real
+  command and `tp` as a *redirect* to it; only `tp` was taken over. `/teleport` therefore ran
+  as pure vanilla — no permission check, no rate limit, **no audit record** — while every
+  document claimed NexusCore owned it. Both names are taken over now.
+
+- **Any non-player command source was granted root.** Authorisation read
+  `CommandSourceStack.getEntity()`, so anything that was not a `ServerPlayer` was treated as the
+  console and given **root**. NexusCore's commands carry no vanilla `requires()`, so its own
+  check is the only gate: `/execute as @e[type=armor_stand] run nexus …` ran with full
+  privileges and was audited as `CONSOLE`, and `operatorBootstrap=false` — the documented way to
+  stop operators having blanket access — constrained nobody.
+
+  A non-player entity is now refused outright, and a source with no entity counts as the console
+  only at permission level 4. **Command blocks and datapack functions lose privilege**, which is
+  the point: a command block can be powered by anyone who can reach a lever.
+
+- **Every moderator could give themselves creative mode.** `/gamemode`'s node was
+  `nexuscore.command.player.gamemode` and the shipped `moderator` group holds
+  `nexuscore.command.player.*` — so the v1.0 takeover handed moderators an ability that had
+  needed operator level 2. Moved to `nexuscore.command.staff.gamemode`. Moving the node rather
+  than editing the shipped group is deliberate: defaults are only written when
+  `permissions.json` is absent, so editing them would not reach an existing server.
+
+- **A short write silently truncated an audit record.** `JsonStore.appendLine` ignored
+  `FileChannel.write`'s return value, corrupting the hash chain while reporting success.
+
+- **Nobody below `admin` could confirm a destructive action.**
+  `nexuscore.command.core.confirm` was granted to no group. Now a `default` grant, which is safe
+  because the token is bound to actor, action, target and parameters, and is single-use.
+
+  **Existing servers need one operator action** — your `permissions.json` already exists, so the
+  new default will not appear in it:
+  `/nexus permission group add default nexuscore.command.core.confirm`
+
+### Known, not fixed here
+
+`ban-ip` and `pardon-ip` are separate vanilla commands and are still not taken over, so an IP
+ban is neither audited nor listed by NexusCore. Covering them is new behaviour, not a fix.
+
+A refused `/execute as` attempt by a level-4 operator is still attributed to `CONSOLE`: the real
+issuer lives in `CommandSourceStack.source`, which is private in vanilla and readable only under
+NeoForge's access transformer, so shared code cannot get at it. The escalation is closed and the
+refusal is recorded; only the name on it is wrong.
+
+### Verified
+
+All three loaders build; 178 tests, 0 failures. Packaged jars run on real NeoForge 21.1.235,
+Fabric and MinecraftForge 52.1.16 dedicated servers: `/teleport` taken over, `/execute as`
+refused with `You do not have permission to do that`, audit chain intact, clean shutdown, zero
+NexusCore errors.
+
 ## [1.0.0] — 2026-07-26 — first public release: NeoForge, Fabric, and Forge
 
 The v1.0 release ships all three loaders at once. Earlier interim tags were collapsed into

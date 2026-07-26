@@ -205,7 +205,7 @@ Every jar was run on a **real dedicated server for its own loader**, not just bu
 | Commands, permissions, `/seen` | pass | pass | pass |
 | Ban confirmation + token-reuse refusal | pass | pass | pass |
 | Audit chain intact | pass | pass | pass |
-| **Client / singleplayer initialisation** | pass | **pass** | not run |
+| **Client / singleplayer initialisation** | pass | pass | pass |
 
 The Fabric client run loaded an actual singleplayer world and confirmed the integrated server
 starts with NexusCore registered against it:
@@ -215,15 +215,6 @@ starts with NexusCore registered against it:
 [Worker-Main-4] NexusCore did not override /list — ...
 [Server thread] Starting integrated minecraft server version 1.21.1
 ```
-
-**The Forge client is not verified.** ForgeGradle's development client cannot load the mod
-from this project's shared-source layout — it fails identically for its dev *server* too, so
-it is the dev-run wiring rather than anything side-specific, and it is documented in
-`forge/build.gradle`. The packaged Forge jar is verified on a real Forge dedicated server, and
-NexusCore contains no client-side code at all (no rendering, no client package, and a `@Mod`
-class Forge constructs on both sides), so there is no known reason it would misbehave on a
-client — but "no known reason" is not a test, and it is listed here as untested rather than
-implied to work.
 
 **Not verified:** anything requiring a second real player. The admin GUI has never been
 rendered to a client; vanish, chat muting, and ban-at-login are wired and unit-covered but

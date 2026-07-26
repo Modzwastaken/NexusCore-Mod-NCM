@@ -38,6 +38,18 @@ sourceSets.main.resources {
     exclude 'META-INF/neoforge.mods.toml'
 }
 
+// Send processed resources into the SAME directory as the compiled classes.
+//
+// ForgeGradle's dev runs put build/classes/java/main and build/resources/main on the
+// classpath as two separate entries and never tell FML they are one mod. FML then finds
+// mods.toml in the resources directory, treats that directory alone as the mod file, finds no
+// @Mod class inside it, and aborts with "constructed 0 mods". Merging the two outputs gives
+// FML a single directory holding both the metadata and the class, which is what it expects.
+//
+// This changes only where Gradle writes intermediates. The packaged jar is assembled from the
+// same source-set output either way, so its contents are unchanged.
+sourceSets.main.output.resourcesDir = sourceSets.main.java.destinationDirectory
+
 // KNOWN LIMITATION — the ForgeGradle dev runs below do not currently load the mod.
 //
 // `./gradlew runClient` and `./gradlew runServer` both fail with:
@@ -57,29 +69,29 @@ minecraft {
     mappings channel: 'official', version: shared.minecraft_version
 
     runs {
-        client {
-            workingDirectory project.file('run/client')
+        configureEach {
             property 'forge.logging.console.level', 'info'
-            // ./gradlew runClient -PquickPlay=NexusTest loads a world straight away, so the
-            // integrated-server path gets exercised rather than just the main menu.
-            if (project.hasProperty('quickPlay')) {
-                args '--quickPlaySingleplayer', project.property('quickPlay').toString()
-            }
+            // Both forms: the run-level source list and the named mod entry. FG's
+            // getAllSources() unions them, and FML needs the mod NAME attached to the
+            // output dirs to match mods.toml.
+            source project.sourceSets.main
             mods {
                 nexuscore {
-                    source sourceSets.main
+                    source project.sourceSets.main
                 }
             }
         }
+
+        client {
+            workingDirectory project.file('run/client')
+            if (project.hasProperty('quickPlay')) {
+                args '--quickPlaySingleplayer', project.property('quickPlay').toString()
+            }
+        }
+
         server {
             workingDirectory project.file('run/server')
-            property 'forge.logging.console.level', 'info'
             args '--nogui'
-            mods {
-                nexuscore {
-                    source sourceSets.main
-                }
-            }
         }
     }
 }

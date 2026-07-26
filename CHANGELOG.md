@@ -14,12 +14,18 @@ The v1.0 release ships all three loaders at once. Earlier interim tags were coll
 this release; nothing had been published externally, so no released version is being
 rewritten.
 
-### Known gap
+### Forge dev runs fixed
 
-The Forge **client** is untested: ForgeGradle's dev runs cannot load the mod from the
-shared-source layout (it fails for its dev server too, so it is the dev-run wiring, not a
-side-specific problem). The packaged Forge jar is verified on a real Forge dedicated server.
-Documented in `forge/build.gradle`.
+`./gradlew runClient` and `runServer` in the Forge project failed with
+`constructed 0 mods: [], but had 1 mods specified: [nexuscore]`. ForgeGradle puts
+`build/classes/java/main` and `build/resources/main` on the dev classpath as two separate
+entries and never tells FML they belong to the same mod, so FML found `mods.toml` in the
+resources directory, treated that directory alone as the mod file, found no `@Mod` class in
+it, and aborted. Fixed by pointing the resource output at the classes output, giving FML one
+directory holding both. Only intermediates move; the packaged jar is byte-for-byte the same
+shape (95 entries, `mods.toml` and `en_us.json` present, no NeoForge metadata).
+
+All three loaders are now verified on **both** server and client.
 
 ### NexusCore now owns the vanilla commands it supersedes
 

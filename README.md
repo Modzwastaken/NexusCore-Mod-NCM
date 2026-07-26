@@ -62,16 +62,27 @@ has a command equivalent.
 
 ## Installing
 
-NexusCore installs on the **dedicated server only**. Players join with an unmodified
-vanilla client — no modpack, no version-matched client, no handshake.
+Pick the jar for your loader — they are **not** interchangeable:
 
-1. Install NeoForge 21.1.235 (or newer 21.1.x) for Minecraft 1.21.1 on the server.
-2. Drop `NexusCore-1.21.1-<version>-neoforge.jar` into the server's `mods/` directory.
+| Loader | Jar | Requires |
+|---|---|---|
+| NeoForge | `NexusCore-neoforge-<version>-1.21.1.jar` | NeoForge 21.1.235+ |
+| Fabric | `NexusCore-fabric-<version>-1.21.1.jar` | Fabric Loader 0.19.3+ **and Fabric API** |
+| Forge | `NexusCore-forge-<version>-1.21.1.jar` | MinecraftForge 52.1.16+ |
+
+1. Install your loader for Minecraft 1.21.1.
+2. Drop the matching jar into `mods/`.
 3. Start the server.
-4. Run `/nexus version` in the console to confirm it loaded.
-5. Join the server, and run `/adminpanel`.
+4. Run `/nexus version` to confirm it loaded.
+5. Join and run `/adminpanel`.
 
-On first start NexusCore creates `<server>/nexuscore/` containing `config.json`,
+**Players join with an unmodified vanilla client** — no modpack, no version-matched client,
+no handshake. That includes the admin GUI, which is a vanilla chest menu.
+
+NexusCore also works in **singleplayer and on LAN worlds** on all three loaders; it
+initialises against the integrated server exactly as it does against a dedicated one.
+
+On first start NexusCore creates `<gameDir>/nexuscore/` containing `config.json`,
 `permissions.json`, `audit.log`, and the data files. Everything is human-readable JSON.
 
 **Note on `/ban` and `/kick`:** those are vanilla Minecraft commands, and NexusCore does not
@@ -81,15 +92,22 @@ with durations, reasons, history, and audit. See
 
 ## Building from source
 
-Requires JDK 21. The Gradle wrapper handles everything else.
+Requires JDK 21. Each loader is an **independent Gradle build** in its own directory, with its
+own wrapper — see [ADR-0008](neoforge/docs/architecture/ADR-0008.md) for why.
 
 ```bash
-./gradlew clean build
+cd neoforge && ./gradlew clean build
+cd ../fabric && ./gradlew clean build
+cd ../forge  && ./gradlew clean build
 ```
 
-The first build downloads and decompiles Minecraft. Allow up to an hour on a clean machine
-and do not interrupt it — it happens once. The artifact lands at
-`build/libs/NexusCore-<version>.jar`.
+The shared sources live in `neoforge/src/main/java`; the Fabric and Forge builds compile those
+same files rather than a copy, so a fix lands on all three at once. Only the entry point and
+the flight controller differ per loader.
+
+The first build for each loader downloads and decompiles Minecraft. Allow a while and do not
+interrupt it — it happens once per loader. Artifacts land in each project's `build/libs/` as
+`NexusCore-<loader>-<version>-1.21.1.jar`.
 
 Other useful targets:
 

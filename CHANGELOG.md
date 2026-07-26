@@ -8,6 +8,42 @@ features and stay data-compatible; major releases may change data formats and mu
 migration. **The version number carries no completeness promise** — see
 [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for what actually exists.
 
+## [1.0.1] — 2026-07-26 — Fabric and Forge builds
+
+### Added
+- **Fabric build** — `NexusCore-fabric-1.0.1-1.21.1.jar`. Requires Fabric Loader 0.19.3+ and
+  Fabric API.
+- **Forge build** — `NexusCore-forge-1.0.1-1.21.1.jar`. Requires MinecraftForge 52.1.16+.
+- ADR-0008 recording the multi-loader architecture: why a compiled `common` subproject is
+  impossible (proven — Fabric jars are remapped to intermediary, so the same source yields
+  different bytecode), and why Forge must stay on Gradle 8 while the others use 9.2.1.
+- Regression tests per loader: `FabricEntrypointTest`, `ForgeMetadataTest`.
+- Shared `MayflyFlightController`, used by both Fabric and Forge.
+- A dedicated test server per loader.
+
+### Fixed
+- **Fabric did nothing in singleplayer or on a LAN world.** The mod declared a `server`
+  entrypoint and implemented `DedicatedServerModInitializer`, which fires only on a
+  *dedicated* server. It loaded, listed itself in the mod list, and was completely silent:
+  no commands, no config directory, not one log line. Now uses `ModInitializer` with a
+  `main` entrypoint, verified on a real client loading a singleplayer world.
+- **Fabric `/back` did not return a player to where they died**, while NeoForge did.
+  Registered `ServerLivingEntityEvents.AFTER_DEATH`.
+- **Forge rejected the jar outright** with `Missing required field mandatory in dependency`:
+  the dependency blocks used NeoForge's `type = "required"` spelling. Forge requires
+  `mandatory = true`.
+
+### Changed
+- Repository restructured: the git root moved up to `NexusCore/`, with `neoforge/`, `fabric/`
+  and `forge/` as sibling builds. History preserved via rename detection.
+- Artifact naming is now `NexusCore-<loader>-<version>-<mcVersion>.jar`.
+- Server logs are no longer tracked by git.
+
+### Known loader difference
+- `/fly` uses NeoForge's additive `creative_flight` attribute, but a single `mayfly` flag on
+  Fabric and Forge, neither of which has an equivalent attribute. On those loaders the last
+  mod to write the flag wins. The active mechanism is logged at startup.
+
 ## [1.0.0] — 2026-07-26 — first public release
 
 ### Added — v1.0 polish

@@ -1,0 +1,86 @@
+plugins {
+    id 'java'
+    id 'net.minecraftforge.gradle' version '6.0.54'
+}
+
+// Versions live in ONE place: the NeoForge project's gradle.properties.
+def shared = new Properties()
+file('../neoforge/gradle.properties').withInputStream { shared.load(it) }
+def sharedSrc = file('../neoforge/src/main/java')
+def sharedRes = file('../neoforge/src/main/resources')
+
+version = shared.mod_version
+group = shared.mod_group_id
+
+base {
+    archivesName = "${shared.mod_archive_base_name}-forge"
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
+}
+
+minecraft {
+    mappings channel: 'official', version: shared.minecraft_version
+}
+
+repositories {
+    mavenCentral()
+}
+
+// Same strategy as Fabric: compile the shared sources, do not copy them. Only the entry point
+// and the flight controller are platform-specific.
+sourceSets.main.java.srcDirs += sharedSrc
+sourceSets.main.resources.srcDirs += sharedRes
+
+sourceSets.main.java {
+    exclude 'com/mwtstudios/nexuscore/NexusCore.java'
+    exclude 'com/mwtstudios/nexuscore/platform/NeoForgeFlightController.java'
+}
+
+sourceSets.main.resources {
+    exclude 'META-INF/neoforge.mods.toml'
+}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:${shared.minecraft_version}-${shared.forge_version}"
+
+    testImplementation platform("org.junit:junit-bom:${shared.junit_version}")
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+// Token expansion for mods.toml, mirroring the NeoForge project. Values are captured into a
+// plain map outside the closure so the task stays configuration-cache safe.
+def modsTomlValues = [
+        mod_id                 : shared.mod_id.toString(),
+        mod_version            : shared.mod_version.toString(),
+        mod_display_name       : shared.mod_display_name.toString(),
+        mod_authors            : shared.mod_authors.toString(),
+        mod_license            : shared.mod_license.toString(),
+        minecraft_version_range: shared.minecraft_version_range.toString(),
+        forge_loader_range     : shared.forge_loader_range.toString()
+]
+
+tasks.named('processResources', ProcessResources) {
+    inputs.properties modsTomlValues
+    filesMatching('META-INF/mods.toml') {
+        expand modsTomlValues
+    }
+}
+
+tasks.named('jar', Jar) {
+    archiveClassifier = shared.minecraft_version.toString()
+}

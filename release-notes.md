@@ -11,13 +11,23 @@ loader, no other administration mod, and no external database.
 
 ## Install
 
-1. Install **NeoForge 21.1.235 or newer 21.1.x** for Minecraft 1.21.1 on your server.
-2. Drop `NexusCore-1.21.1-1.0.0-neoforge.jar` into the server's `mods/` folder.
+Three jars, one per loader. They are **not** interchangeable.
+
+| Loader | Jar | Requires |
+|---|---|---|
+| NeoForge | `NexusCore-neoforge-1.0.0-1.21.1.jar` | NeoForge 21.1.235+ |
+| Fabric | `NexusCore-fabric-1.0.0-1.21.1.jar` | Fabric Loader 0.19.3+ **and Fabric API** |
+| Forge | `NexusCore-forge-1.0.0-1.21.1.jar` | MinecraftForge 52.1.16+ |
+
+1. Install your loader for Minecraft 1.21.1.
+2. Drop the matching jar into `mods/`.
 3. Start the server.
-4. Run `/nexus version` in the console.
+4. Run `/nexus version`.
 
 **Players join with an unmodified vanilla client.** No modpack, no client download, no
 resource pack, no handshake. That includes the admin GUI.
+
+Works in **singleplayer and on LAN** too, on all three loaders.
 
 On first start NexusCore creates `<server>/nexuscore/` with `config.json`,
 `permissions.json`, `audit.log`, and its data files — all human-readable JSON.
@@ -105,6 +115,17 @@ This matters more than the feature list, so it is here rather than in a roadmap.
 - **No benchmark harness.** Every performance figure anywhere in this project is a **target,
   not a measurement**, and is labelled as such. No player-count claim is made.
 
+### Loader differences you should know about
+
+- **`/fly` behaves differently on Fabric and Forge.** NeoForge grants flight through an
+  additive `creative_flight` attribute, so NexusCore revokes only its own grant and coexists
+  with other flight mods. Neither Fabric nor Forge has an equivalent (verified against Forge
+  52.1.16), so both write a single `mayfly` flag where the last mod to write it wins. If you
+  run another flight-granting mod on those loaders, expect interference. The active mechanism
+  is logged at startup.
+- **Fabric requires Fabric API.** NeoForge and Forge have no extra dependency.
+- The three jars are not interchangeable; the loader is in the filename for that reason.
+
 ### Known limitations
 
 - **No GameTests.** Unit coverage is good (162 tests); in-world automated tests do not exist.
@@ -127,20 +148,33 @@ This matters more than the feature list, so it is here rather than in a roadmap.
 
 ## Verification performed
 
-| Check | Result |
-|---|---|
-| `./gradlew clean build` from a clean checkout | exit 0 |
-| Unit tests | **162 passed, 0 failed, 0 skipped** |
-| Checkstyle (main + test) | 0 violations |
-| Stub-marker gate | 0 violations across 24 files |
-| NexusCore-introduced compiler warnings | 0 |
-| Real NeoForge 21.1.235 dedicated server, packaged JAR | starts, runs, stops cleanly, **0 errors** |
-| Restart persistence | permissions, punishments, warnings, homes, audit chain all intact |
-| Audit chain verification | intact across restart |
-| Confirmation token reuse | refused |
+Every jar was run on a **real dedicated server for its own loader**, not just built.
 
-**Not verified:** anything requiring a real player in the world. The admin GUI has never
-been rendered to a client; vanish, chat muting, and ban-at-login are wired but unobserved.
+| Check | NeoForge | Fabric | Forge |
+|---|---|---|---|
+| `clean build` from a clean checkout | pass | pass | pass |
+| Unit tests | 163 | 3 | 3 |
+| Checkstyle + stub-marker gate | clean | clean | n/a |
+| Packaged jar on a real dedicated server | pass | pass | pass |
+| Server `ERROR` lines caused by NexusCore | 0 | 0 | 0 |
+| Clean shutdown, exit 0 | yes | yes | yes |
+| Commands, permissions, `/seen` | pass | pass | pass |
+| Ban confirmation + token-reuse refusal | pass | pass | pass |
+| Audit chain intact | pass | pass | pass |
+| **Client / singleplayer initialisation** | pass | **pass** | not run |
+
+The Fabric client run loaded an actual singleplayer world and confirmed the integrated server
+starts with NexusCore registered against it:
+
+```
+[Render thread] NexusCore ready on Fabric: 73 message(s), 3 permission group(s)
+[Worker-Main-4] NexusCore did not override /list — ...
+[Server thread] Starting integrated minecraft server version 1.21.1
+```
+
+**Not verified:** anything requiring a second real player. The admin GUI has never been
+rendered to a client; vanish, chat muting, and ban-at-login are wired and unit-covered but
+unobserved in a live session. The Forge build has not been run on a client.
 
 ---
 

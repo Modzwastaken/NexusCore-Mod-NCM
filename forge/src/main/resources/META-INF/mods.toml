@@ -1,0 +1,45 @@
+# NexusCore Administration Framework - MinecraftForge metadata.
+#
+# Forge reads META-INF/mods.toml; NeoForge reads META-INF/neoforge.mods.toml. The two files
+# are similar but not interchangeable, and the NeoForge one is excluded from this jar by
+# forge/build.gradle so it cannot travel here by accident.
+#
+# Forge and NeoForge dependency blocks are NOT interchangeable: Forge requires
+# `mandatory = true/false`, while NeoForge replaced that with `type = "required"`. Using the
+# NeoForge spelling here makes Forge reject the whole jar with
+# "Missing required field mandatory in dependency" and the mod silently never loads.
+#
+# Note: this file is processed by Groovy's template engine. A dollar-brace sequence anywhere
+# in it - including inside a comment - is evaluated as an expression, so do not write one
+# unless it names a real property.
+
+modLoader = "javafml"
+loaderVersion = "${forge_loader_range}"
+license = "${mod_license}"
+
+[[mods]]
+modId = "${mod_id}"
+version = "${mod_version}"
+displayName = "${mod_display_name}"
+authors = "${mod_authors}"
+description = '''
+NexusCore is a native server administration framework for Minecraft Java Edition:
+permissions, economy, moderation, teleportation, player utilities, staff tools,
+configuration, storage, and audit logging in one mod.
+
+Install on the server. Players join with an unmodified vanilla client.
+'''
+
+[[dependencies.${mod_id}]]
+modId = "forge"
+mandatory = true
+versionRange = "${forge_loader_range}"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.${mod_id}]]
+modId = "minecraft"
+mandatory = true
+versionRange = "${minecraft_version_range}"
+ordering = "NONE"
+side = "BOTH"

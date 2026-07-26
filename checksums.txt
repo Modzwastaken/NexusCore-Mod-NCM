@@ -1,0 +1,3 @@
+bf2eaff0f84262242caf6ef86e9bce01b2e19e1871a1ab0401312cbf1a52fa61  neoforge/build/libs/NexusCore-neoforge-1.0.1-1.21.1.jar
+1f78a1c7cfa406c423ab95c00da439caaf647d5abc2e103f57468c63f65855ef  fabric/build/libs/NexusCore-fabric-1.0.1-1.21.1.jar
+fe5b822ea77e2476a4b08ea51df833c695eea4d00cb215fc70afccb5d5fc3ea7  forge/build/libs/NexusCore-forge-1.0.1-1.21.1.jar

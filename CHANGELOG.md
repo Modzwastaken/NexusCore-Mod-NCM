@@ -14,6 +14,13 @@ The v1.0 release ships all three loaders at once. Earlier interim tags were coll
 this release; nothing had been published externally, so no released version is being
 rewritten.
 
+### Mod icon
+
+The NexusCore logo now ships in all three jars at 128x128 and is wired into each loader's
+metadata: `logoFile` in `neoforge.mods.toml` and `mods.toml`, `icon` in `fabric.mod.json`.
+The same image is also `pack.png`, so it appears as the resource-pack icon rather than the
+blank default. It is shown in the README too.
+
 ### Resource pack metadata
 
 Added `pack.mcmeta`. A mod jar containing `assets/` is loaded as a resource pack, and Forge

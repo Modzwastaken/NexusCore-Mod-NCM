@@ -6,6 +6,7 @@
   "description": "Native server administration for Minecraft Java Edition: permissions, moderation, teleportation, player utilities, audit logging, and an admin GUI that works on unmodified vanilla clients.",
   "authors": ["${mod_authors}"],
   "license": "${mod_license}",
+  "icon": "nexuscore.png",
   "environment": "*",
   "entrypoints": {
     "main": ["com.mwtstudios.nexuscore.fabric.NexusCoreFabric"]

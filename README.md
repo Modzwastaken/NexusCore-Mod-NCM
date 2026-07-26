@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/nexuscore-logo.png" alt="NexusCore" width="320">
+</p>
+
 # NexusCore Administration Framework
 
 Native server administration for Minecraft Java Edition — permissions, moderation,

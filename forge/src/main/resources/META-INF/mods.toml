@@ -22,6 +22,7 @@ modId = "${mod_id}"
 version = "${mod_version}"
 displayName = "${mod_display_name}"
 authors = "${mod_authors}"
+logoFile = "nexuscore.png"
 description = '''
 NexusCore is a native server administration framework for Minecraft Java Edition:
 permissions, economy, moderation, teleportation, player utilities, staff tools,

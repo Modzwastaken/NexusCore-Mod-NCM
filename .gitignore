@@ -52,3 +52,7 @@ forgeserver/
 # Server logs, in any loader's run directory.
 *.log.gz
 logs/
+
+# Released artifacts ARE tracked on purpose: archived/ is the record of what shipped.
+!archived/
+!archived/**

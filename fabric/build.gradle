@@ -90,7 +90,7 @@ tasks.withType(Test).configureEach {
 
 checkstyle {
     toolVersion = '10.21.1'
-    configFile = file('../neoforge/config/checkstyle/checkstyle.xml')
+    configFile = file('../config/checkstyle/checkstyle.xml')
     maxWarnings = 0
     ignoreFailures = false
 }

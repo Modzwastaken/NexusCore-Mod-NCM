@@ -1,6 +1,16 @@
-# Changelog
+# NexusCore — shared changelog
 
-All notable changes to NexusCore are recorded here.
+Changes to the **shared code** — the 22 of 24 source files every loader compiles. Loader-specific
+changes live alongside each build:
+
+| Loader | Changelog |
+|---|---|
+| NeoForge | [neoforge/CHANGELOG.md](neoforge/CHANGELOG.md) |
+| Fabric | [fabric/CHANGELOG.md](fabric/CHANGELOG.md) |
+| Forge | [forge/CHANGELOG.md](forge/CHANGELOG.md) |
+
+User-facing summaries of major releases across all loaders are in
+[release-notes.md](release-notes.md). Released builds are kept in [archived/](archived/).
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning is
 `v1.0` → `v1.5` → `v2.0`, per [ADR-0007](docs/architecture/ADR-0007.md). Minor releases add
@@ -34,18 +44,6 @@ A mod jar is read as **both** a resource pack (format 34 on 1.21.1) and a data p
 `supported_formats: {min_inclusive: 34, max_inclusive: 48}` to cover both. Formats taken from
 Minecraft's own `DetectedVersion`, not from memory.
 
-### Forge dev runs fixed
-
-`./gradlew runClient` and `runServer` in the Forge project failed with
-`constructed 0 mods: [], but had 1 mods specified: [nexuscore]`. ForgeGradle puts
-`build/classes/java/main` and `build/resources/main` on the dev classpath as two separate
-entries and never tells FML they belong to the same mod, so FML found `mods.toml` in the
-resources directory, treated that directory alone as the mod file, found no `@Mod` class in
-it, and aborted. Fixed by pointing the resource output at the classes output, giving FML one
-directory holding both. Only intermediates move; the packaged jar is byte-for-byte the same
-shape (95 entries, `mods.toml` and `en_us.json` present, no NeoForge metadata).
-
-All three loaders are now verified on **both** server and client.
 
 ### NexusCore now owns the vanilla commands it supersedes
 

@@ -97,7 +97,7 @@ with durations, reasons, history, and audit. See
 ## Building from source
 
 Requires JDK 21. Each loader is an **independent Gradle build** in its own directory, with its
-own wrapper — see [ADR-0008](neoforge/docs/architecture/ADR-0008.md) for why.
+own wrapper — see [ADR-0008](docs/architecture/ADR-0008.md) for why.
 
 ```bash
 cd neoforge && ./gradlew clean build
@@ -126,15 +126,16 @@ Other useful targets:
 
 | Path | Contents |
 |---|---|
-| `src/main/java/com/mwtstudios/nexuscore/` | Mod sources. Packages are created at their milestone, not before. |
-| `src/main/resources/META-INF/neoforge.mods.toml` | The **only** mod metadata file. |
-| `src/main/resources/assets/nexuscore/lang/` | Message catalogue — server-side first, see [ADR-0003](docs/architecture/ADR-0003.md). |
-| `src/test/java/` | Unit tests. |
-| `config/checkstyle/` | Formatting and static-analysis ruleset ([ADR-0005](docs/architecture/ADR-0005.md)). |
-| `docs/architecture/` | Architecture decision records. |
-| `docs/admin/` | Permissions, command reference, admin panel. |
-| `IMPLEMENTATION_STATUS.md` | The one place unfinished work is named. |
-| `RELEASE_CHECKLIST.md` | Per-release verification, evidence required. |
+| `neoforge/` | NeoGradle build **and the shared sources** every loader compiles (`src/main/java`). |
+| `fabric/` | Fabric Loom build: entry point, `fabric.mod.json`, tests. |
+| `forge/` | ForgeGradle build: entry point, `mods.toml`, tests. Pinned to Gradle 8.x. |
+| `docs/` | Cross-loader documentation: ADRs, admin and user guides, the logo. |
+| `config/checkstyle/` | Formatting and static-analysis ruleset shared by all three builds. |
+| `archived/` | Every published release, exactly as shipped. See [archived/README.md](archived/README.md). |
+| `<loader>server/` | Local test servers, one per loader. Not tracked. |
+| `CHANGELOG.md` | Shared-code changes; each loader has its own alongside its build. |
+| `release-notes.md` | User-facing summary of major releases across all loaders. |
+| `IMPLEMENTATION_STATUS.md` | The authoritative record of what exists. |
 
 ## Engineering rules this project is held to
 
@@ -157,10 +158,11 @@ Other useful targets:
 - [Permissions](docs/admin/permissions.md) — how a decision is reached, and the one rule that surprises people
 - [Admin panel](docs/admin/admin-gui.md)
 - [Release notes](release-notes.md)
-- [Architecture decisions](docs/architecture/) — ADR-0001 through ADR-0007
+- [Architecture decisions](docs/architecture/) — ADR-0001 through ADR-0008
 - [Implementation status](IMPLEMENTATION_STATUS.md)
 - [Release checklist](RELEASE_CHECKLIST.md)
-- [Changelog](CHANGELOG.md)
+- Changelogs — [shared](CHANGELOG.md) · [NeoForge](neoforge/CHANGELOG.md) · [Fabric](fabric/CHANGELOG.md) · [Forge](forge/CHANGELOG.md)
+- [Release archive](archived/README.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)
 
 `docs/user`, `docs/api`, and `docs/migration` are populated as the milestones that produce

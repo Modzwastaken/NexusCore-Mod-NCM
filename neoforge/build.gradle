@@ -122,7 +122,7 @@ tasks.withType(AbstractArchiveTask).configureEach {
 // See docs/architecture/ADR-0005.md.
 checkstyle {
     toolVersion = '10.21.1'
-    configFile = rootProject.file('config/checkstyle/checkstyle.xml')
+    configFile = rootProject.file('../config/checkstyle/checkstyle.xml')
     maxWarnings = 0
     ignoreFailures = false
 }

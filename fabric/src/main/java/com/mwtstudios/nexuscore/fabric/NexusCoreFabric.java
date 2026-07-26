@@ -17,6 +17,7 @@ import com.mwtstudios.nexuscore.gui.AdminGuiService;
 import com.mwtstudios.nexuscore.identity.IdentityService;
 import com.mwtstudios.nexuscore.message.MessageService;
 import com.mwtstudios.nexuscore.moderation.ModerationService;
+import com.mwtstudios.nexuscore.moderation.PunishmentMessages;
 import com.mwtstudios.nexuscore.permission.PermissionService;
 import com.mwtstudios.nexuscore.platform.MayflyFlightController;
 import com.mwtstudios.nexuscore.player.PlayerUtilityService;
@@ -117,9 +118,8 @@ public final class NexusCoreFabric implements ModInitializer {
             identity.observe(player);
             moderation.activeBan(player.getUUID()).ifPresent(ban -> {
                 String remaining = DurationParser.describeRemaining(ban.expiresAt(), System.currentTimeMillis());
-                player.connection.disconnect(messages.render(
-                        ban.permanent() ? "moderation.ban.disconnect" : "moderation.tempban.disconnect",
-                        "reason", ban.reason(), "remaining", remaining, "appeal", settings.banAppealMessage));
+                player.connection.disconnect(PunishmentMessages.banScreen(
+                        messages, settings, ban, System.currentTimeMillis()));
                 audit.record(null, "SYSTEM", "moderation.ban.enforced", "player", player.getUUID().toString(),
                         "denied", ban.reason(), Map.of("remaining", remaining), UUID.randomUUID().toString());
             });
@@ -140,9 +140,8 @@ public final class NexusCoreFabric implements ModInitializer {
             if (mute.isEmpty()) {
                 return true;
             }
-            sender.sendSystemMessage(messages.render("moderation.mute.blocked",
-                    "reason", mute.get().reason(),
-                    "remaining", DurationParser.describeRemaining(mute.get().expiresAt(), System.currentTimeMillis())));
+            sender.sendSystemMessage(PunishmentMessages.muteNotice(
+                    messages, mute.get(), System.currentTimeMillis()));
             return false;
         });
 

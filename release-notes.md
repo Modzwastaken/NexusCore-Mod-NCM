@@ -1,4 +1,4 @@
-# NexusCore v1.0.0 — Release Notes
+# NexusCore v1.0 — Release Notes
 
 **NexusCore Administration Framework** · MWT Studios
 Minecraft 1.21.1 · NeoForge 21.1.235+ · Java 21 · Released 2026-07-26
@@ -115,6 +115,26 @@ This matters more than the feature list, so it is here rather than in a roadmap.
 - **No benchmark harness.** Every performance figure anywhere in this project is a **target,
   not a measurement**, and is labelled as such. No player-count claim is made.
 
+### The message style
+
+All messages follow one visual language, and every one of them can be reworded by the
+operator in `nexuscore/messages.json`:
+
+```
+BAN » Banned Deathcember for 2h.: "Toxic behavior"
+MUTE » You are muted and cannot chat. — Reason: "spam" — Expires in: 14min. 58sec.
+SEEN » Deathcember was last seen 2min. 16sec. ago. — First joined: 15/04/2026
+```
+
+A banned player sees a full styled screen: `⚠ YOU ARE TEMPORARILY BANNED ⚠`, the date they
+were banned, the quoted reason, the exact unban date with a live countdown, and your
+configurable appeal line (set `banAppealMessage` in `config.json` — a Discord invite fits
+there).
+
+Note: the styling covers what NexusCore does today. AFK detection, chat channels, mentions,
+rank nametags, and player levels — visible in some community styling references — are
+feature work planned for v1.5, not part of this release.
+
 ### Loader differences you should know about
 
 - **`/fly` behaves differently on Fabric and Forge.** NeoForge grants flight through an
@@ -128,7 +148,7 @@ This matters more than the feature list, so it is here rather than in a roadmap.
 
 ### Known limitations
 
-- **No GameTests.** Unit coverage is good (162 tests); in-world automated tests do not exist.
+- **No GameTests.** Unit coverage is good (169 tests on the shared sources); in-world automated tests do not exist.
 - **Bans are NexusCore records, not vanilla ban-list entries.** That is what gives them
   durations, actor UUIDs, reasons, and audit linkage — but if you remove the mod, NexusCore
   bans stop applying.
@@ -153,7 +173,7 @@ Every jar was run on a **real dedicated server for its own loader**, not just bu
 | Check | NeoForge | Fabric | Forge |
 |---|---|---|---|
 | `clean build` from a clean checkout | pass | pass | pass |
-| Unit tests | 163 | 3 | 3 |
+| Unit tests | 169 | 3 | 3 |
 | Checkstyle + stub-marker gate | clean | clean | n/a |
 | Packaged jar on a real dedicated server | pass | pass | pass |
 | Server `ERROR` lines caused by NexusCore | 0 | 0 | 0 |

@@ -1,6 +1,6 @@
 # NexusCore Administration Framework
 
-Native server administration for Minecraft Java Edition — permissions, economy, moderation,
+Native server administration for Minecraft Java Edition — permissions, moderation,
 teleportation, player utilities, staff tools, configuration, storage, and audit logging in
 one mod. No Bukkit/Spigot plugin, no other administration mod, no external database service
 required.
@@ -35,7 +35,7 @@ Working today, on a server-only install with vanilla clients:
   history that cannot be erased
 - **Admin GUI** — a chest-menu panel that works on **unmodified vanilla clients**
 
-Verified by 162 passing tests and an end-to-end run on a real NeoForge 21.1.235 dedicated
+Verified by 175 passing tests across the three loader builds and an end-to-end run on a real NeoForge 21.1.235 dedicated
 server, including a restart, with zero errors.
 
 **Not yet:** GameTests, economy, chat channels, scheduler, backups, the custom-screen client

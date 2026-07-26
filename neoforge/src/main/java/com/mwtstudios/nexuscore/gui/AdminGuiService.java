@@ -9,6 +9,7 @@ import java.util.UUID;
 import java.util.function.Consumer;
 
 import com.mwtstudios.nexuscore.core.NexusServices;
+import com.mwtstudios.nexuscore.message.TimeText;
 import com.mwtstudios.nexuscore.moderation.ModerationService;
 import com.mwtstudios.nexuscore.player.PlayerUtilityService;
 import com.mwtstudios.nexuscore.teleport.TeleportService;
@@ -305,12 +306,18 @@ public final class AdminGuiService {
 
         for (int i = 0; i < bans.size() && i < 45; i++) {
             ModerationService.Record record = bans.get(i);
-            panel.set(i, icon(Items.IRON_SWORD, "&c" + record.targetName(),
-                    "&7Reason: &f" + record.reason(),
-                    "&7By: &f" + record.actorName(),
-                    "&7Expires: &f" + (record.permanent() ? "never"
-                            : com.mwtstudios.nexuscore.command.DurationParser.describeRemaining(
-                                    record.expiresAt(), System.currentTimeMillis())),
+            // Tooltip layout mirrors the chat/screen style: header, quoted reason, then
+            // arrow-prefixed detail lines with an hourglass on the countdown.
+            String duration = record.permanent() ? "permanent"
+                    : TimeText.longDuration(java.time.Duration.ofMillis(record.expiresAt() - record.issuedAt()));
+            panel.set(i, icon(Items.IRON_SWORD, "&cBan &8· &aActive &8— &f" + record.targetName(),
+                    "&7&o\"" + record.reason() + "\"",
+                    "",
+                    "&8→ &7Staff: &c" + record.actorName(),
+                    "&8→ &7Date: &f" + TimeText.date(record.issuedAt()),
+                    "&8→ &7Duration: &6" + duration,
+                    "&8⌛ &7Expires in: &6" + (record.permanent() ? "never"
+                            : TimeText.remaining(record.expiresAt(), System.currentTimeMillis())),
                     "",
                     "&8Lift with /unban " + record.targetName()));
         }

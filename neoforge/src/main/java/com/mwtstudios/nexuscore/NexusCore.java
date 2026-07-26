@@ -16,6 +16,7 @@ import com.mwtstudios.nexuscore.gui.AdminGuiService;
 import com.mwtstudios.nexuscore.identity.IdentityService;
 import com.mwtstudios.nexuscore.message.MessageService;
 import com.mwtstudios.nexuscore.moderation.ModerationService;
+import com.mwtstudios.nexuscore.moderation.PunishmentMessages;
 import com.mwtstudios.nexuscore.permission.PermissionService;
 import com.mwtstudios.nexuscore.platform.NeoForgeFlightController;
 import com.mwtstudios.nexuscore.player.PlayerUtilityService;
@@ -161,11 +162,8 @@ public final class NexusCore {
         // §M5: punishment expiry is re-evaluated at login, not by a background sweep.
         services.moderation().activeBan(player.getUUID()).ifPresent(ban -> {
             String remaining = DurationParser.describeRemaining(ban.expiresAt(), System.currentTimeMillis());
-            player.connection.disconnect(services.messages().render(
-                    ban.permanent() ? "moderation.ban.disconnect" : "moderation.tempban.disconnect",
-                    "reason", ban.reason(),
-                    "remaining", remaining,
-                    "appeal", services.settings().banAppealMessage));
+            player.connection.disconnect(PunishmentMessages.banScreen(
+                    services.messages(), services.settings(), ban, System.currentTimeMillis()));
             services.audit().record(null, "SYSTEM", "moderation.ban.enforced", "player",
                     player.getUUID().toString(), "denied", ban.reason(),
                     java.util.Map.of("remaining", remaining), UUID.randomUUID().toString());
@@ -203,9 +201,8 @@ public final class NexusCore {
             // Cancel rather than silently drop: the muted player is told, so they are not left
             // wondering whether the server ate their message.
             event.setCanceled(true);
-            player.sendSystemMessage(services.messages().render("moderation.mute.blocked",
-                    "reason", mute.reason(),
-                    "remaining", DurationParser.describeRemaining(mute.expiresAt(), System.currentTimeMillis())));
+            player.sendSystemMessage(PunishmentMessages.muteNotice(
+                    services.messages(), mute, System.currentTimeMillis()));
         });
     }
 }

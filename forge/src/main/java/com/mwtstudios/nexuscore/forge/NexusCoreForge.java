@@ -17,6 +17,7 @@ import com.mwtstudios.nexuscore.gui.AdminGuiService;
 import com.mwtstudios.nexuscore.identity.IdentityService;
 import com.mwtstudios.nexuscore.message.MessageService;
 import com.mwtstudios.nexuscore.moderation.ModerationService;
+import com.mwtstudios.nexuscore.moderation.PunishmentMessages;
 import com.mwtstudios.nexuscore.permission.PermissionService;
 import com.mwtstudios.nexuscore.platform.MayflyFlightController;
 import com.mwtstudios.nexuscore.player.PlayerUtilityService;
@@ -139,10 +140,8 @@ public final class NexusCoreForge {
         services.identity().observe(player);
         services.moderation().activeBan(player.getUUID()).ifPresent(ban -> {
             String remaining = DurationParser.describeRemaining(ban.expiresAt(), System.currentTimeMillis());
-            player.connection.disconnect(services.messages().render(
-                    ban.permanent() ? "moderation.ban.disconnect" : "moderation.tempban.disconnect",
-                    "reason", ban.reason(), "remaining", remaining,
-                    "appeal", services.settings().banAppealMessage));
+            player.connection.disconnect(PunishmentMessages.banScreen(
+                    services.messages(), services.settings(), ban, System.currentTimeMillis()));
             services.audit().record(null, "SYSTEM", "moderation.ban.enforced", "player",
                     player.getUUID().toString(), "denied", ban.reason(),
                     Map.of("remaining", remaining), UUID.randomUUID().toString());
@@ -164,9 +163,8 @@ public final class NexusCoreForge {
         ServerPlayer player = event.getPlayer();
         services.moderation().activeMute(player.getUUID()).ifPresent(mute -> {
             event.setCanceled(true);
-            player.sendSystemMessage(services.messages().render("moderation.mute.blocked",
-                    "reason", mute.reason(),
-                    "remaining", DurationParser.describeRemaining(mute.expiresAt(), System.currentTimeMillis())));
+            player.sendSystemMessage(PunishmentMessages.muteNotice(
+                    services.messages(), mute, System.currentTimeMillis()));
         });
     }
 

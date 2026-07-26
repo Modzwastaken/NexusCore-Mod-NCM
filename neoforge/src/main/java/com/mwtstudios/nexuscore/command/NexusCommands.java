@@ -20,7 +20,9 @@ import com.mojang.logging.LogUtils;
 import com.mwtstudios.nexuscore.core.NexusServices;
 import com.mwtstudios.nexuscore.gui.AdminGuiService;
 import com.mwtstudios.nexuscore.message.MessageService;
+import com.mwtstudios.nexuscore.message.TimeText;
 import com.mwtstudios.nexuscore.moderation.ModerationService;
+import com.mwtstudios.nexuscore.moderation.PunishmentMessages;
 import com.mwtstudios.nexuscore.permission.PermissionDecision;
 import com.mwtstudios.nexuscore.teleport.TeleportService;
 
@@ -896,19 +898,15 @@ public final class NexusCommands {
 
     private static void applyBan(NexusServices services, CommandSourceStack source, UUID target, String name,
             UUID actor, String actorName, String reason, long expiresAt) {
-        services.moderation().issue(ModerationService.Type.BAN, target, name, actor, actorName, reason, expiresAt);
+        ModerationService.Record ban = services.moderation()
+                .issue(ModerationService.Type.BAN, target, name, actor, actorName, reason, expiresAt);
         ServerPlayer online = source.getServer().getPlayerList().getPlayer(target);
         if (online != null) {
-            online.connection.disconnect(banScreen(services, reason, expiresAt));
+            // The screen is built in exactly one place for all loaders and all paths.
+            online.connection.disconnect(
+                    PunishmentMessages.banScreen(services.messages(), services.settings(), ban, System.currentTimeMillis()));
         }
         broadcast(services, source, "moderation.ban.broadcast", name, reason);
-    }
-
-    private static Component banScreen(NexusServices services, String reason, long expiresAt) {
-        String remaining = DurationParser.describeRemaining(expiresAt, System.currentTimeMillis());
-        return services.messages().render(expiresAt == Long.MAX_VALUE
-                        ? "moderation.ban.disconnect" : "moderation.tempban.disconnect",
-                "reason", reason, "remaining", remaining, "appeal", services.settings().banAppealMessage);
     }
 
     private static LiteralArgumentBuilder<CommandSourceStack> tempBanNode(NexusServices services) {
@@ -943,7 +941,8 @@ public final class NexusCommands {
         applyBan(services, source, target, name, actor, source.getTextName(), reason, expiresAt);
 
         return Feedback.of(services.messages().render("moderation.tempban.success",
-                        "target", name, "duration", parsed.toString(), "reason", reason))
+                        "target", name,
+                        "duration", TimeText.longDuration(parsed.duration()), "reason", reason))
                 .withTarget("player", target.toString())
                 .withAudit("reason", reason)
                 .withAudit("duration", parsed.toString());
@@ -988,12 +987,13 @@ public final class NexusCommands {
                 reason, parsed.expiresAt(System.currentTimeMillis()));
 
         ServerPlayer online = source.getServer().getPlayerList().getPlayer(target);
+        String shown = parsed.permanent() ? "permanent" : TimeText.longDuration(parsed.duration());
         if (online != null) {
             online.sendSystemMessage(services.messages().render("moderation.mute.notify",
-                    "duration", parsed.toString(), "reason", reason));
+                    "duration", shown, "reason", reason));
         }
         return Feedback.of(services.messages().render("moderation.mute.success",
-                        "target", name, "duration", parsed.toString(), "reason", reason))
+                        "target", name, "duration", shown, "reason", reason))
                 .withTarget("player", target.toString())
                 .withAudit("reason", reason)
                 .withAudit("duration", parsed.toString());
@@ -1087,7 +1087,7 @@ public final class NexusCommands {
                                 text.append("\n&7- &c").append(record.targetName()).append(" &7")
                                         .append(record.reason()).append(" &8(")
                                         .append(record.permanent() ? "permanent"
-                                                : DurationParser.describeRemaining(record.expiresAt(),
+                                                : TimeText.remaining(record.expiresAt(),
                                                         System.currentTimeMillis()))
                                         .append(')');
                             }
@@ -1168,10 +1168,9 @@ public final class NexusCommands {
                                                     .raw("error.unknown-player", "name", name)));
                                     return Feedback.of(services.messages().render("player.seen.offline",
                                                     "target", profile.name(),
-                                                    "ago", DurationParser.describeElapsed(
+                                                    "ago", TimeText.elapsed(
                                                             profile.lastSeenEpochMillis(), System.currentTimeMillis()),
-                                                    "first", java.time.Instant.ofEpochMilli(
-                                                            profile.firstSeenEpochMillis()).toString().substring(0, 10)))
+                                                    "first", TimeText.date(profile.firstSeenEpochMillis())))
                                             .withTarget("player", target.toString());
                                 })));
     }

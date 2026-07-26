@@ -8,12 +8,36 @@ features and stay data-compatible; major releases may change data formats and mu
 migration. **The version number carries no completeness promise** — see
 [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for what actually exists.
 
-## [1.0.1] — 2026-07-26 — Fabric and Forge builds
+## [1.0.0] — 2026-07-26 — first public release: NeoForge, Fabric, and Forge
+
+The v1.0 release ships all three loaders at once. Earlier interim tags were collapsed into
+this release; nothing had been published externally, so no released version is being
+rewritten.
+
+### Message overhaul
+
+Every player-facing message was restyled into a consistent visual language:
+
+- Feature-prefixed chat lines: a bold coloured tag, an arrow, then the body —
+  `BAN » Banned Deathcember for 2h.: "Toxic behavior"`. Gray body text, white names,
+  orange times, yellow dates.
+- Full-screen ban pages: `⚠ YOU ARE TEMPORARILY BANNED ⚠`, who was banned and when
+  (`17/04/2026 17:58`), the quoted reason, the unban date with a live countdown
+  (`in 1h. 59min. 59sec.`), and the configurable appeal line.
+- Long time forms everywhere a player reads them (`1h. 28min. 1sec.`), while commands still
+  accept the compact input form (`1d12h30m`). `TimeText` renders output; `DurationParser`
+  parses input; the two are deliberately separate.
+- The admin panel's ban tooltips match: `Ban · Active`, the quoted reason, then
+  `→ Staff / → Date / → Duration / ⌛ Expires in` detail lines.
+- The ban screen is now built in exactly one place (`PunishmentMessages`) for all commands
+  and all three loaders' login enforcement, so the loaders cannot drift apart.
+- Operators can still reword everything via `nexuscore/messages.json` overrides.
+
 
 ### Added
-- **Fabric build** — `NexusCore-fabric-1.0.1-1.21.1.jar`. Requires Fabric Loader 0.19.3+ and
+- **Fabric build** — `NexusCore-fabric-1.0.0-1.21.1.jar`. Requires Fabric Loader 0.19.3+ and
   Fabric API.
-- **Forge build** — `NexusCore-forge-1.0.1-1.21.1.jar`. Requires MinecraftForge 52.1.16+.
+- **Forge build** — `NexusCore-forge-1.0.0-1.21.1.jar`. Requires MinecraftForge 52.1.16+.
 - ADR-0008 recording the multi-loader architecture: why a compiled `common` subproject is
   impossible (proven — Fabric jars are remapped to intermediary, so the same source yields
   different bytecode), and why Forge must stay on Gradle 8 while the others use 9.2.1.
@@ -44,9 +68,9 @@ migration. **The version number carries no completeness promise** — see
   Fabric and Forge, neither of which has an equivalent attribute. On those loaders the last
   mod to write the flag wins. The active mechanism is logged at startup.
 
-## [1.0.0] — 2026-07-26 — first public release
+### Earlier in v1.0 — feature completion on NeoForge
 
-### Added — v1.0 polish
+#### Added — v1.0 polish
 
 - `/nexus teleport tp <player> [destination]` and `/tphere` — staff teleports, no warmup or
   cooldown. The permission node existed and was granted to moderators, but no command
@@ -79,7 +103,7 @@ migration. **The version number carries no completeness promise** — see
   and a validation report naming file, key, invalid value, expected form, and fallback.
 - Transactional `/nexus reload`: a bad file leaves the running configuration untouched.
 - `MessageService` resolving keys **server-side** so unmodified vanilla clients see real text
-  rather than raw translation keys (ADR-0003). 63 keys, operator-overridable via
+  rather than raw translation keys (ADR-0003). 73 keys, operator-overridable via
   `messages.json`, with `&` colour codes.
 
 **Storage, identity, audit (M2)**
@@ -131,7 +155,7 @@ migration. **The version number carries no completeness promise** — see
 
 **Quality**
 
-- 160 tests, 0 failures. Checkstyle clean. Stub-marker gate clean.
+- 169 tests, 0 failures. Checkstyle clean. Stub-marker gate clean.
 - `MessageCatalogueTest` mechanically enforces §2.3 part 6 — a player-facing string without a
   catalogue key fails the build.
 - ADR-0006 records the JSON-configuration decision.

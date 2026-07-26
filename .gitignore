@@ -46,3 +46,4 @@ build-*.log
 # Local dedicated server used for the packaged-JAR milestone verification (§17.1).
 testserver/
 run/
+fabricserver/

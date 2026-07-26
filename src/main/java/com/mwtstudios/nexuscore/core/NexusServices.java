@@ -33,6 +33,9 @@ import net.minecraft.server.level.ServerPlayer;
  */
 public final class NexusServices {
 
+    /** Mod id, shared by every platform entry point. */
+    public static final String MOD_ID = "nexuscore";
+
     /** Vanilla operator level treated as eligible for bootstrap access. */
     public static final int OPERATOR_LEVEL = 4;
 

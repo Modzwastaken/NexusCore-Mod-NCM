@@ -8,7 +8,7 @@ version = rootProject.mod_version
 group = rootProject.mod_group_id
 
 base {
-    archivesName = "${rootProject.mod_archive_base_name}-${rootProject.minecraft_version}"
+    archivesName = "${rootProject.mod_archive_base_name}-fabric"
 }
 
 java {
@@ -16,8 +16,16 @@ java {
 }
 
 // Produces build/libs/NexusCore-<version>-fabric.jar, matching the NeoForge artifact's shape.
+// Loom's remapJar produces the shippable artifact; the plain `jar` task produces an
+// unmapped dev jar. The classifier has to go on remapJar or the released file is misnamed.
+def mcVersion = rootProject.minecraft_version.toString()
+
+tasks.named('remapJar') {
+    archiveClassifier = mcVersion
+}
+
 tasks.named('jar', Jar) {
-    archiveClassifier = 'fabric'
+    archiveClassifier = 'dev'
 }
 
 repositories {
@@ -31,13 +39,22 @@ repositories {
 // Mojang mappings are used rather than Yarn for the same reason — under Yarn every shared
 // file would need different type names and none of this would compile unchanged.
 sourceSets.main.java.srcDirs += rootProject.file('src/main/java')
-sourceSets.main.resources.srcDirs += rootProject.file('src/main/resources/assets')
+// Must be the resources ROOT, not the assets subdirectory: adding `.../resources/assets`
+// puts its *contents* at the jar root, so the catalogue lands at /nexuscore/lang/en_us.json
+// and MessageService cannot find /assets/nexuscore/lang/en_us.json. Caught on a real Fabric
+// server, which reported "0 message(s)".
+sourceSets.main.resources.srcDirs += rootProject.file('src/main/resources')
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
     // The NeoForge entry point is the one file that cannot be shared.
     exclude 'com/mwtstudios/nexuscore/NexusCore.java'
     exclude 'com/mwtstudios/nexuscore/platform/NeoForgeFlightController.java'
+}
+
+sourceSets.main.resources {
+    // The NeoForge metadata must not travel into the Fabric jar.
+    exclude 'META-INF/neoforge.mods.toml'
 }
 
 sourceSets.main.java {
@@ -59,15 +76,21 @@ checkstyle {
     ignoreFailures = false
 }
 
-processResources {
-    inputs.property 'version', project.version
+// Values are captured into a plain map here, outside the closure. Referencing `project`
+// from inside a task action is not configuration-cache safe.
+def modJsonValues = [
+        version              : rootProject.mod_version.toString(),
+        mod_id               : rootProject.mod_id.toString(),
+        mod_display_name     : rootProject.mod_display_name.toString(),
+        mod_authors          : rootProject.mod_authors.toString(),
+        mod_license          : rootProject.mod_license.toString(),
+        minecraft_version    : rootProject.minecraft_version.toString(),
+        fabric_loader_version: rootProject.fabric_loader_version.toString()
+]
+
+tasks.named('processResources', ProcessResources) {
+    inputs.properties modJsonValues
     filesMatching('fabric.mod.json') {
-        expand version: project.version,
-                mod_id: rootProject.mod_id,
-                mod_display_name: rootProject.mod_display_name,
-                mod_authors: rootProject.mod_authors,
-                mod_license: rootProject.mod_license,
-                minecraft_version: rootProject.minecraft_version,
-                fabric_loader_version: rootProject.fabric_loader_version
+        expand modJsonValues
     }
 }

@@ -11,7 +11,7 @@ base {
     // Includes the Minecraft version: a 1.21.1 JAR and a future 1.22 JAR are not
     // interchangeable, and the filename is the only thing an operator sees before installing.
     // Produces NexusCore-<minecraft_version>-<mod_version>-<loader>.jar.
-    archivesName = "${mod_archive_base_name}-${minecraft_version}"
+    archivesName = "${mod_archive_base_name}-${mod_loader_name}"
 }
 
 // The mod loader is part of the artifact's identity: a NeoForge JAR and a Forge JAR for the
@@ -19,7 +19,7 @@ base {
 // one gets a mod that silently does not load. Naming it in the file removes that class of
 // mistake. Produces build/libs/NexusCore-<version>-neoforge.jar.
 tasks.named('jar', Jar) {
-    archiveClassifier = mod_loader_name
+    archiveClassifier = minecraft_version
 }
 
 // §4.1 — Java 21, matching the JRE Mojang ships for 1.21.1.

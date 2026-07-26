@@ -23,6 +23,81 @@ Per [ADR-0012](docs/architecture/ADR-0012.md): **`x.y.0` is a version** — `1.0
 Five builds fill a version, then the minor moves up: `1.0.5` is followed by `1.1.0`, never by
 `1.0.6`. Every heading below says which kind it is.
 
+## [1.0.5] — 2026-07-26 — pre-release — safe mode, and a generated command reference
+
+The last build of the 1.0 line, and the two things M1 and M4 left `planned`. **M4 is complete.**
+Per [ADR-0012](docs/architecture/ADR-0012.md) the next build is `1.1.0`.
+
+### Added
+
+- **Safe mode (§M1).** Starting with `-Dnexuscore.safemode=true` leaves the three optional modules
+  — `teleport`, `player-utilities`, `moderation` — unstarted. Their commands refuse with an
+  explanation rather than vanishing, and every event handler that touches them is guarded.
+
+  **A system property, deliberately, not a config key.** Safe mode exists for when the server does
+  not start properly, and a bad `config.json` is one of the things it recovers from — so reading
+  the decision out of that file would make safe mode unavailable exactly when it is needed. The
+  dependency direction settles it too: safe mode decides which modules start, and `disable()` must
+  be called before `start()`, so a config key would mean starting the configuration module to find
+  out which modules to start.
+
+  The mode is logged **either way**, because an operator who mistyped the flag needs to see that
+  safe mode is *not* on rather than assume it is.
+
+- **`docs/admin/commands.md` is generated (§12.5).** `CommandCatalogue` holds all 48 descriptors;
+  `CommandDocs` renders the document; `./gradlew generateCommandDocs` writes it. `/nexus help` is
+  rendered from the same descriptors, so help and the reference cannot disagree — previously they
+  were two hand-maintained lists describing one command surface, and both were wrong in different
+  ways.
+
+  §12.5 warned this would drift, and it had: the committed document told operators that NexusCore
+  does **not** override `/ban`, `/kick` and `/banlist` — in the section headed "read this first" —
+  for the two releases since the v1.0 takeover made that false.
+
+- **`CommandDocsTest`** — five tests. The committed document must equal what the catalogue renders;
+  every permission node the code checks must have a descriptor; **every descriptor must name a node
+  the code actually checks** (so the document cannot promise commands that do not exist); no
+  descriptor may lack a summary or claim an unknown module; and rendering must be deterministic, so
+  a regenerated document diffs only on real changes.
+
+### Fixed
+
+- **Three mangled string literals in the Fabric entry point, introduced at 1.0.3 and shipped in
+  1.0.3 and 1.0.4.** A regular expression used to repoint local variables at the service registry
+  also rewrote string contents: `render("teleport.done")` became
+  `render("services.teleport().done")`, likewise `teleport.failed`, and the audit action
+  `moderation.ban.enforced` became `services.moderation().ban.enforced`.
+
+  Effect on those two builds, Fabric only: a player saw the raw string instead of the styled
+  message after every teleport, and a ban enforced at login wrote a wrong action name into the
+  audit log — a data-correctness fault in the record that is meant to be authoritative.
+
+- **`MessageCatalogueTest` could not see the bug above, and now can.** Its key pattern only matched
+  key-shaped literals, so a malformed key was silently skipped rather than reported as missing —
+  the suite passed while the mangled key shipped twice. A new test asserts every literal passed to
+  `render`/`raw` **is** key-shaped. Proven to fail: re-injecting the exact bug produces
+  `these are passed to render()/raw() but are not valid message keys: [services.teleport().done]`.
+
+- **`/nexus system status` refused outright in safe mode.** It read
+  `services.moderation().totalRecords()` and `services.teleport().warpNames()` directly, so the one
+  command an operator runs to find out what state a server is in was unavailable exactly when they
+  would need it. It now degrades — `Punishments: disabled`, `Warps: disabled` — and prints a
+  `SAFE MODE — disabled: [...]` banner, so the mode is visible without reading the boot log. Found
+  by running safe mode rather than by reading the diff.
+
+### Verified
+
+Safe mode exercised on **all three** real servers: `started 8 module(s), 3 disabled`, core commands
+working (`/nexus version`, `/nexus audit verify` → chain intact), `/nexus system status` degrading
+with `Punishments: disabled` and `Warps: disabled`, `/nexus moderation banlist` refusing with
+`That feature is disabled: the server is running in safe mode`, clean shutdown, and **zero errors
+or per-tick exceptions**.
+
+`/home` from the console still reports `That command must be run by a player` — it fails the player
+check before reaching the disabled service, which is the correct order.
+
+203 tests pass. All three loaders build clean and reproducibly.
+
 ## [1.0.4] — 2026-07-26 — pre-release — shared sources move to common/
 
 A pure layout change. Nothing about the mod's behaviour changes, and the test for that is strict:

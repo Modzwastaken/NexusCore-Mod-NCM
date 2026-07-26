@@ -18,8 +18,10 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.logging.LogUtils;
 import com.mwtstudios.nexuscore.core.NexusServices;
+import com.mwtstudios.nexuscore.core.SafeMode;
 import com.mwtstudios.nexuscore.gui.AdminGuiService;
 import com.mwtstudios.nexuscore.message.MessageService;
+import com.mwtstudios.nexuscore.module.ModuleException;
 import com.mwtstudios.nexuscore.message.TimeText;
 import com.mwtstudios.nexuscore.moderation.ModerationService;
 import com.mwtstudios.nexuscore.moderation.PunishmentMessages;
@@ -303,6 +305,12 @@ public final class NexusCommands {
                     feedback.auditParameters(), correlationId);
             return Command.SINGLE_SUCCESS;
 
+        } catch (ModuleException e) {
+            // A feature that safe mode left out. This is an expected refusal, not a fault: the
+            // player is told plainly, and no correlation id is issued because there is nothing to
+            // investigate.
+            source.sendFailure(services.messages().render("error.module.disabled"));
+            return 0;
         } catch (Refused refused) {
             services.audit(source, action, "command", node, "refused", refused.getMessage(), Map.of(), correlationId);
             source.sendFailure(Component.literal(refused.getMessage()));
@@ -324,35 +332,44 @@ public final class NexusCommands {
 
     // ---- core --------------------------------------------------------------------------
 
+    /**
+     * The permission-filtered help output, rendered from {@link CommandCatalogue}.
+     *
+     * <p>Built from the same descriptors as {@code docs/admin/commands.md}, so help and the
+     * reference document cannot disagree. This used to be a hand-written list of fourteen lines
+     * while the document listed a different set — two hand-maintained descriptions of one command
+     * surface, which is how both came to be wrong in different ways.</p>
+     *
+     * <p>Commands whose module is not started are left out rather than shown as refusals: in safe
+     * mode a list of things you cannot do is noise, and the command itself still explains why if
+     * someone types it.</p>
+     */
     private static Feedback help(CommandSourceStack source, NexusServices services) {
         List<String> lines = new ArrayList<>();
         lines.add(services.messages().raw("header.help", "version", services.modVersion()));
-        addIfPermitted(lines, source, services, "nexuscore.command.teleport.home", "&f/home [name] &7- go to a home");
-        addIfPermitted(lines, source, services, "nexuscore.command.teleport.sethome", "&f/sethome <name> &7- save a home");
-        addIfPermitted(lines, source, services, "nexuscore.command.teleport.warp", "&f/warp <name> &7- go to a warp");
-        addIfPermitted(lines, source, services, "nexuscore.command.teleport.spawn", "&f/spawn &7- go to spawn");
-        addIfPermitted(lines, source, services, "nexuscore.command.teleport.back", "&f/back &7- return to your last location");
-        addIfPermitted(lines, source, services, "nexuscore.command.teleport.request", "&f/tpa <player> &7- ask to teleport");
-        addIfPermitted(lines, source, services, "nexuscore.command.player.heal", "&f/heal [player] &7- restore health");
-        addIfPermitted(lines, source, services, "nexuscore.command.player.fly", "&f/fly [player] &7- toggle flight");
-        addIfPermitted(lines, source, services, "nexuscore.command.moderation.kick",
-                "&f/nexus moderation kick <player> [reason] &8(/kick is vanilla's)");
-        addIfPermitted(lines, source, services, "nexuscore.command.moderation.ban",
-                "&f/nexus moderation ban <player> [reason] &7- needs confirmation &8(/ban is vanilla's)");
-        addIfPermitted(lines, source, services, "nexuscore.command.moderation.mute", "&f/mute <player> [duration] [reason]");
-        addIfPermitted(lines, source, services, AdminGuiService.NODE_OPEN, "&f/adminpanel &7- open the admin panel");
-        addIfPermitted(lines, source, services, "nexuscore.command.permission.check",
-                "&f/nexus permission check <player> <node>");
-        lines.add(services.messages().raw("help.footer"));
 
-        return Feedback.of(Component.literal(MessageService.colourise(String.join("\n", lines))));
-    }
-
-    private static void addIfPermitted(List<String> lines, CommandSourceStack source, NexusServices services,
-            String node, String line) {
-        if (services.authorise(source, node).allowed()) {
-            lines.add(line);
+        String currentGroup = null;
+        for (CommandDescriptor descriptor : CommandCatalogue.all()) {
+            if (!services.has(descriptor.module())) {
+                continue;
+            }
+            if (!services.authorise(source, descriptor.node()).allowed()) {
+                continue;
+            }
+            if (descriptor.canonical().startsWith("(GUI)")) {
+                continue;
+            }
+            String group = CommandCatalogue.group(descriptor);
+            if (!group.equals(currentGroup)) {
+                currentGroup = group;
+                lines.add("&8— &7" + group);
+            }
+            String usage = descriptor.hasAlias() ? "/" + descriptor.alias() : descriptor.canonical();
+            lines.add("&f" + usage + " &7- " + descriptor.summary());
         }
+
+        lines.add(services.messages().raw("help.footer"));
+        return Feedback.of(Component.literal(MessageService.colourise(String.join("\n", lines))));
     }
 
     private static Feedback reload(NexusServices services) throws Refused {
@@ -505,9 +522,21 @@ public final class NexusCommands {
                                             + "&7Groups: &f" + services.permissions().groupNames().size()
                                             + "  &7Permission cache: &f" + services.permissions().cacheStats() + "\n"
                                             + "&7Audit records: &f" + services.audit().count()
-                                            + "  &7Punishments: &f" + services.moderation().totalRecords() + "\n"
-                                            + "&7Warps: &f" + services.teleport().warpNames().size()
+                                            // Degrades rather than refuses. Status is the command an
+                                            // operator runs to find out what state the server is in,
+                                            // so it has to work when part of the server is off — it
+                                            // refused outright in safe mode until 1.0.5.
+                                            + "  &7Punishments: &f" + (services.has("moderation")
+                                                    ? String.valueOf(services.moderation().totalRecords())
+                                                    : "&8disabled") + "\n"
+                                            + "&7Warps: &f" + (services.has("teleport")
+                                                    ? String.valueOf(services.teleport().warpNames().size())
+                                                    : "&8disabled")
                                             + "  &7Messages: &f" + services.messages().size() + "\n"
+                                            + (SafeMode.requested()
+                                                    ? "&e&lSAFE MODE&r&7 — disabled: &f"
+                                                            + SafeMode.disabledModules() + "\n"
+                                                    : "")
                                             + "&7Pending confirmations: &f" + services.confirmations().pendingCount()
                                             + "  &7Rate-limited subjects: &f" + services.rateLimiter().tracked() + "\n"
                                             + (services.settings().operatorBootstrap

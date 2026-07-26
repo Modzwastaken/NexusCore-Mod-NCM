@@ -100,6 +100,10 @@ public final class NexusCoreForge {
     }
 
     private void onServerTick(TickEvent.ServerTickEvent.Post event) {
+        // Guarded: safe mode leaves teleport unstarted and this runs every tick.
+        if (!services.has("teleport")) {
+            return;
+        }
         services.teleport().tick(event.getServer(), (player, outcome) -> {
             if (outcome.moved()) {
                 player.sendSystemMessage(services.messages().render("teleport.done", "label", outcome.detail()));
@@ -114,6 +118,10 @@ public final class NexusCoreForge {
             return;
         }
         services.identity().observe(player);
+        // Guarded: throwing here would stop players joining entirely.
+        if (!services.has("moderation")) {
+            return;
+        }
         services.moderation().activeBan(player.getUUID()).ifPresent(ban -> {
             String remaining = DurationParser.describeRemaining(ban.expiresAt(), System.currentTimeMillis());
             player.connection.disconnect(PunishmentMessages.banScreen(
@@ -130,13 +138,20 @@ public final class NexusCoreForge {
         }
         UUID id = player.getUUID();
         services.identity().observeDeparture(id);
-        services.teleport().forget(id);
-        services.players().forget(id);
+        if (services.has("teleport")) {
+            services.teleport().forget(id);
+        }
+        if (services.has("player-utilities")) {
+            services.players().forget(id);
+        }
         services.rateLimiter().forget(id);
     }
 
     private void onServerChat(ServerChatEvent event) {
         ServerPlayer player = event.getPlayer();
+        if (!services.has("moderation")) {
+            return;
+        }
         services.moderation().activeMute(player.getUUID()).ifPresent(mute -> {
             event.setCanceled(true);
             player.sendSystemMessage(PunishmentMessages.muteNotice(
@@ -147,7 +162,9 @@ public final class NexusCoreForge {
     /** Records where a player died so {@code /back} returns them there, as on the other loaders. */
     private void onPlayerDeath(LivingDeathEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
-            services.teleport().recordReturnPoint(player.getUUID(), TeleportService.Location.of(player));
+            if (services.has("teleport")) {
+                services.teleport().recordReturnPoint(player.getUUID(), TeleportService.Location.of(player));
+            }
             DeathMessages.broadcast(player.server, services.messages(), services.settings(), player);
         }
     }

@@ -72,22 +72,32 @@ public final class NexusCoreFabric implements ModInitializer {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
                 NexusCommands.register(dispatcher, services, gui, displayName, version));
 
-        ServerTickEvents.END_SERVER_TICK.register(server -> services.teleport().tick(server, (player, outcome) -> {
-            if (outcome.moved()) {
-                player.sendSystemMessage(services.messages().render("services.teleport().done", "label", outcome.detail()));
-            } else {
-                player.sendSystemMessage(services.messages().render("services.teleport().failed", "reason", outcome.detail()));
+        // Guarded: safe mode leaves teleport unstarted and this runs every tick.
+        ServerTickEvents.END_SERVER_TICK.register(server -> {
+            if (!services.has("teleport")) {
+                return;
             }
-        }));
+            services.teleport().tick(server, (player, outcome) -> {
+                if (outcome.moved()) {
+                    player.sendSystemMessage(services.messages().render("teleport.done", "label", outcome.detail()));
+                } else {
+                    player.sendSystemMessage(services.messages().render("teleport.failed", "reason", outcome.detail()));
+                }
+            });
+        });
 
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             ServerPlayer player = handler.player;
             services.identity().observe(player);
+            // Guarded: throwing here would stop players joining entirely.
+            if (!services.has("moderation")) {
+                return;
+            }
             services.moderation().activeBan(player.getUUID()).ifPresent(ban -> {
                 String remaining = DurationParser.describeRemaining(ban.expiresAt(), System.currentTimeMillis());
                 player.connection.disconnect(PunishmentMessages.banScreen(
                         services.messages(), services.settings(), ban, System.currentTimeMillis()));
-                services.audit().record(null, "SYSTEM", "services.moderation().ban.enforced", "player", player.getUUID().toString(),
+                services.audit().record(null, "SYSTEM", "moderation.ban.enforced", "player", player.getUUID().toString(),
                         "denied", ban.reason(), Map.of("remaining", remaining), UUID.randomUUID().toString());
             });
         });
@@ -95,14 +105,21 @@ public final class NexusCoreFabric implements ModInitializer {
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             UUID id = handler.player.getUUID();
             services.identity().observeDeparture(id);
-            services.teleport().forget(id);
-            services.players().forget(id);
+            if (services.has("teleport")) {
+                services.teleport().forget(id);
+            }
+            if (services.has("player-utilities")) {
+                services.players().forget(id);
+            }
             services.rateLimiter().forget(id);
         });
 
         // Returning false cancels the message. The muted player is told why rather than
         // having their message silently vanish.
         ServerMessageEvents.ALLOW_CHAT_MESSAGE.register((message, sender, params) -> {
+            if (!services.has("moderation")) {
+                return true;
+            }
             var mute = services.moderation().activeMute(sender.getUUID());
             if (mute.isEmpty()) {
                 return true;
@@ -116,7 +133,9 @@ public final class NexusCoreFabric implements ModInitializer {
         // behaviour players actually expect and the one case where no teleport happened.
         ServerLivingEntityEvents.AFTER_DEATH.register((entity, damageSource) -> {
             if (entity instanceof ServerPlayer player) {
-                services.teleport().recordReturnPoint(player.getUUID(), TeleportService.Location.of(player));
+                if (services.has("teleport")) {
+                    services.teleport().recordReturnPoint(player.getUUID(), TeleportService.Location.of(player));
+                }
                 DeathMessages.broadcast(player.server, services.messages(), services.settings(), player);
             }
         });

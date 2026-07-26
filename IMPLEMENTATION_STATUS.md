@@ -19,7 +19,7 @@ fails the build if they do.
 cited. A file that looks finished but has never been compiled is `in progress`, however
 complete it appears.
 
-**Last updated:** 2026-07-26 · **Build:** 1.0.4 (pre-release) ·
+**Last updated:** 2026-07-26 · **Build:** 1.0.5 (pre-release) ·
 **Last version:** 1.0.0 · **Milestones passed:** M0, M1, M2, M3, M4, M5 (partial)
 
 > **v1.0 does not mean feature complete.** The version scheme (ADR-0007) is the owner's
@@ -29,7 +29,7 @@ complete it appears.
 > **Versions and builds.** Per [ADR-0012](docs/architecture/ADR-0012.md), `x.y.0` is a
 > **version** and `x.y.1`–`x.y.5` are its **builds**, each a hotfix or a pre-release; after five
 > the minor moves up. `1.0.1` is the security **hotfix** for v1.0.0 — fixes only, branched from
-> the `v1.0.0` tag. `1.0.4` is this build. What each later build is planned to contain is in
+> the `v1.0.0` tag. `1.0.5` is this build, the last of the 1.0 line — the next is `1.1.0`. What each later build is planned to contain is in
 > [The road to v1.5.0](#the-road-to-v150) below and, per §2.4, only there.
 
 ---
@@ -42,7 +42,7 @@ utilities, moderation with confirmations, and a working admin GUI.
 
 **Two things are true at once, and both matter:**
 
-1. **197 automated tests pass (191 NeoForge + 3 Fabric + 3 Forge)**, and the whole feature set has been exercised end to end on a
+1. **203 automated tests pass (197 NeoForge + 3 Fabric + 3 Forge)**, and the whole feature set has been exercised end to end on a
    real NeoForge 21.1.235 dedicated server with zero errors, including a restart.
 2. **No human player has ever joined a NexusCore *server*.** Every dedicated-server check was
    driven through the console. At 1.0.1 a real `ServerPlayer` did enter the world for the first
@@ -77,7 +77,7 @@ utilities, moderation with confirmations, and a working admin GUI.
 | Complete `en_us.json` | `tested` | `everyReferencedKeyExists` — 94 keys, mechanically enforced. |
 | `/nexus reload` | `tested` | Runtime: `configuration reloaded, no problems found`. |
 | Structured logging with correlation ids | `implemented` | Every audit record and error log carries one. |
-| Safe mode with non-core modules disabled | `planned` | 1.0.5. `ModuleManager` now exists and `disable()` is tested, and `teleport`, `player-utilities` and `moderation` are classified optional — so there is finally something to disable. **The caller is deliberately not written yet:** disabling a module also requires its commands not to be registered, or the tree points at a service that never started. |
+| Safe mode with non-core modules disabled | `tested` | `-Dnexuscore.safemode=true`. Runtime on **all three** loaders: `started 8 module(s), 3 disabled`, core commands working, disabled commands refusing with an explanation, `/nexus system status` degrading, clean shutdown, zero per-tick exceptions. A system property rather than a config key, because a bad `config.json` is one of the things safe mode recovers from. |
 
 ## M2 — Storage, identity, audit · **PASSED**
 
@@ -127,7 +127,7 @@ utilities, moderation with confirmations, and a working admin GUI.
 | Alias registration fails softly | `tested` | Runtime: `/ban`, `/kick`, `/banlist` are vanilla; NexusCore registered `/nban`, `/nkick`, `/nbanlist` instead and logged why. |
 | No stack trace reaches a player | `implemented` | Pipeline catches everything; the player gets a correlation id. |
 | `ModuleManager` | `tested` | `ModuleManagerTest` — 19 tests covering dependency ordering, deterministic tie-breaking, diamonds, cycle and self-cycle rejection, unknown/disabled dependencies, duplicate ids and service types, core-module protection, and reverse-order shutdown including failure. Runtime: `NexusCore started 11 module(s)` on all three loaders. |
-| Generated command documentation from descriptors | `planned` | 1.0.5. `docs/admin/commands.md` is **hand-maintained**, which §12.5 warns will drift. The `ModuleManager` it was blocked on now exists (1.0.3); the descriptor registry does not. |
+| Generated command documentation from descriptors | `tested` | `CommandDocsTest` — 5 tests: the committed `docs/admin/commands.md` must equal what `CommandCatalogue` renders; every node the code checks must have a descriptor; **every descriptor must name a node the code checks**; descriptors must be well-formed; rendering must be deterministic. `/nexus help` renders from the same catalogue. §12.5's drift was real — the old document denied the v1.0 vanilla takeover for two releases. |
 
 ## M5 — Teleport, player utilities, moderation · **PARTIAL**
 
@@ -268,7 +268,7 @@ sequence is open-ended, so nothing has to be crushed to fit.
 | **1.0.2** · *pre-release* | The version scheme (ADR-0012) and `versionLadderCheck`. No runtime change. | **Met.** Gate proven to pass on four legal shapes and to fail nine ways; three loaders build clean at 1.0.2. |
 | **1.0.3** · *pre-release* | `ModuleManager` (§7.3). Services move from explicit `NexusServices` wiring to the module contract. | **Met.** All 11 services resolve through the registry; `NexusCore started 11 module(s)` on all three real servers with zero errors; the 178 pre-existing tests pass unchanged alongside 19 new ones. |
 | **1.0.4** · *pre-release* | Shared sources moved out of `neoforge/src/` into `common/`. The layout wart ADR-0008 documents but does not fix. **Met.** Also fixed: Forge/Fabric archive reproducibility, and `MessageCatalogueTest`'s single-source-root assumption. | All three loaders build from `common/`, and **the same version built from both layouts produces byte-identical jars** — compared by rebuilding the new layout at `-Pmod_version=1.0.3`, since a 1.0.4 jar legitimately differs from a 1.0.3 one in its expanded metadata. |
-| **1.0.5** · *pre-release* | Safe mode with non-core modules disabled (M1) and generated command documentation from descriptors (M4). Both wait on `ModuleManager`. | `docs/admin/commands.md` is generated, not hand-maintained, with a test asserting it matches the registry; a server started in safe mode disables its non-core modules and says so. **M4 complete.** |
+| **1.0.5** · *pre-release* | Safe mode with non-core modules disabled (M1) and generated command documentation from descriptors (M4). **Met.** Also fixed: three mangled Fabric string literals shipped in 1.0.3/1.0.4, the test blindness that let them ship, and `/nexus system status` refusing in safe mode. | `docs/admin/commands.md` is generated, not hand-maintained, with a test asserting it matches the registry; a server started in safe mode disables its non-core modules and says so. **M4 complete.** |
 
 ### Version 1.1 — M5 completion and the storage foundation M6 needs
 

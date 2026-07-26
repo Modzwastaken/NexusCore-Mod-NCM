@@ -115,6 +115,11 @@ public final class NexusCore {
     }
 
     private void onServerTick(ServerTickEvent.Post event) {
+        // Guarded because safe mode leaves the teleport module unstarted, and this runs every tick:
+        // an exception here would be thrown twenty times a second.
+        if (!services.has("teleport")) {
+            return;
+        }
         MinecraftServer server = event.getServer();
         services.teleport().tick(server, (player, outcome) -> {
             if (outcome.moved()) {
@@ -133,6 +138,12 @@ public final class NexusCore {
         }
         services.identity().observe(player);
 
+        // Guarded: a login handler that threw because moderation is disabled would stop players
+        // joining at all, which is the opposite of what safe mode is for.
+        if (!services.has("moderation")) {
+            return;
+        }
+
         // §M5: punishment expiry is re-evaluated at login, not by a background sweep.
         services.moderation().activeBan(player.getUUID()).ifPresent(ban -> {
             String remaining = DurationParser.describeRemaining(ban.expiresAt(), System.currentTimeMillis());
@@ -150,8 +161,12 @@ public final class NexusCore {
         }
         UUID id = player.getUUID();
         services.identity().observeDeparture(id);
-        services.teleport().forget(id);
-        services.players().forget(id);
+        if (services.has("teleport")) {
+            services.teleport().forget(id);
+        }
+        if (services.has("player-utilities")) {
+            services.players().forget(id);
+        }
         services.rateLimiter().forget(id);
     }
 
@@ -165,13 +180,18 @@ public final class NexusCore {
      */
     private void onPlayerDeath(LivingDeathEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
-            services.teleport().recordReturnPoint(player.getUUID(), TeleportService.Location.of(player));
+            if (services.has("teleport")) {
+                services.teleport().recordReturnPoint(player.getUUID(), TeleportService.Location.of(player));
+            }
             DeathMessages.broadcast(player.server, services.messages(), services.settings(), player);
         }
     }
 
     private void onServerChat(ServerChatEvent event) {
         ServerPlayer player = event.getPlayer();
+        if (!services.has("moderation")) {
+            return;
+        }
         services.moderation().activeMute(player.getUUID()).ifPresent(mute -> {
             // Cancel rather than silently drop: the muted player is told, so they are not left
             // wondering whether the server ate their message.

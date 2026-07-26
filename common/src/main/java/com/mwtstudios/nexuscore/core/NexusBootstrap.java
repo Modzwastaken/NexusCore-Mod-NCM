@@ -50,6 +50,13 @@ public final class NexusBootstrap {
      */
     public static Started start(NexusPlatform platform, String modVersion) {
         ModuleManager manager = StandardModules.registerAll(new ModuleManager());
+
+        boolean safeMode = SafeMode.requested();
+        if (safeMode) {
+            SafeMode.disabledModules().forEach(manager::disable);
+        }
+        LOGGER.info("NexusCore {}", SafeMode.describe());
+
         ModuleContext context = manager.start(
                 new ModuleContext(platform.dataRoot(), modVersion, platform.flightController()));
 
@@ -60,15 +67,29 @@ public final class NexusBootstrap {
                 context.service(IdentityService.class),
                 context.service(AuditService.class),
                 context.service(PermissionService.class),
-                context.service(TeleportService.class),
-                context.service(PlayerUtilityService.class),
-                context.service(ModerationService.class),
+                optional(context, TeleportService.class, safeMode),
+                optional(context, PlayerUtilityService.class, safeMode),
+                optional(context, ModerationService.class, safeMode),
                 context.service(RateLimiter.class),
                 context.service(ConfirmationService.class),
                 modVersion);
 
         report(platform, services);
         return new Started(services, manager);
+    }
+
+    /**
+     * Resolves a service that safe mode may have left unstarted.
+     *
+     * <p>Returns null rather than throwing when safe mode is on, and still throws when it is off —
+     * because outside safe mode an absent optional service means the module graph is broken, and
+     * quietly substituting null would hide that.</p>
+     */
+    private static <T> T optional(ModuleContext context, Class<T> type, boolean safeMode) {
+        if (safeMode) {
+            return null;
+        }
+        return context.service(type);
     }
 
     private static void report(NexusPlatform platform, NexusServices services) {

@@ -43,6 +43,17 @@ class MessageCatalogueTest {
     /** Any string literal at all, used for the reverse "is this key dead?" check. */
     private static final Pattern ANY_LITERAL = Pattern.compile("\"([a-z0-9_.-]+)\"");
 
+    /**
+     * Matches the first argument of {@code render}/{@code raw} however it is spelled, so a literal
+     * that is <em>not</em> key-shaped is caught rather than skipped.
+     *
+     * <p>{@link #KEY_CALL} only matches key-shaped literals, so a malformed key was invisible to it
+     * instead of being reported as missing. A bad search-and-replace produced
+     * {@code render("services.teleport().done", …)} and this suite passed — the mangled key shipped
+     * in two builds, and a Fabric player saw the raw string after every teleport.</p>
+     */
+    private static final Pattern ANY_KEY_CALL = Pattern.compile("\\.(?:render|raw)\\(\\s*\"([^\"]*)\"");
+
     /** Keys resolved dynamically or reserved for the mod's own metadata. */
     private static final Set<String> NOT_REFERENCED_DIRECTLY = Set.of("nexuscore.name");
 
@@ -180,5 +191,21 @@ class MessageCatalogueTest {
         assertTrue(MessageService.colourise("&zNotACode").startsWith("&z"), "an invalid code must be left visible");
         assertTrue(MessageService.colourise("trailing&").endsWith("&"), "a lone trailing & must not be swallowed");
         assertTrue(MessageService.colourise("").isEmpty());
+    }
+
+
+    @Test
+    @DisplayName("every render/raw call passes a key-shaped literal")
+    void everyKeyLiteralIsWellFormed() throws IOException {
+        Set<String> malformed = new TreeSet<>();
+        for (String key : scanAll(ANY_KEY_CALL)) {
+            if (!ANY_LITERAL.matcher("\"" + key + "\"").matches()) {
+                malformed.add(key);
+            }
+        }
+
+        assertTrue(malformed.isEmpty(),
+                "these are passed to render()/raw() but are not valid message keys, so the player would "
+                        + "see the raw string: " + malformed);
     }
 }

@@ -187,6 +187,18 @@ tasks.register('versionLadderCheck', VersionLadderCheck) {
     report = layout.buildDirectory.file('reports/version-ladder/report.txt')
 }
 
+// §12.5 — the command reference is generated from CommandCatalogue, never written by hand. The
+// hand-maintained version drifted for two releases: it told operators NexusCore does NOT override
+// /ban, /kick and /banlist, in its "read this first" section, after the v1.0 takeover made that
+// false. CommandDocsTest fails the build if this file and the catalogue disagree.
+tasks.register('generateCommandDocs', JavaExec) {
+    group = 'documentation'
+    description = 'Regenerates docs/admin/commands.md from CommandCatalogue (§12.5).'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.mwtstudios.nexuscore.command.CommandDocsGenerator'
+    args rootProject.file('../docs/admin/commands.md').absolutePath
+}
+
 tasks.named('check') {
     dependsOn 'stubMarkerCheck', 'versionLadderCheck'
 }

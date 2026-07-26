@@ -1,3 +1,8 @@
+<!-- GENERATED FILE. Do not edit by hand.
+     Source: common/src/main/java/com/mwtstudios/nexuscore/command/CommandCatalogue.java
+     Regenerate: ./gradlew :generateCommandDocs (from the neoforge project)
+     CommandDocsTest fails the build if this file and the catalogue disagree. -->
+
 # NexusCore — Command Reference
 
 Every command lives under the canonical `/nexus` root. Short aliases are registered as a
@@ -8,158 +13,133 @@ record with a correlation id. Nothing here is enforced by hiding a button.
 
 ---
 
-## Alias collisions — read this first
+## Vanilla commands NexusCore takes over
 
-`/ban`, `/kick`, and `/banlist` are **vanilla Minecraft commands**. NexusCore does not
-override them (§12.3), because silently replacing a vanilla command is how mods break each
-other.
+`/ban` `/kick` `/banlist` `/pardon` `/list` `/tp` `/teleport` `/gamemode` are **NexusCore's**
+when `overrideVanillaCommands` is true, which is the default. Typing `/ban` gets you
+NexusCore's ban — with a duration, a reason history, an audit record and a styled screen.
 
-That means typing `/ban` gives you **vanilla's** ban, which has no duration, no reason
-history, no audit trail, and no NexusCore record. To get NexusCore's version use either:
+`/tp`, `/teleport` and `/gamemode` are rebuilt from vanilla's own argument types, so
+selectors, absolute and relative coordinates, rotation and `facing` all still work.
 
-```bash
-/nexus moderation ban <player> [reason]     # canonical
-/nban <player> [reason]                     # collision-free alias
-```
+Set `overrideVanillaCommands=false` to leave vanilla in charge; NexusCore's versions then
+stay on the `n`-prefixed names (`/nban`, `/nkick`, …). NexusCore also falls back to those
+names automatically if another mod owns the command, and logs which ones at startup.
 
-NexusCore registers an `n`-prefixed alias automatically whenever a short name is already
-taken, and logs which ones at startup:
+**Not taken over:** `/ban-ip` and `/pardon-ip` are separate vanilla commands. An IP ban is
+therefore neither audited nor listed by NexusCore.
 
-```
-NexusCore did not override /ban — another command owns it. Use /nban or /nexus ... instead.
-```
+---
 
-`/tp` and `/gamemode` are vanilla and are deliberately left alone entirely.
+## Safe mode
+
+Starting the server with `-Dnexuscore.safemode=true` leaves the optional modules out.
+Commands belonging to them refuse with an explanation rather than disappearing:
+
+- **teleport** — 14 command(s) unavailable
+- **player-utilities** — 10 command(s) unavailable
+- **moderation** — 10 command(s) unavailable
 
 ---
 
 ## Core
 
-| Command | Permission | Notes |
-|---|---|---|
-| `/nexus` · `/nexus help` | `nexuscore.command.core.help` | Lists only what you may actually use |
-| `/nexus version` | `nexuscore.command.core.version` | |
-| `/nexus reload` | `nexuscore.command.core.reload` | Transactional: a bad file leaves the running config alone |
-| `/nexus confirm <token>` | `nexuscore.command.core.confirm` | Completes a destructive action |
-| `/nexus system status` | `nexuscore.command.system.status` | Data paths, cache stats, record counts |
-| `/nexus audit verify` | `nexuscore.command.audit.verify` | Walks the hash chain and reports the first break |
+| Command | Alias | Permission | Module |
+|---|---|---|---|
+| `/nexus version` — show the running NexusCore version | — | `nexuscore.command.core.version` | core |
+| `/nexus help` — list the commands you may use | — | `nexuscore.command.core.help` | core |
+| `/nexus reload` — re-read config.json and report what changed, transactionally | — | `nexuscore.command.core.reload` | core |
+| `/nexus confirm` — complete a destructive action you were prompted about | — | `nexuscore.command.core.confirm` | core |
+
+## System
+
+| Command | Alias | Permission | Module |
+|---|---|---|---|
+| `/nexus system status` — show data directory, counts, and audit chain state | — | `nexuscore.command.system.status` | core |
+
+## Audit
+
+| Command | Alias | Permission | Module |
+|---|---|---|---|
+| `/nexus audit tail [count]` — show the most recent audit records | — | `nexuscore.command.audit.tail` | core |
+| `/nexus audit verify` — re-hash the whole audit chain and report tampering | — | `nexuscore.command.audit.verify` | core |
 
 ## Permissions
 
-| Command | Permission |
-|---|---|
-| `/nexus permission check <player> <node>` | `nexuscore.command.permission.check` |
-| `/nexus permission group list` | `nexuscore.command.permission.group` |
-| `/nexus permission group add <player> <group>` | `nexuscore.command.permission.group` |
-| `/nexus permission group remove <player> <group>` | `nexuscore.command.permission.group` |
-
-See [permissions.md](permissions.md) for how a decision is reached.
-
-## Player utilities
-
-| Command | Alias | Permission |
-|---|---|---|
-| `/nexus player heal [player]` | `/heal` | `nexuscore.command.player.heal` |
-| `/nexus player feed [player]` | `/feed` | `nexuscore.command.player.feed` |
-| `/nexus player fly [player]` | `/fly` | `nexuscore.command.player.fly` |
-| `/nexus player god [player]` | `/god` | `nexuscore.command.player.god` |
-| `/nexus player speed <0.1–10> [fly]` · `/nexus player speed reset` | `/speed` | `nexuscore.command.player.speed` |
-| `/nexus player vanish` | `/vanish` | `nexuscore.command.player.vanish` |
-| `/nexus player info <player>` | `/playerinfo` | `nexuscore.command.player.info` |
-
-**Flight** is granted through NeoForge's `creative_flight` attribute, not by writing the
-deprecated ability flag, so it coexists with other mods that grant flight instead of fighting
-them.
-
-**Vanish** makes a player invisible and removes them from the player list. It is a staff
-convenience, not a cloaking device — a vanished player still occupies space and still blocks
-a doorway.
+| Command | Alias | Permission | Module |
+|---|---|---|---|
+| `/nexus permission check <player> <node>` — explain why a player does or does not have a node | — | `nexuscore.command.permission.check` | core |
+| `/nexus permission set <player> <node> <allow|deny>` — grant or deny a node directly on a player | — | `nexuscore.command.permission.set` | core |
+| `/nexus permission group <...>` — inspect and edit groups and their inheritance | — | `nexuscore.command.permission.group` | core |
 
 ## Teleport
 
-| Command | Alias | Permission |
-|---|---|---|
-| `/nexus teleport home [name]` | `/home` | `nexuscore.command.teleport.home` |
-| `/nexus teleport sethome [name]` | `/sethome` | `nexuscore.command.teleport.sethome` |
-| `/nexus teleport delhome <name>` | `/delhome` | `nexuscore.command.teleport.delhome` |
-| `/nexus teleport homes` | `/homes` | `nexuscore.command.teleport.homes` |
-| `/nexus teleport warp <name>` | `/warp` | `nexuscore.command.teleport.warp` |
-| `/nexus teleport setwarp <name>` | `/setwarp` | `nexuscore.command.teleport.setwarp` |
-| `/nexus teleport delwarp <name>` | `/delwarp` | `nexuscore.command.teleport.setwarp` |
-| `/nexus teleport warps` | `/warps` | `nexuscore.command.teleport.warps` |
-| `/nexus teleport spawn` | `/spawn` | `nexuscore.command.teleport.spawn` |
-| `/nexus teleport setspawn` | `/setspawn` | `nexuscore.command.teleport.setspawn` |
-| `/nexus teleport back` | `/back` | `nexuscore.command.teleport.back` |
-| `/nexus teleport tpa <player>` | `/tpa` | `nexuscore.command.teleport.request` |
-| `/nexus teleport tpaccept` | `/tpaccept` | `nexuscore.command.teleport.accept` |
-| `/nexus teleport tpdeny` | `/tpdeny` | `nexuscore.command.teleport.deny` |
+| Command | Alias | Permission | Module |
+|---|---|---|---|
+| `/nexus teleport home [name]` — go to a home | `/home` | `nexuscore.command.teleport.home` | teleport |
+| `/nexus teleport sethome <name>` — save your current position as a home | `/sethome` | `nexuscore.command.teleport.sethome` | teleport |
+| `/nexus teleport delhome <name>` — delete one of your homes | `/delhome` | `nexuscore.command.teleport.delhome` | teleport |
+| `/nexus teleport homes` — list your homes | `/homes` | `nexuscore.command.teleport.homes` | teleport |
+| `/nexus teleport warp <name>` — go to a warp | `/warp` | `nexuscore.command.teleport.warp` | teleport |
+| `/nexus teleport setwarp <name>` — create a server-wide warp here | `/setwarp` | `nexuscore.command.teleport.setwarp` | teleport |
+| `/nexus teleport warps` — list the warps | `/warps` | `nexuscore.command.teleport.warps` | teleport |
+| `/nexus teleport spawn` — go to spawn | `/spawn` | `nexuscore.command.teleport.spawn` | teleport |
+| `/nexus teleport setspawn` — set the spawn point here | `/setspawn` | `nexuscore.command.teleport.setspawn` | teleport |
+| `/nexus teleport back` — return to your last position, including where you died | `/back` | `nexuscore.command.teleport.back` | teleport |
+| `/nexus teleport request <player>` — ask a player for permission to teleport to them | `/tpa` | `nexuscore.command.teleport.request` | teleport |
+| `/nexus teleport accept` — accept a pending teleport request | `/tpaccept` | `nexuscore.command.teleport.accept` | teleport |
+| `/nexus teleport deny` — refuse a pending teleport request | `/tpdeny` | `nexuscore.command.teleport.deny` | teleport |
+| `/nexus teleport tp <player> [destination]` — staff teleport, with no warmup, cooldown or safety search | `/tphere` | `nexuscore.command.teleport.tp` | teleport |
 
-**Safety.** Every destination is checked for solid footing, open head space, no fluid, no
-lava, fire, cactus, magma, berry bush, powder snow, or portal block, and for being inside the
-world border and build height. If no safe spot is found within the configured search height,
-the teleport is **refused with the specific reason** — never redirected somewhere "close
-enough".
+## Player utilities
 
-**Warmup.** Teleports wait `teleportWarmupSeconds` (default 3) and cancel if the player
-moves more than `teleportWarmupMoveTolerance` blocks. Safety is re-checked at the moment of
-arrival, not only when the command was typed. `/back` is only recorded once a teleport has
-actually committed.
+| Command | Alias | Permission | Module |
+|---|---|---|---|
+| `/nexus player heal [player]` — restore health | `/heal` | `nexuscore.command.player.heal` | player-utilities |
+| `/nexus player feed [player]` — restore hunger | `/feed` | `nexuscore.command.player.feed` | player-utilities |
+| `/nexus player fly [player]` — toggle flight | `/fly` | `nexuscore.command.player.fly` | player-utilities |
+| `/nexus player god [player]` — toggle invulnerability | `/god` | `nexuscore.command.player.god` | player-utilities |
+| `/nexus player speed <value> [player]` — set walk and fly speed | `/speed` | `nexuscore.command.player.speed` | player-utilities |
+| `/nexus player vanish [player]` — hide from the player list and from sight | `/vanish` | `nexuscore.command.player.vanish` | player-utilities |
+| `/nexus player info <player>` — show a player's state, groups and punishments | `/playerinfo` | `nexuscore.command.player.info` | player-utilities |
+| `/nexus player seen <player>` — show when a player was last online | `/seen` | `nexuscore.command.player.seen` | player-utilities |
+| `/nexus player list` — list online players, respecting vanish | `/list` | `nexuscore.command.player.list` | player-utilities |
+| `/nexus player near [radius]` — list players close to you | `/near` | `nexuscore.command.player.near` | player-utilities |
+
+## Staff
+
+| Command | Alias | Permission | Module |
+|---|---|---|---|
+| `/gamemode <mode> [targets]` — change game mode, with vanilla's full selector grammar preserved | — | `nexuscore.command.staff.gamemode` | core |
 
 ## Moderation
 
-| Command | Alias | Permission |
-|---|---|---|
-| `/nexus moderation kick <player> [reason]` | `/nkick` | `nexuscore.command.moderation.kick` |
-| `/nexus moderation ban <player> [reason]` | `/nban` | `nexuscore.command.moderation.ban` |
-| `/nexus moderation tempban <player> <duration> [reason]` | `/tempban` | `nexuscore.command.moderation.tempban` |
-| `/nexus moderation unban <player>` | `/unban` | `nexuscore.command.moderation.unban` |
-| `/nexus moderation mute <player> [duration] [reason]` | `/mute` | `nexuscore.command.moderation.mute` |
-| `/nexus moderation unmute <player>` | `/unmute` | `nexuscore.command.moderation.unmute` |
-| `/nexus moderation warn <player> <reason>` | `/warn` | `nexuscore.command.moderation.warn` |
-| `/nexus moderation warnings <player>` | `/warnings` | `nexuscore.command.moderation.warnings` |
-| `/nexus moderation banlist` | `/nbanlist` | `nexuscore.command.moderation.banlist` |
+| Command | Alias | Permission | Module |
+|---|---|---|---|
+| `/nexus moderation kick <player> [reason]` — disconnect a player with a styled reason | `/kick` | `nexuscore.command.moderation.kick` | moderation |
+| `/nexus moderation ban <player> [reason]` — ban permanently — needs confirmation | `/ban` | `nexuscore.command.moderation.ban` | moderation |
+| `/nexus moderation tempban <player> <duration> [reason]` — ban until a durable expiry | `/tempban` | `nexuscore.command.moderation.tempban` | moderation |
+| `/nexus moderation unban <player>` — lift a ban, keeping the history | `/unban` | `nexuscore.command.moderation.unban` | moderation |
+| `/nexus moderation mute <player> [duration] [reason]` — stop a player chatting | `/mute` | `nexuscore.command.moderation.mute` | moderation |
+| `/nexus moderation unmute <player>` — lift a mute, keeping the history | `/unmute` | `nexuscore.command.moderation.unmute` | moderation |
+| `/nexus moderation warn <player> <reason>` — record a warning against a player | `/warn` | `nexuscore.command.moderation.warn` | moderation |
+| `/nexus moderation warnings <player>` — list a player's warnings | `/warnings` | `nexuscore.command.moderation.warnings` | moderation |
+| `/nexus moderation banlist` — list active bans | `/banlist` | `nexuscore.command.moderation.banlist` | moderation |
 
-**A permanent ban requires confirmation.** It prints a token bound to that exact player and
-reason:
+## Admin GUI
 
-```
-/nexus moderation ban Griefer breaking spawn
-  → Confirm this ban. Run /nexus confirm a1b2c3d4e5f6a7b8c9 within 30s.
-/nexus confirm a1b2c3d4e5f6a7b8c9
-  → Confirmed: permanently ban Griefer (breaking spawn)
-```
-
-The token is single-use and cannot ban anyone else, ban the same player for a different
-reason, or be spent by a different staff member. Reusing it is refused.
-
-**Punishments are never deleted.** `/unban` marks the record inactive and stamps who lifted
-it and when. The history stays, which is what makes a repeat offender visible.
-
-**Bans are enforced by NexusCore.** They are NexusCore records, not vanilla ban-list entries,
-which is what gives them durations, actor UUIDs, reasons, and audit linkage. If you remove
-the mod, NexusCore bans stop applying.
-
-### Durations
-
-Accepted: `30s` `15m` `2h` `7d` `1w`, combined in **descending** order (`1d12h30m`), or a
-permanent keyword (`permanent`, `perm`, `forever`, `never`, `infinite`).
-
-Refused, with a message saying why: ascending or repeated units (`30m1d`, `1h1h`), fractions
-(`1.5h`), negatives, zero, bare numbers, and anything over ten years.
-
-## Admin panel
-
-| Command | Permission |
-|---|---|
-| `/nexus gui` · `/adminpanel` | `nexuscore.gui.admin.open` |
-
-See [admin-gui.md](admin-gui.md).
+| Command | Alias | Permission | Module |
+|---|---|---|---|
+| `/adminpanel` — open the admin panel, a vanilla chest menu | — | `nexuscore.gui.admin.open` | core |
+| `(GUI) players page` — browse players and act on one | — | `nexuscore.gui.admin.players` | core |
+| `(GUI) moderation page` — review and lift punishments | — | `nexuscore.gui.admin.moderation` | moderation |
+| `(GUI) permissions page` — inspect groups and nodes | — | `nexuscore.gui.admin.permissions` | core |
 
 ---
 
-## What is not here yet
+## Totals
 
-Economy, shops, chat channels, private messages, jail, reports, the scheduler, backups, and
-world administration are **not implemented**. They are milestones M6 to M8. See
-`IMPLEMENTATION_STATUS.md` for the authoritative list — nothing above is listed unless it
-exists and has been run.
+| | |
+|---|---|
+| Commands described | 48 |
+| Permission nodes | 48 |

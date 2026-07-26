@@ -11,6 +11,7 @@ import com.mwtstudios.nexuscore.config.NexusSettings;
 import com.mwtstudios.nexuscore.identity.IdentityService;
 import com.mwtstudios.nexuscore.message.MessageService;
 import com.mwtstudios.nexuscore.moderation.ModerationService;
+import com.mwtstudios.nexuscore.module.ModuleException;
 import com.mwtstudios.nexuscore.permission.PermissionDecision;
 import com.mwtstudios.nexuscore.permission.PermissionService;
 import com.mwtstudios.nexuscore.player.PlayerUtilityService;
@@ -123,19 +124,61 @@ public final class NexusServices {
         return permissions;
     }
 
-    /** @return the teleport service */
+    /**
+     * @return the teleport service
+     * @throws ModuleException in safe mode, where the {@code teleport} module is not started
+     */
     public TeleportService teleport() {
-        return teleport;
+        return required(teleport, "teleport");
     }
 
-    /** @return the player utility toolkit */
+    /**
+     * @return the player utility toolkit
+     * @throws ModuleException in safe mode, where the {@code player-utilities} module is not started
+     */
     public PlayerUtilityService players() {
-        return players;
+        return required(players, "player-utilities");
     }
 
-    /** @return the moderation service */
+    /**
+     * @return the moderation service
+     * @throws ModuleException in safe mode, where the {@code moderation} module is not started
+     */
     public ModerationService moderation() {
-        return moderation;
+        return required(moderation, "moderation");
+    }
+
+    /**
+     * Whether an optional module started.
+     *
+     * <p>For callers that must not throw — event handlers, mainly. A login handler that blew up
+     * because moderation is disabled would stop players joining, which is the opposite of what safe
+     * mode is for.</p>
+     *
+     * @param module the module id
+     * @return true when that module's service is available
+     */
+    public boolean has(String module) {
+        return switch (module) {
+            case "teleport" -> teleport != null;
+            case "player-utilities" -> players != null;
+            case "moderation" -> moderation != null;
+            default -> true;
+        };
+    }
+
+    /**
+     * Optional services are null in safe mode. Throwing a named {@link ModuleException} rather than
+     * letting a null escape is the whole reason the disabled path is safe: the command pipeline
+     * catches it and tells the player the feature is off, instead of a null dereference surfacing
+     * somewhere unrelated with no indication why.
+     */
+    private static <T> T required(T service, String module) {
+        if (service == null) {
+            throw new ModuleException("the '" + module + "' module is not started, so this command is "
+                    + "unavailable. The server is running in safe mode (-D" + SafeMode.PROPERTY + ").");
+        }
+        return service;
     }
 
     /** @return the command rate limiter */

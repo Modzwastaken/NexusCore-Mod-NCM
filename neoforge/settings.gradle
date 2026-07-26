@@ -18,7 +18,6 @@ plugins {
 
 rootProject.name = 'NexusCore'
 
-// The root project is the NeoForge build. Fabric is a sibling module that compiles the same
-// shared sources with its own toolchain; nothing is moved, so the released NeoForge build is
-// unaffected by the port. See docs/architecture/ADR-0008.md.
-include 'fabric'
+// Each mod loader is an independent Gradle build in its own sibling directory
+// (neoforge/, fabric/, forge/). They share source rather than a build: see
+// ../fabric/build.gradle, which compiles this project's src/main/java directly.

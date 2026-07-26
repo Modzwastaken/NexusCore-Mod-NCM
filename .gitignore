@@ -43,7 +43,12 @@ repo/
 # Build transcripts captured for milestone evidence blocks live outside the repo.
 *.log
 build-*.log
-# Local dedicated server used for the packaged-JAR milestone verification (§17.1).
-testserver/
-run/
+# Local dedicated servers used to verify each packaged JAR on the real loader.
+# One per loader, named to match the project directories.
+neoforgeserver/
 fabricserver/
+forgeserver/
+
+# Server logs, in any loader's run directory.
+*.log.gz
+logs/

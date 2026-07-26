@@ -4,11 +4,18 @@ plugins {
     id 'fabric-loom' version '1.15.4'
 }
 
-version = rootProject.mod_version
-group = rootProject.mod_group_id
+// Versions live in ONE place: the NeoForge project's gradle.properties. Duplicating them per
+// loader is how a release ends up with three jars claiming different Minecraft versions.
+def shared = new Properties()
+file('../neoforge/gradle.properties').withInputStream { shared.load(it) }
+def sharedSrc = file('../neoforge/src/main/java')
+def sharedRes = file('../neoforge/src/main/resources')
+
+version = shared.mod_version
+group = shared.mod_group_id
 
 base {
-    archivesName = "${rootProject.mod_archive_base_name}-fabric"
+    archivesName = "${shared.mod_archive_base_name}-fabric"
 }
 
 java {
@@ -18,7 +25,7 @@ java {
 // Produces build/libs/NexusCore-<version>-fabric.jar, matching the NeoForge artifact's shape.
 // Loom's remapJar produces the shippable artifact; the plain `jar` task produces an
 // unmapped dev jar. The classifier has to go on remapJar or the released file is misnamed.
-def mcVersion = rootProject.minecraft_version.toString()
+def mcVersion = shared.minecraft_version.toString()
 
 tasks.named('remapJar') {
     archiveClassifier = mcVersion
@@ -38,12 +45,12 @@ repositories {
 //
 // Mojang mappings are used rather than Yarn for the same reason — under Yarn every shared
 // file would need different type names and none of this would compile unchanged.
-sourceSets.main.java.srcDirs += rootProject.file('src/main/java')
+sourceSets.main.java.srcDirs += sharedSrc
 // Must be the resources ROOT, not the assets subdirectory: adding `.../resources/assets`
 // puts its *contents* at the jar root, so the catalogue lands at /nexuscore/lang/en_us.json
 // and MessageService cannot find /assets/nexuscore/lang/en_us.json. Caught on a real Fabric
 // server, which reported "0 message(s)".
-sourceSets.main.resources.srcDirs += rootProject.file('src/main/resources')
+sourceSets.main.resources.srcDirs += sharedRes
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
@@ -63,15 +70,27 @@ sourceSets.main.java {
 }
 
 dependencies {
-    minecraft "com.mojang:minecraft:${rootProject.minecraft_version}"
+    minecraft "com.mojang:minecraft:${shared.minecraft_version}"
     mappings loom.officialMojangMappings()
-    modImplementation "net.fabricmc:fabric-loader:${rootProject.fabric_loader_version}"
-    modImplementation "net.fabricmc.fabric-api:fabric-api:${rootProject.fabric_api_version}"
+    modImplementation "net.fabricmc:fabric-loader:${shared.fabric_loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${shared.fabric_api_version}"
+
+    testImplementation platform("org.junit:junit-bom:${shared.junit_version}")
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
 }
 
 checkstyle {
     toolVersion = '10.21.1'
-    configFile = rootProject.file('config/checkstyle/checkstyle.xml')
+    configFile = file('../neoforge/config/checkstyle/checkstyle.xml')
     maxWarnings = 0
     ignoreFailures = false
 }
@@ -79,18 +98,32 @@ checkstyle {
 // Values are captured into a plain map here, outside the closure. Referencing `project`
 // from inside a task action is not configuration-cache safe.
 def modJsonValues = [
-        version              : rootProject.mod_version.toString(),
-        mod_id               : rootProject.mod_id.toString(),
-        mod_display_name     : rootProject.mod_display_name.toString(),
-        mod_authors          : rootProject.mod_authors.toString(),
-        mod_license          : rootProject.mod_license.toString(),
-        minecraft_version    : rootProject.minecraft_version.toString(),
-        fabric_loader_version: rootProject.fabric_loader_version.toString()
+        version              : shared.mod_version.toString(),
+        mod_id               : shared.mod_id.toString(),
+        mod_display_name     : shared.mod_display_name.toString(),
+        mod_authors          : shared.mod_authors.toString(),
+        mod_license          : shared.mod_license.toString(),
+        minecraft_version    : shared.minecraft_version.toString(),
+        fabric_loader_version: shared.fabric_loader_version.toString()
 ]
 
 tasks.named('processResources', ProcessResources) {
     inputs.properties modJsonValues
     filesMatching('fabric.mod.json') {
         expand modJsonValues
+    }
+}
+
+// Lets the dev client auto-load a world so an INTEGRATED server actually starts:
+//   ./gradlew runClient -PquickPlay=NexusTest
+// This is how the singleplayer/LAN path gets tested. It is the path that was broken when the
+// mod used a dedicated-server-only entrypoint and did nothing in singleplayer.
+loom {
+    runs {
+        client {
+            if (project.hasProperty('quickPlay')) {
+                programArgs '--quickPlaySingleplayer', project.property('quickPlay').toString()
+            }
+        }
     }
 }

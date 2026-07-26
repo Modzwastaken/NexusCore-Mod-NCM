@@ -22,8 +22,9 @@ import com.mwtstudios.nexuscore.player.PlayerUtilityService;
 import com.mwtstudios.nexuscore.storage.JsonStore;
 import com.mwtstudios.nexuscore.teleport.TeleportService;
 
-import net.fabricmc.api.DedicatedServerModInitializer;
+import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.message.v1.ServerMessageEvents;
@@ -41,10 +42,18 @@ import org.slf4j.Logger;
  * beyond the flight controller. Every service, command, permission rule, and GUI screen is
  * compiled from the same shared sources, so a fix lands on both loaders at once.</p>
  *
- * <p>Registered as a {@code server} entrypoint: NexusCore is a dedicated-server
- * administration mod and has nothing to initialise on a client.</p>
+ * <p><b>Registered as a {@code main} entrypoint, deliberately.</b> An earlier version used
+ * {@code DedicatedServerModInitializer} on the reasoning that NexusCore is a server mod with
+ * nothing to do on a client. That was wrong, and it made the mod do nothing at all in
+ * singleplayer and on an opened LAN world: those run an <em>integrated</em> server, which is
+ * not a dedicated one, so the server entrypoint never fired. The mod loaded, listed itself,
+ * and was silent.</p>
+ *
+ * <p>Every hook below keys off the {@link net.minecraft.server.MinecraftServer} lifecycle, and
+ * an integrated server fires all of them, so {@code main} is both correct and the only variant
+ * that matches how the NeoForge build behaves.</p>
  */
-public final class NexusCoreFabric implements DedicatedServerModInitializer {
+public final class NexusCoreFabric implements ModInitializer {
 
     /** Directory under the game directory holding every NexusCore data file. */
     public static final String DATA_DIRECTORY = "nexuscore";
@@ -52,7 +61,7 @@ public final class NexusCoreFabric implements DedicatedServerModInitializer {
     private static final Logger LOGGER = LogUtils.getLogger();
 
     @Override
-    public void onInitializeServer() {
+    public void onInitialize() {
         String version = FabricLoader.getInstance()
                 .getModContainer(com.mwtstudios.nexuscore.core.NexusServices.MOD_ID)
                 .map(container -> container.getMetadata().getVersion().getFriendlyString())
@@ -134,6 +143,14 @@ public final class NexusCoreFabric implements DedicatedServerModInitializer {
                     "reason", mute.get().reason(),
                     "remaining", DurationParser.describeRemaining(mute.get().expiresAt(), System.currentTimeMillis())));
             return false;
+        });
+
+        // Parity with the NeoForge build: /back returns you to where you died, which is the
+        // behaviour players actually expect and the one case where no teleport happened.
+        ServerLivingEntityEvents.AFTER_DEATH.register((entity, damageSource) -> {
+            if (entity instanceof ServerPlayer player) {
+                teleport.recordReturnPoint(player.getUUID(), TeleportService.Location.of(player));
+            }
         });
 
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {

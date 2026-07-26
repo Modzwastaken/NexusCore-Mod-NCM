@@ -8,7 +8,7 @@
   "license": "${mod_license}",
   "environment": "*",
   "entrypoints": {
-    "server": ["com.mwtstudios.nexuscore.fabric.NexusCoreFabric"]
+    "main": ["com.mwtstudios.nexuscore.fabric.NexusCoreFabric"]
   },
   "depends": {
     "fabricloader": ">=${fabric_loader_version}",

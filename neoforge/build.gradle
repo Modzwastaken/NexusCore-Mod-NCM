@@ -58,6 +58,12 @@ runs {
 
     client {
         systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+        // ./gradlew runClient -PquickPlay=NexusTest loads a world straight away, so the
+        // integrated-server path gets exercised rather than just the main menu.
+        if (project.hasProperty('quickPlay')) {
+            argument '--quickPlaySingleplayer'
+            argument project.property('quickPlay').toString()
+        }
     }
 
     server {

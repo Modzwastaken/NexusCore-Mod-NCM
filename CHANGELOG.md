@@ -14,6 +14,13 @@ The v1.0 release ships all three loaders at once. Earlier interim tags were coll
 this release; nothing had been published externally, so no released version is being
 rewritten.
 
+### Known gap
+
+The Forge **client** is untested: ForgeGradle's dev runs cannot load the mod from the
+shared-source layout (it fails for its dev server too, so it is the dev-run wiring, not a
+side-specific problem). The packaged Forge jar is verified on a real Forge dedicated server.
+Documented in `forge/build.gradle`.
+
 ### NexusCore now owns the vanilla commands it supersedes
 
 `/ban` `/kick` `/banlist` `/pardon` `/list` `/tp` `/gamemode` are NexusCore's. Previously

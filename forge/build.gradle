@@ -20,10 +20,6 @@ java {
     toolchain.languageVersion = JavaLanguageVersion.of(21)
 }
 
-minecraft {
-    mappings channel: 'official', version: shared.minecraft_version
-}
-
 repositories {
     mavenCentral()
 }
@@ -40,6 +36,52 @@ sourceSets.main.java {
 
 sourceSets.main.resources {
     exclude 'META-INF/neoforge.mods.toml'
+}
+
+// KNOWN LIMITATION — the ForgeGradle dev runs below do not currently load the mod.
+//
+// `./gradlew runClient` and `./gradlew runServer` both fail with:
+//     File build/resources/main constructed 0 mods: [], but had 1 mods specified: [nexuscore]
+// ForgeGradle is not emitting a MOD_CLASSES entry for build/classes/java/main, so FML sees
+// the resources directory (which holds mods.toml) as a mod file with no @Mod class in it.
+// Confirmed with --info: MOD_CLASSES is never set. It fails identically for client and
+// server, so it is the dev-run mod-source wiring, not anything side-specific.
+//
+// This affects the development environment ONLY. The packaged jar is unaffected and is
+// verified on a real MinecraftForge 52.1.16 dedicated server. NeoGradle and Loom both handle
+// the same shared-source layout without complaint, so the layout itself is sound.
+//
+// Until this is solved, test the Forge build the way it actually ships: build the jar and
+// drop it into a real Forge server's mods/ folder (see ../forgeserver).
+minecraft {
+    mappings channel: 'official', version: shared.minecraft_version
+
+    runs {
+        client {
+            workingDirectory project.file('run/client')
+            property 'forge.logging.console.level', 'info'
+            // ./gradlew runClient -PquickPlay=NexusTest loads a world straight away, so the
+            // integrated-server path gets exercised rather than just the main menu.
+            if (project.hasProperty('quickPlay')) {
+                args '--quickPlaySingleplayer', project.property('quickPlay').toString()
+            }
+            mods {
+                nexuscore {
+                    source sourceSets.main
+                }
+            }
+        }
+        server {
+            workingDirectory project.file('run/server')
+            property 'forge.logging.console.level', 'info'
+            args '--nogui'
+            mods {
+                nexuscore {
+                    source sourceSets.main
+                }
+            }
+        }
+    }
 }
 
 dependencies {

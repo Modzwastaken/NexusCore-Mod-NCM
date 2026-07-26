@@ -8,8 +8,15 @@ version = mod_version
 group = mod_group_id
 
 base {
-    // §18.3 — the archive base name must produce exactly NexusCore-<version>.jar
     archivesName = mod_archive_base_name
+}
+
+// The mod loader is part of the artifact's identity: a NeoForge JAR and a Forge JAR for the
+// same Minecraft version are not interchangeable, and a server operator downloading the wrong
+// one gets a mod that silently does not load. Naming it in the file removes that class of
+// mistake. Produces build/libs/NexusCore-<version>-neoforge.jar.
+tasks.named('jar', Jar) {
+    archiveClassifier = mod_loader_name
 }
 
 // §4.1 — Java 21, matching the JRE Mojang ships for 1.21.1.

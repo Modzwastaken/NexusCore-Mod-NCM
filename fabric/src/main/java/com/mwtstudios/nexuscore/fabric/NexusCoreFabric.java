@@ -15,6 +15,7 @@ import com.mwtstudios.nexuscore.config.NexusSettings;
 import com.mwtstudios.nexuscore.core.NexusServices;
 import com.mwtstudios.nexuscore.gui.AdminGuiService;
 import com.mwtstudios.nexuscore.identity.IdentityService;
+import com.mwtstudios.nexuscore.message.DeathMessages;
 import com.mwtstudios.nexuscore.message.MessageService;
 import com.mwtstudios.nexuscore.moderation.ModerationService;
 import com.mwtstudios.nexuscore.moderation.PunishmentMessages;
@@ -150,8 +151,12 @@ public final class NexusCoreFabric implements ModInitializer {
         ServerLivingEntityEvents.AFTER_DEATH.register((entity, damageSource) -> {
             if (entity instanceof ServerPlayer player) {
                 teleport.recordReturnPoint(player.getUUID(), TeleportService.Location.of(player));
+                DeathMessages.broadcast(player.server, messages, configuration.settings(), player);
             }
         });
+
+        ServerLifecycleEvents.SERVER_STARTED.register(server ->
+                DeathMessages.takeOver(server, configuration.settings()));
 
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
             confirmations.clear();

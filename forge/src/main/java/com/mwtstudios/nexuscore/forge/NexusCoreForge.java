@@ -15,6 +15,7 @@ import com.mwtstudios.nexuscore.config.NexusSettings;
 import com.mwtstudios.nexuscore.core.NexusServices;
 import com.mwtstudios.nexuscore.gui.AdminGuiService;
 import com.mwtstudios.nexuscore.identity.IdentityService;
+import com.mwtstudios.nexuscore.message.DeathMessages;
 import com.mwtstudios.nexuscore.message.MessageService;
 import com.mwtstudios.nexuscore.moderation.ModerationService;
 import com.mwtstudios.nexuscore.moderation.PunishmentMessages;
@@ -31,6 +32,7 @@ import net.minecraftforge.event.ServerChatEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
+import net.minecraftforge.event.server.ServerStartedEvent;
 import net.minecraftforge.event.server.ServerStoppingEvent;
 import net.minecraftforge.fml.ModList;
 import net.minecraftforge.fml.common.Mod;
@@ -96,6 +98,7 @@ public final class NexusCoreForge {
         this.gui = new AdminGuiService(services);
 
         MinecraftForge.EVENT_BUS.addListener(this::onRegisterCommands);
+        MinecraftForge.EVENT_BUS.addListener(this::onServerStarted);
         MinecraftForge.EVENT_BUS.addListener(this::onServerStopping);
         MinecraftForge.EVENT_BUS.addListener(this::onServerTick);
         MinecraftForge.EVENT_BUS.addListener(this::onPlayerLogin);
@@ -115,6 +118,10 @@ public final class NexusCoreForge {
 
     private void onRegisterCommands(RegisterCommandsEvent event) {
         NexusCommands.register(event.getDispatcher(), services, gui, displayName, version);
+    }
+
+    private void onServerStarted(ServerStartedEvent event) {
+        DeathMessages.takeOver(event.getServer(), services.settings());
     }
 
     private void onServerStopping(ServerStoppingEvent event) {
@@ -172,6 +179,7 @@ public final class NexusCoreForge {
     private void onPlayerDeath(LivingDeathEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             services.teleport().recordReturnPoint(player.getUUID(), TeleportService.Location.of(player));
+            DeathMessages.broadcast(player.server, services.messages(), services.settings(), player);
         }
     }
 }

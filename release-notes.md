@@ -115,6 +115,30 @@ This matters more than the feature list, so it is here rather than in a roadmap.
 - **No benchmark harness.** Every performance figure anywhere in this project is a **target,
   not a measurement**, and is labelled as such. No player-count claim is made.
 
+### NexusCore owns the commands, not vanilla
+
+`/ban` `/kick` `/banlist` `/pardon` `/list` `/tp` `/gamemode` now run NexusCore's versions.
+Type `/ban griefer 2h spam` and you get a duration, an audit record, and the styled ban
+screen — not vanilla's bare kick-with-no-expiry.
+
+`/tp` and `/gamemode` keep **all** of vanilla's syntax, rebuilt from vanilla's own argument
+types: selectors (`@a`, `@e[type=…]`), absolute, relative (`~`) and local (`^`) coordinates,
+rotation, and `facing <location | entity [anchor]>`.
+
+Prefer vanilla? Set `overrideVanillaCommands=false` in `config.json` and NexusCore's versions
+move to `/nban`, `/nkick`, and so on.
+
+### Death messages
+
+Death messages are styled on all three loaders. NexusCore turns off the `showDeathMessages`
+game rule so deaths are not announced twice, and says so at startup with the command to undo
+it. Set `styleDeathMessages=false` to go back to vanilla.
+
+**Join and leave messages are still vanilla.** Minecraft broadcasts those from inside
+`PlayerList` with no hook before it on any loader — verified in the sources, not assumed —
+so replacing them needs a mixin, and NexusCore v1.0 ships none by policy. It is on the v1.5
+list.
+
 ### The message style
 
 All messages follow one visual language, and every one of them can be reworded by the
@@ -148,7 +172,7 @@ feature work planned for v1.5, not part of this release.
 
 ### Known limitations
 
-- **No GameTests.** Unit coverage is good (169 tests on the shared sources); in-world automated tests do not exist.
+- **No GameTests.** Unit coverage is good (94 catalogue keys; 172 tests on the shared sources); in-world automated tests do not exist.
 - **Bans are NexusCore records, not vanilla ban-list entries.** That is what gives them
   durations, actor UUIDs, reasons, and audit linkage — but if you remove the mod, NexusCore
   bans stop applying.
@@ -173,7 +197,7 @@ Every jar was run on a **real dedicated server for its own loader**, not just bu
 | Check | NeoForge | Fabric | Forge |
 |---|---|---|---|
 | `clean build` from a clean checkout | pass | pass | pass |
-| Unit tests | 169 | 3 | 3 |
+| Unit tests | 172 | 3 | 3 |
 | Checkstyle + stub-marker gate | clean | clean | n/a |
 | Packaged jar on a real dedicated server | pass | pass | pass |
 | Server `ERROR` lines caused by NexusCore | 0 | 0 | 0 |

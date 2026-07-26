@@ -36,7 +36,7 @@ utilities, moderation with confirmations, and a working admin GUI.
 
 **Two things are true at once, and both matter:**
 
-1. **175 automated tests pass (169 NeoForge + 3 Fabric + 3 Forge)**, and the whole feature set has been exercised end to end on a
+1. **178 automated tests pass (172 NeoForge + 3 Fabric + 3 Forge)**, and the whole feature set has been exercised end to end on a
    real NeoForge 21.1.235 dedicated server with zero errors, including a restart.
 2. **No human player has ever joined this server.** Every runtime check was driven through
    the console. Anything that only happens with a real player in the world —
@@ -64,7 +64,7 @@ utilities, moderation with confirmations, and a working admin GUI.
 | Typed config with `schemaVersion`, validation report, transactional reload | `tested` | `ConfigurationServiceTest` — 10 tests including `outOfRangeValueIsClampedAndReported` (asserts all five required fields) and `failedReloadIsTransactional`. |
 | Corrupt config does not crash the server | `tested` | `unreadableConfigFallsBackSafely`; confirmed at runtime. |
 | `MessageService`, server-side resolution | `tested` | `MessageCatalogueTest` — every referenced key exists, no dead keys, no positional placeholders. ADR-0003. |
-| Complete `en_us.json` | `tested` | `everyReferencedKeyExists` — 73 keys, mechanically enforced. |
+| Complete `en_us.json` | `tested` | `everyReferencedKeyExists` — 94 keys, mechanically enforced. |
 | `/nexus reload` | `tested` | Runtime: `configuration reloaded, no problems found`. |
 | Structured logging with correlation ids | `implemented` | Every audit record and error log carries one. |
 | Safe mode with non-core modules disabled | `planned` | Needs `ModuleManager`; there are no optional modules yet to disable. |

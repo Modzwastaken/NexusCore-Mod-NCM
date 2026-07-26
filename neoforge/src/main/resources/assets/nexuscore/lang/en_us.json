@@ -1,14 +1,11 @@
 {
   "nexuscore.name": "NexusCore Administration Framework",
-
   "error.no-permission": "&c&lNEXUS &c» &7You do not have permission to do that. &8({node})",
   "error.rate-limited": "&c&lCHAT &c» &7Please slow down — you are running commands too quickly.",
   "error.internal": "&c&lNEXUS &c» &7That command failed. Ask an administrator to check the server log for id &f{id}&7.",
   "error.unknown-player": "&c&lNEXUS &c» &7No player named &f{name}&7 is known to this server.",
-
   "confirm.rejected": "&c&lCONFIRM &c» &7That confirmation is not valid &8({reason})&7. Run the command again to get a new one.",
   "confirm.done": "&a&lCONFIRM &a» &7Confirmed: &f{action}",
-
   "player.heal.success": "&a&lHEAL &a» &7Healed &f{target}&7.",
   "player.feed.success": "&a&lFEED &a» &7Fed &f{target}&7.",
   "player.fly.enabled": "&b&lFLY &b» &7Flight for &f{target}&7: &aenabled",
@@ -19,7 +16,6 @@
   "player.speed.reset": "&b&lSPEED &b» &7Speeds restored to normal.",
   "player.vanish.enabled": "&d&lVANISH &d» &7You are now &fhidden&7. Players cannot see you in the world or the player list.",
   "player.vanish.disabled": "&d&lVANISH &d» &7You are &fvisible &7again.",
-
   "teleport.done": "&b&lTP &b» &7Teleported to &f{label}&7.",
   "teleport.warmup": "&b&lTP &b» &7Teleporting to &f{label}&7 in &6{seconds}sec. &8— &7do not move!",
   "teleport.failed": "&c&lTP &c» &7Teleport failed: &f{reason}",
@@ -45,7 +41,6 @@
   "teleport.request.denied": "&c&lTP &c» &f{player} &7denied your teleport request.",
   "teleport.request.denied-by-you": "&e&lTP &e» &7Teleport request denied.",
   "teleport.tp.success": "&b&lTP &b» &7Teleported &f{target}&7 to &f{destination}&7.",
-
   "moderation.kick.disconnect": "&c&l⚠ YOU HAVE BEEN KICKED ⚠\n\n&7You were removed from the server\n&7with the following reason: &f\"{reason}\"&7.\n\n&7You may rejoin at any time.",
   "moderation.kick.success": "&c&lKICK &c» &7Kicked &f{target}&7.",
   "moderation.kick.broadcast": "&c&lKICK &c» &f{target} &7was kicked by &f{actor}&7: &f\"{reason}\"",
@@ -64,7 +59,6 @@
   "moderation.warn.notify": "&e&lWARN &e» &7You have been warned by staff: &f\"{reason}\"",
   "moderation.warnings.none": "&e&lWARN &e» &f{target} &7has no warnings.",
   "moderation.banlist.none": "&a&lBAN &a» &7There are no active bans.",
-
   "permission.set.success": "&9&lPERMS &9» &7Set &f{node} &8= &6{value}&7 directly on &f{target}&7.",
   "permission.unset.success": "&9&lPERMS &9» &7Removed the direct node &f{node}&7 from &f{target}&7.",
   "permission.unset.none": "&c&lPERMS &c» &f{target} &7has no direct node &f{node}&7.",
@@ -77,5 +71,26 @@
   "gui.admin.disabled": "&c&lNEXUS &c» &7The admin panel is disabled on this server. Use the &f/nexus &7commands instead.",
   "gui.admin.target-left": "&c&lNEXUS &c» &7That player is no longer online.",
   "gui.admin.action-done": "&a&lNEXUS &a» &7{summary}",
-  "gui.admin.action-failed": "&c&lNEXUS &c» &7Could not do that: &f{reason}"
+  "gui.admin.action-failed": "&c&lNEXUS &c» &7Could not do that: &f{reason}",
+  "error.no-targets": "&c&lNEXUS &c» &7That selector matched no one.",
+  "player.gamemode.success": "&b&lGAMEMODE &b» &7Set &f{target}&7 to &6{mode}&7.",
+  "player.gamemode.notify": "&b&lGAMEMODE &b» &7Your game mode is now &6{mode}&7.",
+  "teleport.tp.position": "&b&lTP &b» &7Teleported &6{count}&7 to &f{position}&7.",
+  "death.message": "&c&lDEATH &c» &f{message}",
+  "error.invalid-name": "&c&lNEXUS &c» &7A name must be 1-32 characters of letters, numbers, underscore or hyphen.",
+  "error.player-only": "&c&lNEXUS &c» &7That command must be run by a player, not the console.",
+  "error.reload-refused": "&c&lRELOAD &c» &7Refused: &f{reason}\n&8→ &7The previous settings are still in effect.",
+  "error.use-ban-command": "&c&lBAN &c» &7Use &f/ban &7for a permanent ban — it requires confirmation.",
+  "error.bad-duration": "&c&lNEXUS &c» &7Invalid duration: &f{reason}",
+  "error.bad-value": "&c&lNEXUS &c» &7Invalid value: &f{reason}",
+  "reload.success": "&a&lRELOAD &a» &7Configuration reloaded. &8— &7No problems found.",
+  "reload.corrected": "&e&lRELOAD &e» &7Configuration reloaded with &6{count}&7 corrected value(s):\n{detail}",
+  "header.bans": "&c&lBANS &c» &6{count}&7 active:",
+  "header.audit": "&e&lAUDIT &e» &7Last &6{count}&7 record(s):",
+  "header.warnings": "&e&lWARN &e» &f{target}&7 has &6{count}&7 warning(s):",
+  "header.status": "&b&lNEXUS &b» &7Status &8— &fv{version}",
+  "header.help": "&b&lNEXUS &b» &7Commands you can use &8— &fv{version}",
+  "help.footer": "&8Only commands you have permission for are listed.",
+  "permission.check.result": "&9&lPERMS &9» &f{target} &8→ &f{node}\n&8→ &7Result: &6{result}\n&8→ &7{explanation}\n&8→ &7Groups: &f{groups}",
+  "gui.admin.opening": "&a&lNEXUS &a» &7Opening the admin panel…"
 }

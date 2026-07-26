@@ -76,6 +76,20 @@ public final class NexusSettings {
     /** Register short top-level aliases such as /heal, where nothing else owns the name. */
     public boolean registerAliases = true;
 
+    /**
+     * Take the vanilla commands NexusCore supersedes — {@code ban}, {@code kick},
+     * {@code banlist}, {@code pardon}, {@code list}, {@code tp}, {@code gamemode} — so those
+     * names run NexusCore's versions with durations, audit records, and styled screens.
+     *
+     * <p>Turn this off to leave vanilla in charge; NexusCore's versions then remain reachable
+     * as {@code /nban}, {@code /nkick}, and so on, and under the {@code /nexus} tree.</p>
+     */
+    public boolean overrideVanillaCommands = true;
+
+    /** Replace vanilla's death message with NexusCore's styled one. */
+    public boolean styleDeathMessages = true;
+
+
     /** Seconds a destructive-action confirmation token stays valid. */
     public int confirmationTimeoutSeconds = 30;
 

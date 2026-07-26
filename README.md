@@ -35,7 +35,7 @@ Working today, on a server-only install with vanilla clients:
   history that cannot be erased
 - **Admin GUI** — a chest-menu panel that works on **unmodified vanilla clients**
 
-Verified by 175 passing tests across the three loader builds and an end-to-end run on a real NeoForge 21.1.235 dedicated
+Verified by 178 passing tests across the three loader builds and an end-to-end run on a real NeoForge 21.1.235 dedicated
 server, including a restart, with zero errors.
 
 **Not yet:** GameTests, economy, chat channels, scheduler, backups, the custom-screen client

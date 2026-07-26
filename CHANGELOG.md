@@ -14,6 +14,33 @@ The v1.0 release ships all three loaders at once. Earlier interim tags were coll
 this release; nothing had been published externally, so no released version is being
 rewritten.
 
+### NexusCore now owns the vanilla commands it supersedes
+
+`/ban` `/kick` `/banlist` `/pardon` `/list` `/tp` `/gamemode` are NexusCore's. Previously
+they stayed vanilla and NexusCore's versions were only reachable as `/nban`, `/nkick` and so
+on — an operator typing the command they had always typed silently got vanilla behaviour with
+no duration, no audit entry, no styled screen and no appeal line.
+
+- `/tp` and `/gamemode` are **rebuilt from vanilla's own argument types**, so `@a`,
+  `@e[type=…]`, absolute/relative/local coordinates (`~ ~5 ~`, `^ ^ ^3`), rotation and
+  `facing <location|entity [anchor]>` all still work. A structural test asserts every branch
+  of that grammar survives, because losing one would not fail a compile.
+- Staff teleports deliberately skip the safe-destination search: typed coordinates mean those
+  coordinates. `/home`, `/warp`, `/spawn`, `/back` and `/tpa` still run the full safety check.
+- Set `overrideVanillaCommands=false` to leave vanilla in charge; NexusCore's versions then
+  stay on the `/n`-prefixed names.
+- Takeover uses reflection on Brigadier's private child maps because it has no removal API.
+  If that ever fails, NexusCore logs why and falls back to `/n`-prefixed names rather than
+  half-replacing a command.
+
+### Styled death messages
+
+Vanilla's death broadcast is replaced with NexusCore's styled one on all three loaders. The
+wording still comes from vanilla's combat tracker, so causes, mob names and item names stay
+correct and translated. This turns off the `showDeathMessages` game rule to avoid sending
+each death twice, which is announced at startup with the exact command to undo it. Controlled
+by `styleDeathMessages`.
+
 ### Message overhaul
 
 Every player-facing message was restyled into a consistent visual language:
@@ -103,7 +130,7 @@ Every player-facing message was restyled into a consistent visual language:
   and a validation report naming file, key, invalid value, expected form, and fallback.
 - Transactional `/nexus reload`: a bad file leaves the running configuration untouched.
 - `MessageService` resolving keys **server-side** so unmodified vanilla clients see real text
-  rather than raw translation keys (ADR-0003). 73 keys, operator-overridable via
+  rather than raw translation keys (ADR-0003). 94 keys, operator-overridable via
   `messages.json`, with `&` colour codes.
 
 **Storage, identity, audit (M2)**
@@ -155,7 +182,7 @@ Every player-facing message was restyled into a consistent visual language:
 
 **Quality**
 
-- 169 tests, 0 failures. Checkstyle clean. Stub-marker gate clean.
+- 178 tests, 0 failures (172 shared + 3 Fabric + 3 Forge). Checkstyle clean. Stub-marker gate clean.
 - `MessageCatalogueTest` mechanically enforces §2.3 part 6 — a player-facing string without a
   catalogue key fails the build.
 - ADR-0006 records the JSON-configuration decision.

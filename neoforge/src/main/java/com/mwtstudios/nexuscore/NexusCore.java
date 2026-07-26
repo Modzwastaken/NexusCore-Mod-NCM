@@ -14,6 +14,7 @@ import com.mwtstudios.nexuscore.config.NexusSettings;
 import com.mwtstudios.nexuscore.core.NexusServices;
 import com.mwtstudios.nexuscore.gui.AdminGuiService;
 import com.mwtstudios.nexuscore.identity.IdentityService;
+import com.mwtstudios.nexuscore.message.DeathMessages;
 import com.mwtstudios.nexuscore.message.MessageService;
 import com.mwtstudios.nexuscore.moderation.ModerationService;
 import com.mwtstudios.nexuscore.moderation.PunishmentMessages;
@@ -34,6 +35,7 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.ServerChatEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
@@ -86,6 +88,7 @@ public final class NexusCore {
         this.gui = new AdminGuiService(services);
 
         NeoForge.EVENT_BUS.addListener(this::onRegisterCommands);
+        NeoForge.EVENT_BUS.addListener(this::onServerStarted);
         NeoForge.EVENT_BUS.addListener(this::onServerStopping);
         NeoForge.EVENT_BUS.addListener(this::onServerTick);
         NeoForge.EVENT_BUS.addListener(this::onPlayerLogin);
@@ -132,6 +135,10 @@ public final class NexusCore {
 
     private void onRegisterCommands(RegisterCommandsEvent event) {
         NexusCommands.register(event.getDispatcher(), services, gui, displayName, version);
+    }
+
+    private void onServerStarted(ServerStartedEvent event) {
+        DeathMessages.takeOver(event.getServer(), services.settings());
     }
 
     private void onServerStopping(ServerStoppingEvent event) {
@@ -192,6 +199,7 @@ public final class NexusCore {
     private void onPlayerDeath(LivingDeathEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             services.teleport().recordReturnPoint(player.getUUID(), TeleportService.Location.of(player));
+            DeathMessages.broadcast(player.server, services.messages(), services.settings(), player);
         }
     }
 

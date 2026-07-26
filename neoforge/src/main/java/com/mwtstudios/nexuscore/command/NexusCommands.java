@@ -114,7 +114,7 @@ public final class NexusCommands {
                         .then(warnNode(services)).then(warningsNode(services)).then(banListNode(services)))
                 .then(Commands.literal("gui")
                         .executes(context -> run(context, services, AdminGuiService.NODE_OPEN, "gui.admin.open",
-                                source -> openGui(source, gui)))));
+                                source -> openGui(services, source, gui)))));
 
         if (services.settings().registerAliases) {
             registerAliases(dispatcher, services, gui);
@@ -168,6 +168,9 @@ public final class NexusCommands {
         aliases.put("warn", warnNode(services));
         aliases.put("warnings", warningsNode(services));
         aliases.put("banlist", banListNode(services));
+        aliases.put("pardon", unbanNode(services));
+
+        boolean takeOver = services.settings().overrideVanillaCommands;
 
         for (Map.Entry<String, LiteralArgumentBuilder<CommandSourceStack>> entry : aliases.entrySet()) {
             String name = entry.getKey();
@@ -176,14 +179,20 @@ public final class NexusCommands {
                     dispatcher.register(rename(name, entry.getValue()));
                     continue;
                 }
-                // Vanilla (or another mod) owns this name. §12.3 forbids overriding it, but
-                // leaving the operator with nothing is worse than useless: they type /ban,
-                // silently get vanilla's ban, and none of NexusCore's duration, audit, or
-                // history applies. So register the collision-free form §12.3 asks for.
+                // Vanilla (or another mod) owns this name. Leaving it alone is a trap: the
+                // operator types /ban, silently gets vanilla's ban, and none of NexusCore's
+                // duration, audit trail, styled screen or appeal line applies. So take the
+                // name when the operator has asked for it, and fall back to the
+                // collision-free form when they have not, or when the takeover fails.
+                if (takeOver && VanillaCommandOverride.remove(dispatcher, name)) {
+                    dispatcher.register(rename(name, entry.getValue()));
+                    LOGGER.info("NexusCore took over /{}", name);
+                    continue;
+                }
                 String fallback = COLLISION_PREFIX + name;
                 if (dispatcher.getRoot().getChild(fallback) == null) {
                     dispatcher.register(rename(fallback, entry.getValue()));
-                    LOGGER.info("NexusCore did not override /{} — another command owns it. "
+                    LOGGER.info("NexusCore did not take over /{} — another command owns it. "
                             + "Use /{} or /nexus ... for the NexusCore version.", name, fallback);
                 } else {
                     LOGGER.warn("NexusCore could not register /{} or /{}; use the canonical /nexus command", name, fallback);
@@ -193,14 +202,37 @@ public final class NexusCommands {
             }
         }
 
+        // /tp and /gamemode are rebuilt with vanilla's full grammar rather than aliased, so
+        // selectors, coordinates and `facing` keep working. They are only taken when the whole
+        // vanilla node can be removed cleanly — a half-replaced /tp is worse than none.
+        if (takeOver) {
+            registerVanillaReplacement(dispatcher, "tp", VanillaCommands.teleport(services));
+            registerVanillaReplacement(dispatcher, "gamemode", VanillaCommands.gamemode(services));
+        }
+
         try {
             if (dispatcher.getRoot().getChild("adminpanel") == null) {
                 dispatcher.register(Commands.literal("adminpanel")
                         .executes(context -> run(context, services, AdminGuiService.NODE_OPEN, "gui.admin.open",
-                                source -> openGui(source, gui))));
+                                source -> openGui(services, source, gui))));
             }
         } catch (RuntimeException e) {
             LOGGER.warn("NexusCore could not register /adminpanel; /nexus gui still works", e);
+        }
+    }
+
+    /** Removes the vanilla node and installs NexusCore's equivalent, or leaves vanilla alone. */
+    private static void registerVanillaReplacement(CommandDispatcher<CommandSourceStack> dispatcher, String name,
+            LiteralArgumentBuilder<CommandSourceStack> replacement) {
+        try {
+            if (dispatcher.getRoot().getChild(name) != null && !VanillaCommandOverride.remove(dispatcher, name)) {
+                LOGGER.info("NexusCore left vanilla /{} in place; its own version stays under /nexus", name);
+                return;
+            }
+            dispatcher.register(replacement);
+            LOGGER.info("NexusCore took over /{} (vanilla selector and coordinate syntax preserved)", name);
+        } catch (RuntimeException e) {
+            LOGGER.warn("NexusCore could not take over /{}; vanilla behaviour is unchanged", name, e);
         }
     }
 
@@ -227,7 +259,7 @@ public final class NexusCommands {
      * @param body the work to do
      * @return a Brigadier result
      */
-    private static int run(CommandContext<CommandSourceStack> context, NexusServices services,
+    static int run(CommandContext<CommandSourceStack> context, NexusServices services,
             String node, String action, Body body) {
         CommandSourceStack source = context.getSource();
         String correlationId = UUID.randomUUID().toString();
@@ -283,7 +315,7 @@ public final class NexusCommands {
 
     private static Feedback help(CommandSourceStack source, NexusServices services) {
         List<String> lines = new ArrayList<>();
-        lines.add("&b--- NexusCore " + services.modVersion() + " ---");
+        lines.add(services.messages().raw("header.help", "version", services.modVersion()));
         addIfPermitted(lines, source, services, "nexuscore.command.teleport.home", "&f/home [name] &7- go to a home");
         addIfPermitted(lines, source, services, "nexuscore.command.teleport.sethome", "&f/sethome <name> &7- save a home");
         addIfPermitted(lines, source, services, "nexuscore.command.teleport.warp", "&f/warp <name> &7- go to a warp");
@@ -300,7 +332,7 @@ public final class NexusCommands {
         addIfPermitted(lines, source, services, AdminGuiService.NODE_OPEN, "&f/adminpanel &7- open the admin panel");
         addIfPermitted(lines, source, services, "nexuscore.command.permission.check",
                 "&f/nexus permission check <player> <node>");
-        lines.add("&8Only commands you may use are listed.");
+        lines.add(services.messages().raw("help.footer"));
 
         return Feedback.of(Component.literal(MessageService.colourise(String.join("\n", lines))));
     }
@@ -315,14 +347,14 @@ public final class NexusCommands {
     private static Feedback reload(NexusServices services) throws Refused {
         var result = services.configuration().reload();
         if (!result.succeeded()) {
-            throw new Refused("reload refused: " + result.failure() + " — the previous settings are still in effect");
+            throw new Refused(services.messages().raw("error.reload-refused", "reason", result.failure()));
         }
         services.applySettings();
-        String summary = result.report().isClean()
-                ? "configuration reloaded, no problems found"
-                : "configuration reloaded with " + result.report().findings().size() + " corrected value(s):\n"
-                        + result.report().render();
-        return Feedback.of(Component.literal(summary));
+        return Feedback.of(result.report().isClean()
+                ? services.messages().render("reload.success")
+                : services.messages().render("reload.corrected",
+                        "count", String.valueOf(result.report().findings().size()),
+                        "detail", result.report().render()));
     }
 
     private static Feedback confirm(CommandSourceStack source, NexusServices services, String token) throws Refused {
@@ -337,10 +369,11 @@ public final class NexusCommands {
         return Feedback.of(services.messages().render("confirm.done", "action", taken.description()));
     }
 
-    private static Feedback openGui(CommandSourceStack source, AdminGuiService gui) throws Refused {
-        ServerPlayer player = requirePlayer(source);
+    private static Feedback openGui(NexusServices services, CommandSourceStack source, AdminGuiService gui)
+            throws Refused {
+        ServerPlayer player = requirePlayer(services, source);
         gui.openDashboard(player);
-        return Feedback.of(Component.literal("Opening the NexusCore admin panel."));
+        return Feedback.of(services.messages().render("gui.admin.opening"));
     }
 
     // ---- permission, audit, system trees -----------------------------------------------
@@ -407,11 +440,11 @@ public final class NexusCommands {
             throws Refused {
         UUID target = resolve(source, services, name);
         PermissionDecision decision = services.permissions().evaluate(target, node);
-        String text = "&b" + name + " &7-> &f" + node + "\n"
-                + "&7Result: &f" + decision.result() + "\n"
-                + "&7" + decision.explanation() + "\n"
-                + "&7Groups: &f" + String.join(", ", services.permissions().groupsOf(target));
-        return Feedback.of(Component.literal(MessageService.colourise(text)))
+        return Feedback.of(services.messages().render("permission.check.result",
+                        "target", name, "node", node,
+                        "result", decision.result().name(),
+                        "explanation", decision.explanation(),
+                        "groups", String.join(", ", services.permissions().groupsOf(target))))
                 .withTarget("player", target.toString());
     }
 
@@ -455,7 +488,8 @@ public final class NexusCommands {
                 .then(Commands.literal("status")
                         .executes(context -> run(context, services, "nexuscore.command.system.status", "system.status",
                                 source -> {
-                                    String text = "&b--- NexusCore " + services.modVersion() + " ---\n"
+                                    String text = services.messages().raw("header.status",
+                                            "version", services.modVersion()) + "\n"
                                             + "&7Data directory: &f" + services.store().root() + "\n"
                                             + "&7Groups: &f" + services.permissions().groupNames().size()
                                             + "  &7Permission cache: &f" + services.permissions().cacheStats() + "\n"
@@ -477,7 +511,7 @@ public final class NexusCommands {
     private static LiteralArgumentBuilder<CommandSourceStack> healNode(NexusServices services) {
         return Commands.literal("heal")
                 .executes(context -> run(context, services, "nexuscore.command.player.heal", "player.heal",
-                        source -> healOne(services, requirePlayer(source))))
+                        source -> healOne(services, requirePlayer(services, source))))
                 .then(Commands.argument("target", EntityArgument.player())
                         .executes(context -> run(context, services, "nexuscore.command.player.heal", "player.heal",
                                 source -> healOne(services, EntityArgument.getPlayer(context, "target")))));
@@ -492,7 +526,7 @@ public final class NexusCommands {
     private static LiteralArgumentBuilder<CommandSourceStack> feedNode(NexusServices services) {
         return Commands.literal("feed")
                 .executes(context -> run(context, services, "nexuscore.command.player.feed", "player.feed",
-                        source -> feedOne(services, requirePlayer(source))))
+                        source -> feedOne(services, requirePlayer(services, source))))
                 .then(Commands.argument("target", EntityArgument.player())
                         .executes(context -> run(context, services, "nexuscore.command.player.feed", "player.feed",
                                 source -> feedOne(services, EntityArgument.getPlayer(context, "target")))));
@@ -507,7 +541,7 @@ public final class NexusCommands {
     private static LiteralArgumentBuilder<CommandSourceStack> flyNode(NexusServices services) {
         return Commands.literal("fly")
                 .executes(context -> run(context, services, "nexuscore.command.player.fly", "player.fly",
-                        source -> toggleFly(services, requirePlayer(source))))
+                        source -> toggleFly(services, requirePlayer(services, source))))
                 .then(Commands.argument("target", EntityArgument.player())
                         .executes(context -> run(context, services, "nexuscore.command.player.fly", "player.fly",
                                 source -> toggleFly(services, EntityArgument.getPlayer(context, "target")))));
@@ -525,7 +559,7 @@ public final class NexusCommands {
     private static LiteralArgumentBuilder<CommandSourceStack> godNode(NexusServices services) {
         return Commands.literal("god")
                 .executes(context -> run(context, services, "nexuscore.command.player.god", "player.god",
-                        source -> toggleGod(services, requirePlayer(source))))
+                        source -> toggleGod(services, requirePlayer(services, source))))
                 .then(Commands.argument("target", EntityArgument.player())
                         .executes(context -> run(context, services, "nexuscore.command.player.god", "player.god",
                                 source -> toggleGod(services, EntityArgument.getPlayer(context, "target")))));
@@ -545,18 +579,18 @@ public final class NexusCommands {
                 .then(Commands.literal("reset")
                         .executes(context -> run(context, services, "nexuscore.command.player.speed", "player.speed",
                                 source -> {
-                                    ServerPlayer player = requirePlayer(source);
+                                    ServerPlayer player = requirePlayer(services, source);
                                     services.players().resetSpeed(player);
                                     return Feedback.of(services.messages().render("player.speed.reset"))
                                             .withTarget("player", player.getUUID().toString());
                                 })))
                 .then(Commands.argument("multiplier", FloatArgumentType.floatArg(0.1f, 10.0f))
                         .executes(context -> run(context, services, "nexuscore.command.player.speed", "player.speed",
-                                source -> setSpeed(services, requirePlayer(source),
+                                source -> setSpeed(services, requirePlayer(services, source),
                                         FloatArgumentType.getFloat(context, "multiplier"), false)))
                         .then(Commands.literal("fly")
                                 .executes(context -> run(context, services, "nexuscore.command.player.speed", "player.speed",
-                                        source -> setSpeed(services, requirePlayer(source),
+                                        source -> setSpeed(services, requirePlayer(services, source),
                                                 FloatArgumentType.getFloat(context, "multiplier"), true)))));
     }
 
@@ -565,7 +599,7 @@ public final class NexusCommands {
         try {
             services.players().setSpeed(player, multiplier, flying);
         } catch (IllegalArgumentException e) {
-            throw new Refused(e.getMessage());
+            throw new Refused(services.messages().raw("error.bad-value", "reason", e.getMessage()));
         }
         return Feedback.of(services.messages().render("player.speed.set",
                         "kind", flying ? "fly" : "walk", "value", String.valueOf(multiplier)))
@@ -576,7 +610,7 @@ public final class NexusCommands {
         return Commands.literal("vanish")
                 .executes(context -> run(context, services, "nexuscore.command.player.vanish", "player.vanish",
                         source -> {
-                            ServerPlayer player = requirePlayer(source);
+                            ServerPlayer player = requirePlayer(services, source);
                             boolean hidden = !services.players().isVanished(player.getUUID());
                             services.players().setVanished(source.getServer(), player, hidden);
                             return Feedback.of(services.messages().render(
@@ -615,10 +649,10 @@ public final class NexusCommands {
     private static LiteralArgumentBuilder<CommandSourceStack> homeNode(NexusServices services) {
         return Commands.literal("home")
                 .executes(context -> run(context, services, "nexuscore.command.teleport.home", "teleport.home",
-                        source -> goHome(services, requirePlayer(source), "home")))
+                        source -> goHome(services, requirePlayer(services, source), "home")))
                 .then(Commands.argument("name", StringArgumentType.word())
                         .executes(context -> run(context, services, "nexuscore.command.teleport.home", "teleport.home",
-                                source -> goHome(services, requirePlayer(source),
+                                source -> goHome(services, requirePlayer(services, source),
                                         StringArgumentType.getString(context, "name")))));
     }
 
@@ -631,15 +665,15 @@ public final class NexusCommands {
     private static LiteralArgumentBuilder<CommandSourceStack> setHomeNode(NexusServices services) {
         return Commands.literal("sethome")
                 .executes(context -> run(context, services, "nexuscore.command.teleport.sethome", "teleport.sethome",
-                        source -> setHome(services, requirePlayer(source), "home")))
+                        source -> setHome(services, requirePlayer(services, source), "home")))
                 .then(Commands.argument("name", StringArgumentType.word())
                         .executes(context -> run(context, services, "nexuscore.command.teleport.sethome", "teleport.sethome",
-                                source -> setHome(services, requirePlayer(source),
+                                source -> setHome(services, requirePlayer(services, source),
                                         StringArgumentType.getString(context, "name")))));
     }
 
     private static Feedback setHome(NexusServices services, ServerPlayer player, String name) throws Refused {
-        requireSimpleName(name);
+        requireSimpleName(services, name);
         int limit = services.settings().maxHomesPerPlayer;
         if (!services.teleport().setHome(player.getUUID(), name, TeleportService.Location.of(player), limit)) {
             throw new Refused(services.messages().raw("teleport.sethome.limit", "limit", String.valueOf(limit)));
@@ -653,7 +687,7 @@ public final class NexusCommands {
                 .then(Commands.argument("name", StringArgumentType.word())
                         .executes(context -> run(context, services, "nexuscore.command.teleport.delhome", "teleport.delhome",
                                 source -> {
-                                    ServerPlayer player = requirePlayer(source);
+                                    ServerPlayer player = requirePlayer(services, source);
                                     String name = StringArgumentType.getString(context, "name");
                                     if (!services.teleport().deleteHome(player.getUUID(), name)) {
                                         throw new Refused(services.messages().raw("teleport.home.unknown", "name", name));
@@ -667,7 +701,7 @@ public final class NexusCommands {
         return Commands.literal("homes")
                 .executes(context -> run(context, services, "nexuscore.command.teleport.homes", "teleport.homes",
                         source -> {
-                            ServerPlayer player = requirePlayer(source);
+                            ServerPlayer player = requirePlayer(services, source);
                             var names = services.teleport().homeNames(player.getUUID());
                             return Feedback.of(names.isEmpty()
                                     ? services.messages().render("teleport.homes.none")
@@ -681,7 +715,7 @@ public final class NexusCommands {
                 .then(Commands.argument("name", StringArgumentType.word())
                         .executes(context -> run(context, services, "nexuscore.command.teleport.warp", "teleport.warp",
                                 source -> {
-                                    ServerPlayer player = requirePlayer(source);
+                                    ServerPlayer player = requirePlayer(services, source);
                                     String name = StringArgumentType.getString(context, "name");
                                     TeleportService.Location location = services.teleport().warp(name)
                                             .orElseThrow(() -> new Refused(
@@ -695,9 +729,9 @@ public final class NexusCommands {
                 .then(Commands.argument("name", StringArgumentType.word())
                         .executes(context -> run(context, services, "nexuscore.command.teleport.setwarp", "teleport.setwarp",
                                 source -> {
-                                    ServerPlayer player = requirePlayer(source);
+                                    ServerPlayer player = requirePlayer(services, source);
                                     String name = StringArgumentType.getString(context, "name");
-                                    requireSimpleName(name);
+                                    requireSimpleName(services, name);
                                     services.teleport().setWarp(name, TeleportService.Location.of(player));
                                     return Feedback.of(services.messages().render("teleport.setwarp.success", "name", name))
                                             .withTarget("warp", name);
@@ -734,7 +768,7 @@ public final class NexusCommands {
         return Commands.literal("spawn")
                 .executes(context -> run(context, services, "nexuscore.command.teleport.spawn", "teleport.spawn",
                         source -> {
-                            ServerPlayer player = requirePlayer(source);
+                            ServerPlayer player = requirePlayer(services, source);
                             TeleportService.Location location = services.teleport().spawn()
                                     .orElseGet(() -> TeleportService.Location.worldSpawn(source.getServer().overworld()));
                             return teleport(services, player, location, "spawn");
@@ -745,7 +779,7 @@ public final class NexusCommands {
         return Commands.literal("setspawn")
                 .executes(context -> run(context, services, "nexuscore.command.teleport.setspawn", "teleport.setspawn",
                         source -> {
-                            ServerPlayer player = requirePlayer(source);
+                            ServerPlayer player = requirePlayer(services, source);
                             services.teleport().setSpawn(TeleportService.Location.of(player));
                             return Feedback.of(services.messages().render("teleport.setspawn.success"))
                                     .withTarget("spawn", "server");
@@ -756,7 +790,7 @@ public final class NexusCommands {
         return Commands.literal("back")
                 .executes(context -> run(context, services, "nexuscore.command.teleport.back", "teleport.back",
                         source -> {
-                            ServerPlayer player = requirePlayer(source);
+                            ServerPlayer player = requirePlayer(services, source);
                             TeleportService.Location location = services.teleport().lastLocation(player.getUUID())
                                     .orElseThrow(() -> new Refused(services.messages().raw("teleport.back.none")));
                             return teleport(services, player, location, "your previous location");
@@ -768,7 +802,7 @@ public final class NexusCommands {
                 .then(Commands.argument("target", EntityArgument.player())
                         .executes(context -> run(context, services, "nexuscore.command.teleport.request", "teleport.request",
                                 source -> {
-                                    ServerPlayer requester = requirePlayer(source);
+                                    ServerPlayer requester = requirePlayer(services, source);
                                     ServerPlayer target = EntityArgument.getPlayer(context, "target");
                                     if (target.getUUID().equals(requester.getUUID())) {
                                         throw new Refused(services.messages().raw("teleport.request.self"));
@@ -786,7 +820,7 @@ public final class NexusCommands {
         return Commands.literal("tpaccept")
                 .executes(context -> run(context, services, "nexuscore.command.teleport.accept", "teleport.accept",
                         source -> {
-                            ServerPlayer target = requirePlayer(source);
+                            ServerPlayer target = requirePlayer(services, source);
                             UUID requesterId = services.teleport().consumeRequest(target.getUUID())
                                     .orElseThrow(() -> new Refused(services.messages().raw("teleport.request.none")));
                             ServerPlayer requester = source.getServer().getPlayerList().getPlayer(requesterId);
@@ -806,7 +840,7 @@ public final class NexusCommands {
         return Commands.literal("tpdeny")
                 .executes(context -> run(context, services, "nexuscore.command.teleport.deny", "teleport.deny",
                         source -> {
-                            ServerPlayer target = requirePlayer(source);
+                            ServerPlayer target = requirePlayer(services, source);
                             UUID requesterId = services.teleport().consumeRequest(target.getUUID())
                                     .orElseThrow(() -> new Refused(services.messages().raw("teleport.request.none")));
                             ServerPlayer requester = source.getServer().getPlayerList().getPlayer(requesterId);
@@ -930,9 +964,9 @@ public final class NexusCommands {
     private static Feedback tempBan(NexusServices services, CommandSourceStack source, String name, String durationText,
             String rawReason) throws Refused {
         UUID target = resolve(source, services, name);
-        DurationParser.ParsedDuration parsed = parseDuration(durationText);
+        DurationParser.ParsedDuration parsed = parseDuration(services, durationText);
         if (parsed.permanent()) {
-            throw new Refused("use /ban for a permanent ban — it requires confirmation");
+            throw new Refused(services.messages().raw("error.use-ban-command"));
         }
         String reason = ModerationService.sanitiseReason(rawReason, services.settings().maxReasonLength);
         UUID actor = source.getEntity() instanceof ServerPlayer player ? player.getUUID() : null;
@@ -979,7 +1013,7 @@ public final class NexusCommands {
     private static Feedback mute(NexusServices services, CommandSourceStack source, String name, String durationText,
             String rawReason) throws Refused {
         UUID target = resolve(source, services, name);
-        DurationParser.ParsedDuration parsed = parseDuration(durationText);
+        DurationParser.ParsedDuration parsed = parseDuration(services, durationText);
         String reason = ModerationService.sanitiseReason(rawReason, services.settings().maxReasonLength);
         UUID actor = source.getEntity() instanceof ServerPlayer player ? player.getUUID() : null;
 
@@ -1063,8 +1097,9 @@ public final class NexusCommands {
                                         return Feedback.of(services.messages().render("moderation.warnings.none",
                                                 "target", name));
                                     }
-                                    StringBuilder text = new StringBuilder("&b--- Warnings for " + name
-                                            + " (" + found.size() + ") ---");
+                                    StringBuilder text = new StringBuilder(services.messages().raw(
+                                            "header.warnings", "target", name,
+                                            "count", String.valueOf(found.size())));
                                     for (ModerationService.Record record : found) {
                                         text.append("\n&7- &f").append(record.reason())
                                                 .append(" &8(by ").append(record.actorName()).append(')');
@@ -1082,7 +1117,8 @@ public final class NexusCommands {
                             if (bans.isEmpty()) {
                                 return Feedback.of(services.messages().render("moderation.banlist.none"));
                             }
-                            StringBuilder text = new StringBuilder("&b--- Active bans (" + bans.size() + ") ---");
+                            StringBuilder text = new StringBuilder(
+                                    services.messages().raw("header.bans", "count", String.valueOf(bans.size())));
                             for (ModerationService.Record record : bans) {
                                 text.append("\n&7- &c").append(record.targetName()).append(" &7")
                                         .append(record.reason()).append(" &8(")
@@ -1102,7 +1138,7 @@ public final class NexusCommands {
         try {
             services.permissions().setSubjectNode(target, node, allow);
         } catch (IllegalArgumentException e) {
-            throw new Refused(e.getMessage());
+            throw new Refused(services.messages().raw("error.bad-value", "reason", e.getMessage()));
         }
         return Feedback.of(services.messages().render("permission.set.success",
                         "target", name, "node", node, "value", allow ? "ALLOW" : "DENY"))
@@ -1129,7 +1165,8 @@ public final class NexusCommands {
         if (records.isEmpty()) {
             return Feedback.of(services.messages().render("audit.tail.none"));
         }
-        StringBuilder text = new StringBuilder("&b--- Last " + records.size() + " audit record(s) ---");
+        StringBuilder text = new StringBuilder(
+                services.messages().raw("header.audit", "count", String.valueOf(records.size())));
         for (String line : records) {
             text.append("\n&7").append(summariseAuditLine(line));
         }
@@ -1209,7 +1246,7 @@ public final class NexusCommands {
     }
 
     private static Feedback near(NexusServices services, CommandSourceStack source, int radius) throws Refused {
-        ServerPlayer self = requirePlayer(source);
+        ServerPlayer self = requirePlayer(services, source);
         List<String> found = new ArrayList<>();
         for (ServerPlayer other : source.getServer().getPlayerList().getPlayers()) {
             if (other.getUUID().equals(self.getUUID()) || !other.level().equals(self.level())
@@ -1247,7 +1284,7 @@ public final class NexusCommands {
         return Commands.literal("tp")
                 .then(Commands.argument("target", EntityArgument.player())
                         .executes(context -> run(context, services, "nexuscore.command.teleport.tp", "teleport.tp",
-                                source -> staffTeleport(services, requirePlayer(source),
+                                source -> staffTeleport(services, requirePlayer(services, source),
                                         EntityArgument.getPlayer(context, "target"))))
                         .then(Commands.argument("destination", EntityArgument.player())
                                 .executes(context -> run(context, services, "nexuscore.command.teleport.tp", "teleport.tp",
@@ -1260,7 +1297,7 @@ public final class NexusCommands {
                 .then(Commands.argument("target", EntityArgument.player())
                         .executes(context -> run(context, services, "nexuscore.command.teleport.tp", "teleport.tphere",
                                 source -> staffTeleport(services, EntityArgument.getPlayer(context, "target"),
-                                        requirePlayer(source)))));
+                                        requirePlayer(services, source)))));
     }
 
     /** Staff teleports skip warmup and cooldown: they are a moderation tool, not travel. */
@@ -1292,18 +1329,19 @@ public final class NexusCommands {
                 services.messages().render(key, "target", target, "reason", reason, "actor", source.getTextName()), false);
     }
 
-    private static DurationParser.ParsedDuration parseDuration(String text) throws Refused {
+    private static DurationParser.ParsedDuration parseDuration(NexusServices services, String text) throws Refused {
         try {
             return DurationParser.parse(text);
         } catch (IllegalArgumentException e) {
-            throw new Refused(e.getMessage());
+            // The parser explains precisely what was wrong; NexusCore only supplies the styling.
+            throw new Refused(services.messages().raw("error.bad-duration", "reason", e.getMessage()));
         }
     }
 
     /** Bounds a player-supplied name for a home or warp (§15, "Input validation"). */
-    private static void requireSimpleName(String name) throws Refused {
+    private static void requireSimpleName(NexusServices services, String name) throws Refused {
         if (!name.matches("[a-zA-Z0-9_-]{1,32}")) {
-            throw new Refused("a name must be 1-32 characters of letters, numbers, underscore, or hyphen");
+            throw new Refused(services.messages().raw("error.invalid-name"));
         }
     }
 
@@ -1312,11 +1350,11 @@ public final class NexusCommands {
         return found.orElseThrow(() -> new Refused(services.messages().raw("error.unknown-player", "name", name)));
     }
 
-    private static ServerPlayer requirePlayer(CommandSourceStack source) throws Refused {
+    static ServerPlayer requirePlayer(NexusServices services, CommandSourceStack source) throws Refused {
         try {
             return source.getPlayerOrException();
         } catch (CommandSyntaxException e) {
-            throw new Refused("this command must be run by a player, not the console");
+            throw new Refused(services.messages().raw("error.player-only"));
         }
     }
 
@@ -1324,7 +1362,7 @@ public final class NexusCommands {
 
     /** The work a command does, once it has been authorised and rate limited. */
     @FunctionalInterface
-    private interface Body {
+    interface Body {
         Feedback run(CommandSourceStack source) throws Refused, CommandSyntaxException;
     }
 
@@ -1334,16 +1372,16 @@ public final class NexusCommands {
      * <p>Distinct from an unexpected exception: a refusal is an expected outcome that the
      * player caused and can fix, so its message is shown verbatim.</p>
      */
-    private static final class Refused extends Exception {
+    static final class Refused extends Exception {
         private static final long serialVersionUID = 1L;
 
-        private Refused(String message) {
+        Refused(String message) {
             super(message);
         }
     }
 
     /** What a command produced: the message to send, plus what to record in the audit log. */
-    private static final class Feedback {
+    static final class Feedback {
         private final Component message;
         private String targetType = "none";
         private String targetId = "-";
@@ -1354,17 +1392,17 @@ public final class NexusCommands {
             this.message = message;
         }
 
-        private static Feedback of(Component message) {
+        static Feedback of(Component message) {
             return new Feedback(message);
         }
 
-        private Feedback withTarget(String type, String id) {
+        Feedback withTarget(String type, String id) {
             this.targetType = type;
             this.targetId = id;
             return this;
         }
 
-        private Feedback withAudit(String key, String value) {
+        Feedback withAudit(String key, String value) {
             this.auditParameters.put(key, value);
             return this;
         }
@@ -1373,28 +1411,28 @@ public final class NexusCommands {
          * Also show this to other operators. Used for actions that change another player's
          * access or position, where silent success hides staff activity from other staff.
          */
-        private Feedback broadcast() {
+        Feedback broadcast() {
             this.broadcastToOperators = true;
             return this;
         }
 
-        private Component message() {
+        Component message() {
             return message;
         }
 
-        private String targetType() {
+        String targetType() {
             return targetType;
         }
 
-        private String targetId() {
+        String targetId() {
             return targetId;
         }
 
-        private Map<String, String> auditParameters() {
+        Map<String, String> auditParameters() {
             return auditParameters;
         }
 
-        private boolean broadcastToOperators() {
+        boolean broadcastToOperators() {
             return broadcastToOperators;
         }
     }

@@ -18,16 +18,32 @@ required.
 
 ## Current state
 
-**Version 0.1.0 — in development at M0 (walking skeleton).**
+**Version 0.1.0 — milestones M0 through M5 (partial).**
 
-This repository is built milestone by milestone, and every milestone ends in a JAR that
-loads. Nothing here is claimed to work unless a test or a pasted terminal transcript backs
-it up. [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md) is the authoritative record of
-what exists — read it before the feature list below.
+Working today, on a server-only install with vanilla clients:
 
-At M0 the mod registers exactly one command, `/nexus version`, and nothing else. That is
-intentional: the toolchain is proven end to end before a single line of product logic is
-written.
+- **Permissions** — native engine, groups with inheritance and cycle rejection, wildcards,
+  explicit denies, a decision cache, and a `check` command that *explains* its answer
+- **Storage** — atomic JSON writes, corrupt-file quarantine, path-traversal containment
+- **Audit** — append-only, SHA-256 hash-chained, tamper-evident, with write-time redaction
+- **Commands** — a nine-step pipeline every command routes through: permission, validation,
+  rate limit, confirmation, service call, feedback, audit
+- **Teleport** — homes, warps, spawn, `/back`, `/tpa`, with real destination-safety checks
+- **Player tools** — heal, feed, fly, god, speed, vanish, playerinfo
+- **Moderation** — kick, ban, tempban, unban, mute, unmute, warn, with durable expiry and
+  history that cannot be erased
+- **Admin GUI** — a chest-menu panel that works on **unmodified vanilla clients**
+
+Verified by 160 passing tests and an end-to-end run on a real NeoForge 21.1.235 dedicated
+server, including a restart, with zero errors.
+
+**Not yet:** GameTests, economy, chat channels, scheduler, backups, the custom-screen client
+GUI, and the benchmark harness. And no real player has ever joined this server — every
+runtime check so far was driven from the console.
+
+[`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md) is the authoritative record, and it
+distinguishes `implemented` from `tested` deliberately. Read it before trusting any feature
+list, including this one.
 
 ## Release ladder
 
@@ -49,6 +65,15 @@ vanilla client — no modpack, no version-matched client, no handshake.
 2. Drop `NexusCore-<version>.jar` into the server's `mods/` directory.
 3. Start the server.
 4. Run `/nexus version` in the console to confirm it loaded.
+5. Join the server, and run `/adminpanel`.
+
+On first start NexusCore creates `<server>/nexuscore/` containing `config.json`,
+`permissions.json`, `audit.log`, and the data files. Everything is human-readable JSON.
+
+**Note on `/ban` and `/kick`:** those are vanilla Minecraft commands, and NexusCore does not
+override them. Use `/nexus moderation ban` or the `/nban` alias to get NexusCore's version
+with durations, reasons, history, and audit. See
+[docs/admin/commands.md](docs/admin/commands.md).
 
 ## Building from source
 
@@ -81,6 +106,7 @@ Other useful targets:
 | `src/test/java/` | Unit tests. |
 | `config/checkstyle/` | Formatting and static-analysis ruleset ([ADR-0005](docs/architecture/ADR-0005.md)). |
 | `docs/architecture/` | Architecture decision records. |
+| `docs/admin/` | Permissions, command reference, admin panel. |
 | `IMPLEMENTATION_STATUS.md` | The one place unfinished work is named. |
 | `RELEASE_CHECKLIST.md` | Per-release verification, evidence required. |
 
@@ -101,11 +127,14 @@ Other useful targets:
 
 ## Documentation
 
-- [Architecture decisions](docs/architecture/) — ADR-0001 through ADR-0005
+- [Command reference](docs/admin/commands.md)
+- [Permissions](docs/admin/permissions.md) — how a decision is reached, and the one rule that surprises people
+- [Admin panel](docs/admin/admin-gui.md)
+- [Architecture decisions](docs/architecture/) — ADR-0001 through ADR-0006
 - [Implementation status](IMPLEMENTATION_STATUS.md)
 - [Release checklist](RELEASE_CHECKLIST.md)
 - [Changelog](CHANGELOG.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)
 
-`docs/user`, `docs/admin`, `docs/api`, and `docs/migration` are populated as the milestones
-that produce their subject matter land.
+`docs/user`, `docs/api`, and `docs/migration` are populated as the milestones that produce
+their subject matter land.

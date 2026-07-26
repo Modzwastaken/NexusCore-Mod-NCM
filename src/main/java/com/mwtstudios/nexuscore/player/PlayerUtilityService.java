@@ -1,0 +1,262 @@
+package com.mwtstudios.nexuscore.player;
+
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.UUID;
+
+import net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket;
+import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.ai.attributes.AttributeInstance;
+import net.minecraft.world.entity.ai.attributes.AttributeModifier;
+
+import net.neoforged.neoforge.common.NeoForgeMod;
+
+/**
+ * The staff quality-of-life toolkit: heal, feed, fly, god, speed, vanish, and player info.
+ *
+ * <p>Each of these mutates live entity state, so every method here must be called on the
+ * server thread (§16.3). Commands already run there; nothing in this class may be reached
+ * from a background task without hopping back first.</p>
+ */
+public final class PlayerUtilityService {
+
+    /** Minimum walk/fly speed multiplier accepted. */
+    public static final float MIN_SPEED = 0.1f;
+    /** Maximum walk/fly speed multiplier accepted. Above this, players fall out of loaded chunks. */
+    public static final float MAX_SPEED = 10.0f;
+
+    /** Vanilla defaults, restored by {@code /speed reset}. */
+    private static final float DEFAULT_WALK_SPEED = 0.1f;
+    private static final float DEFAULT_FLY_SPEED = 0.05f;
+
+    /** Identifies NexusCore's own flight grant, so it can be revoked without touching others'. */
+    private static final ResourceLocation FLIGHT_MODIFIER_ID =
+            ResourceLocation.fromNamespaceAndPath("nexuscore", "flight");
+
+    /** Vanished players. Session-only: vanish does not survive a restart, by design. */
+    private final Set<UUID> vanished = new LinkedHashSet<>();
+
+    /**
+     * Restores health, hunger, saturation, and extinguishes the player.
+     *
+     * @param player the target
+     */
+    public void heal(ServerPlayer player) {
+        player.setHealth(player.getMaxHealth());
+        player.getFoodData().setFoodLevel(20);
+        player.getFoodData().setSaturation(5.0f);
+        player.clearFire();
+        player.removeAllEffects();
+    }
+
+    /**
+     * Restores hunger and saturation only.
+     *
+     * @param player the target
+     */
+    public void feed(ServerPlayer player) {
+        player.getFoodData().setFoodLevel(20);
+        player.getFoodData().setSaturation(5.0f);
+    }
+
+    /**
+     * Toggles the ability to fly.
+     *
+     * <p>Flight is granted through NeoForge's {@code CREATIVE_FLIGHT} attribute rather than by
+     * writing {@code Abilities.mayfly} directly. NeoForge deprecated that field precisely
+     * because direct writes fight with every other mod that grants flight: the last writer
+     * wins and the loser's grant vanishes. An attribute modifier is additive and is keyed by
+     * {@code nexuscore:flight}, so revoking NexusCore's grant leaves anyone else's intact.</p>
+     *
+     * @param player the target
+     * @param enabled true to allow flight
+     */
+    public void setFlight(ServerPlayer player, boolean enabled) {
+        AttributeInstance flight = player.getAttribute(NeoForgeMod.CREATIVE_FLIGHT);
+        if (flight == null) {
+            // The attribute is registered by NeoForge and attached to players. Its absence
+            // means the platform is not what NexusCore was built against, so say so rather
+            // than silently doing nothing.
+            throw new IllegalStateException("the NeoForge creative_flight attribute is not present on this player; "
+                    + "NexusCore cannot grant flight on this platform build");
+        }
+        flight.removeModifier(FLIGHT_MODIFIER_ID);
+        if (enabled) {
+            flight.addPermanentModifier(new AttributeModifier(FLIGHT_MODIFIER_ID, 1.0, AttributeModifier.Operation.ADD_VALUE));
+        } else if (!player.isCreative() && !player.isSpectator()) {
+            player.getAbilities().flying = false;
+        }
+        player.onUpdateAbilities();
+    }
+
+    /**
+     * @param player the target
+     * @return true when the player may currently fly, from any source
+     */
+    public boolean canFly(ServerPlayer player) {
+        return player.mayFly();
+    }
+
+    /**
+     * @param player the target
+     * @return true when NexusCore specifically is what is granting flight
+     */
+    public boolean hasNexusFlight(ServerPlayer player) {
+        AttributeInstance flight = player.getAttribute(NeoForgeMod.CREATIVE_FLIGHT);
+        return flight != null && flight.getModifier(FLIGHT_MODIFIER_ID) != null;
+    }
+
+    /**
+     * Toggles damage immunity.
+     *
+     * @param player the target
+     * @param enabled true to make them invulnerable
+     */
+    public void setGodMode(ServerPlayer player, boolean enabled) {
+        player.getAbilities().invulnerable = enabled;
+        player.onUpdateAbilities();
+    }
+
+    /**
+     * @param player the target
+     * @return true when the player is currently invulnerable
+     */
+    public boolean isGodMode(ServerPlayer player) {
+        return player.getAbilities().invulnerable;
+    }
+
+    /**
+     * Sets movement speed as a multiplier of the vanilla default.
+     *
+     * @param player the target
+     * @param multiplier between {@value #MIN_SPEED} and {@value #MAX_SPEED}
+     * @param flying true to change fly speed, false for walk speed
+     * @throws IllegalArgumentException when the multiplier is out of range
+     */
+    public void setSpeed(ServerPlayer player, float multiplier, boolean flying) {
+        if (multiplier < MIN_SPEED || multiplier > MAX_SPEED) {
+            throw new IllegalArgumentException("speed must be between " + MIN_SPEED + " and " + MAX_SPEED);
+        }
+        if (flying) {
+            player.getAbilities().setFlyingSpeed(DEFAULT_FLY_SPEED * multiplier);
+        } else {
+            player.getAbilities().setWalkingSpeed(DEFAULT_WALK_SPEED * multiplier);
+        }
+        player.onUpdateAbilities();
+    }
+
+    /**
+     * Restores vanilla movement speeds.
+     *
+     * @param player the target
+     */
+    public void resetSpeed(ServerPlayer player) {
+        player.getAbilities().setFlyingSpeed(DEFAULT_FLY_SPEED);
+        player.getAbilities().setWalkingSpeed(DEFAULT_WALK_SPEED);
+        player.onUpdateAbilities();
+    }
+
+    // ---- vanish ------------------------------------------------------------------------
+
+    /**
+     * Hides or reveals a staff member.
+     *
+     * <p><b>What this does and does not do.</b> It makes the player invisible and removes
+     * them from the player list every other client renders. It does not make them
+     * undetectable: a player standing in a doorway still blocks it, and a client mod that
+     * tracks entity positions will still see them. Vanish is a staff convenience, not a
+     * cloaking device, and the admin documentation says so rather than implying otherwise.</p>
+     *
+     * @param server the running server
+     * @param player the staff member
+     * @param hidden true to vanish
+     */
+    public void setVanished(MinecraftServer server, ServerPlayer player, boolean hidden) {
+        if (hidden) {
+            vanished.add(player.getUUID());
+            player.setInvisible(true);
+            broadcastExcept(server, player, new ClientboundPlayerInfoRemovePacket(List.of(player.getUUID())));
+        } else {
+            vanished.remove(player.getUUID());
+            player.setInvisible(false);
+            broadcastExcept(server, player,
+                    ClientboundPlayerInfoUpdatePacket.createPlayerInitializing(List.of(player)));
+        }
+    }
+
+    /**
+     * @param player the player's UUID
+     * @return true when they are currently vanished
+     */
+    public boolean isVanished(UUID player) {
+        return vanished.contains(player);
+    }
+
+    /** @return every vanished player's UUID */
+    public Set<UUID> vanishedPlayers() {
+        return Set.copyOf(vanished);
+    }
+
+    /** Clears vanish state for a player who disconnected. */
+    public void forget(UUID player) {
+        vanished.remove(player);
+    }
+
+    private static void broadcastExcept(MinecraftServer server, ServerPlayer excluded,
+            net.minecraft.network.protocol.Packet<?> packet) {
+        for (ServerPlayer other : server.getPlayerList().getPlayers()) {
+            if (!other.getUUID().equals(excluded.getUUID())) {
+                other.connection.send(packet);
+            }
+        }
+    }
+
+    // ---- info --------------------------------------------------------------------------
+
+    /**
+     * Collects a diagnostic snapshot of a player.
+     *
+     * @param player the target
+     * @return the snapshot
+     */
+    public Snapshot describe(ServerPlayer player) {
+        return new Snapshot(
+                player.getGameProfile().getName(),
+                player.getUUID(),
+                player.gameMode.getGameModeForPlayer().getName(),
+                player.getHealth(),
+                player.getMaxHealth(),
+                player.getFoodData().getFoodLevel(),
+                player.level().dimension().location().toString(),
+                String.format(Locale.ROOT, "%.1f, %.1f, %.1f", player.getX(), player.getY(), player.getZ()),
+                player.connection.latency(),
+                player.mayFly(),
+                player.getAbilities().invulnerable,
+                isVanished(player.getUUID()));
+    }
+
+    /**
+     * A point-in-time view of a player, safe to hand to a GUI or a command.
+     *
+     * @param name current name
+     * @param uuid stable identity
+     * @param gameMode current game mode
+     * @param health current health
+     * @param maxHealth maximum health
+     * @param foodLevel current hunger
+     * @param dimension current world
+     * @param position formatted coordinates
+     * @param latencyMillis measured ping
+     * @param canFly whether flight is enabled
+     * @param godMode whether they are invulnerable
+     * @param vanished whether they are hidden
+     */
+    public record Snapshot(String name, UUID uuid, String gameMode, float health, float maxHealth, int foodLevel,
+            String dimension, String position, int latencyMillis, boolean canFly, boolean godMode, boolean vanished) {
+    }
+}

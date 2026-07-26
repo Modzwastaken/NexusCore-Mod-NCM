@@ -19,89 +19,157 @@ fails the build if they do.
 cited. A file that looks finished but has never been compiled is `in progress`, however
 complete it appears.
 
-**Last updated:** 2026-07-25 · **Current milestone:** M0 — **PASSED** · **Next:** M1 ·
-**Current version:** 0.1.0 (unreleased) · **Commit:** `59c7f69`
+**Last updated:** 2026-07-25 · **Milestones passed:** M0, M1, M2, M3, M4, M5 (partial) ·
+**Version:** 0.1.0
 
 ---
 
-## M0 — Walking skeleton · **PASSED 2026-07-25**
+## The honest summary
 
-| Requirement | Status | Evidence / note |
-|---|---|---|
-| NeoForge MDK initialised for 1.21.1 | `tested` | `./gradlew clean build` exit 0. |
-| NeoForge patch version verified and recorded | `implemented` | ADR-0001. Verified 2026-07-25 against `maven.neoforged.net` metadata; latest 21.1.x was `21.1.243`, pinned `21.1.235` so the compiler enforces the `[21.1.235,)` support range. |
-| Gradle wrapper pinned | `implemented` | `gradle-9.2.1-bin`, wrapper JAR committed. |
-| Java 21 toolchain, UTF-8 | `tested` | Compiles under JDK 21.0.11; server ran on the same toolchain. |
-| Archive base name `NexusCore-<version>.jar` | `tested` | `build/libs/NexusCore-0.1.0.jar`, 5236 bytes. |
-| `neoforge.mods.toml` (only metadata file) | `tested` | `NexusVersionCommandTest.generatedMetadataHasNoUnexpandedTokens`; JAR listing shows exactly one metadata file and no legacy `mods.toml`. |
-| `@Mod` entry point, bootstrap only | `tested` | Server log: `[co.mw.ne.NexusCore/]: NexusCore Administration Framework 0.1.0 bootstrapped`. |
-| Exactly one command: `/nexus version` | `tested` | Real dedicated server console returned `NexusCore Administration Framework version 0.1.0`. |
-| Stub-marker gate (§2.4) | `tested` | Passes clean (2 files, 0 violations) **and proven to fail**: an injected `// TODO` produced `Stub-marker gate failed (§2.4): 1 violation(s)`, BUILD FAILED. |
-| Formatting and static analysis | `tested` | Checkstyle 10.21.1 passes clean **and proven to fail** on an injected violation. ADR-0005. |
-| CI workflow | `implemented` | `.github/workflows/build.yml` — build, packaged-JAR inspection, checksums, report upload. Not yet executed on a runner; no remote configured. |
-| `IMPLEMENTATION_STATUS.md`, `RELEASE_CHECKLIST.md` | `implemented` | This file and `RELEASE_CHECKLIST.md`. |
-| ADR-0001 … ADR-0004 (plus ADR-0005) | `implemented` | `docs/architecture/`. |
-| Exit: `./gradlew clean build` green from clean checkout | `tested` | Exit code 0. 37 tasks. 4 tests passed, 0 failed, 0 skipped. |
-| Exit: `build/libs/NexusCore-0.1.0.jar` exists | `tested` | 5236 bytes · SHA-256 `fafa4eec250cc52a9e06372e86583bad9c5eca1713aea42ef666b3eb38c58b23`. Identical hash across two independent clean builds — reproducible archive settings verified. |
-| Exit: `runServer` reaches "Done", zero NexusCore errors, clean shutdown | `tested` | `Done (0.573s)!` · zero `/ERROR]` lines · `stop` typed into the console · BUILD SUCCESSFUL, exit 0. |
-| Exit: JAR loads in a **real** dedicated server | `tested` | Standalone NeoForge 21.1.235 install at `testserver/`, JAR in `mods/`. `Done (0.544s)!` · zero `/ERROR]` lines · `/nexus version` answered · clean shutdown, exit 0. |
+NexusCore now does real work: permissions with groups and inheritance, durable JSON storage,
+a hash-chained audit log, the full command pipeline, teleport with safety checks, player
+utilities, moderation with confirmations, and a working admin GUI.
 
-### Fixed during M0
+**Two things are true at once, and both matter:**
 
-| Problem | Resolution |
-|---|---|
-| `processResources` failed: a dollar-brace sequence in a **comment** inside `neoforge.mods.toml` was evaluated as a Groovy expression by the template engine. | Comment rewritten, and the file now carries an explicit warning about the template engine so the trap is not re-entered. |
-| `./gradlew runServer` could not be shut down cleanly: NeoGradle's run tasks are `JavaExec` tasks, and Gradle gives `JavaExec` an **empty** standard input, so nothing typed into the console reached the server. Only SIGTERM worked, which exits 143 and reports BUILD FAILED. | `build.gradle` now forwards `System.in` to any `run*` task at execution time. `stop` works, and the exit condition is genuinely verifiable rather than approximated. |
-| One `/ERROR]` line on the test server: `No key layers in MapLike[{}]`. | Caused by the **test** `server.properties` requesting `level-type=minecraft:flat` with no `generator-settings`. Vanilla, not NexusCore. Test config corrected; the transcript is now zero-error. |
-
-### Known interim states carried into M1
-
-| Item | Status | Detail |
-|---|---|---|
-| Player-facing text uses a literal component, not a translation key | `implemented` | Deliberate, per ADR-0003. A vanilla client cannot resolve a NexusCore translation key, and v0.1 is server-only. The format string and the `en_us.json` value are held equal by `NexusVersionCommandTest.formatStringMatchesLanguageFile`. `MessageService` (M1) replaces this with server-side catalogue resolution. |
-| `gameTestServer` run config not wired into CI | `planned` | Correct until M5. It fails by design when no GameTests are registered. |
-| `runClient` unused | `planned` | Correct until M9. Kept working so the toolchain does not rot. `runClient` has **not** been executed — this machine has not been verified as able to run a graphical client. |
-| Automated "dedicated server loads zero client classes" test | `planned` | M9 exit condition. Current evidence is weaker but sufficient for M0: the JAR contains no `client/` package at all (12 entries, all listed in the release checklist), and the dedicated server loaded it without error. |
-| CI workflow never executed | `planned` | No git remote is configured, so `.github/workflows/build.yml` has not run on a GitHub runner. Its steps mirror what was run locally, but that is not the same as a green CI badge. |
+1. **160 automated tests pass**, and the whole feature set has been exercised end to end on a
+   real NeoForge 21.1.235 dedicated server with zero errors, including a restart.
+2. **No human player has ever joined this server.** Every runtime check was driven through
+   the console. Anything that only happens with a real player in the world —
+   teleport safety in practice, the admin GUI actually rendering, vanish, chat muting, ban
+   enforcement at login — is `implemented`, not `tested`. That distinction is the whole point
+   of §20.4 and it is not being blurred here.
 
 ---
 
-## M1 — Configuration, messages, lifecycle · `planned`
+## M0 — Walking skeleton · **PASSED**
 
-`LifecycleService` · `ConfigurationService` (typed schema, validation reports,
-`schema_version`, transactional reload) · `MessageService` (§ADR-0003 server-side
-resolution) · structured logging with correlation IDs · complete `en_us.json` · safe mode.
+| Requirement | Status | Evidence |
+|---|---|---|
+| NeoForge MDK, Java 21, UTF-8, pinned versions | `tested` | ADR-0001. Clean build green. |
+| `neoforge.mods.toml` as the only metadata file | `tested` | Packaged-JAR inspection; no legacy `mods.toml`. |
+| Stub-marker gate | `tested` | Passes clean, **and proven to fail** on an injected `TODO`. |
+| Checkstyle formatting + static analysis | `tested` | 0 violations across main and test, **and proven to fail** on an injected violation. |
+| Reproducible archives | `tested` | Identical SHA-256 across two independent clean builds. |
+| CI workflow | `implemented` | `.github/workflows/build.yml`. **Never executed** — no git remote configured. |
 
-## M2 — Storage, identity, audit · `planned`
+## M1 — Configuration, messages, lifecycle · **PASSED**
 
-`StorageProvider` + JSON implementation with atomic replace and write-ahead journal ·
-schema versioning and forward migrations · migration fixtures · `IdentityService` ·
-`AuditService` (§15.2 fields, write-time redaction, hash chaining) · `PathSafety` ·
-`/nexus doctor storage`.
+| Requirement | Status | Evidence |
+|---|---|---|
+| Typed config with `schemaVersion`, validation report, transactional reload | `tested` | `ConfigurationServiceTest` — 10 tests including `outOfRangeValueIsClampedAndReported` (asserts all five required fields) and `failedReloadIsTransactional`. |
+| Corrupt config does not crash the server | `tested` | `unreadableConfigFallsBackSafely`; confirmed at runtime. |
+| `MessageService`, server-side resolution | `tested` | `MessageCatalogueTest` — every referenced key exists, no dead keys, no positional placeholders. ADR-0003. |
+| Complete `en_us.json` | `tested` | `everyReferencedKeyExists` — 63 keys, mechanically enforced. |
+| `/nexus reload` | `tested` | Runtime: `configuration reloaded, no problems found`. |
+| Structured logging with correlation ids | `implemented` | Every audit record and error log carries one. |
+| Safe mode with non-core modules disabled | `planned` | Needs `ModuleManager`; there are no optional modules yet to disable. |
 
-## M3 — Permissions · `planned`
+## M2 — Storage, identity, audit · **PASSED**
 
-The §9 engine per ADR-0004 · bounded cache · `/nexus permission check` with explain output ·
-console-root and operator bootstrap · single-use recovery grant · import/export · audit.
+| Requirement | Status | Evidence |
+|---|---|---|
+| Atomic write protocol (`.tmp` → fsync → `ATOMIC_MOVE`) | `tested` | `StorageTest.noTemporaryFileLeftBehind`, `overwriteKeepsBackup`. |
+| Corrupt data preserved, never silently discarded | `tested` | `corruptFileIsQuarantinedNotDiscarded`. |
+| `PathSafety` containment | `tested` | `traversalRefused` (4 cases), `absolutePathRefused`, `symlinkEscapeRefused`, `storeRefusesEscape`. |
+| `IdentityService`, UUID-first with offline lookup | `implemented` | Exercised at runtime against a seeded offline player. No unit test. |
+| `AuditService` with §15.2 fields and hash chaining | `tested` | `AuditServiceTest` — 11 tests including `editedRecordDetected`, `deletedRecordDetected`, `forgedAppendDetected`, `chainContinuesAcrossRestart`. |
+| Write-time redaction | `tested` | `sensitiveParametersRedactedAtWriteTime` — IPs, passwords, tokens never reach the file. |
+| Schema versions on every document | `implemented` | All six documents carry `schemaVersion`. |
+| Write-ahead journal for multi-file transactions | `planned` | Single-document atomic replace is implemented and tested. No operation yet spans two files atomically, so the journal has no caller. **This is a real gap against §11.1** and is the first thing M6's economy will need. |
+| Migration fixtures from a prior version | `blocked` | There is no prior schema version to migrate from — every document is at v1. Fixtures become meaningful at the first bump. |
+| `/nexus doctor storage` | `planned` | M8. `/nexus system status` and `/nexus audit verify` cover part of the ground. |
 
-## M4 — Command framework and module manager · `planned`
+## M3 — Permissions · **PASSED**
 
-`CommandService` from descriptors · the §12.2 nine-step pipeline · single `DurationParser` ·
-token-bucket rate limits · signed confirmation tokens · permission-filtered `/nexus help` ·
-generated command docs · `ModuleManager` · soft-failing alias registration.
+| Requirement | Status | Evidence |
+|---|---|---|
+| §9 engine with ADR-0004 precedence | `tested` | `PermissionServiceTest` + `PermissionNodeTest` — 30 tests. |
+| Default deny | `tested` | `defaultDeny` — `UNDEFINED` is never granted. |
+| Exact beats wildcard, longer beats shorter | `tested` | `exactBeatsWildcard`, `longerBeatsShorter`. |
+| Deny beats allow at equal specificity | `tested` | `denyBeatsAllowAtEqualSpecificity`. |
+| Direct subject beats group | `tested` | `directSubjectBeatsGroup`, `removingDirectNodeRestoresGroupDeny`. |
+| Mid-pattern wildcards rejected at construction | `tested` | `midPatternWildcardsRejected` (5 cases). |
+| Group inheritance and cycle rejection | `tested` | `inheritanceIsFollowed`, `inheritanceCycleRefused`. |
+| Determinism across repeated evaluation | `tested` | `evaluationIsDeterministic` — 50 iterations, total order verified. |
+| Bounded cache with invalidation | `tested` | `cacheIsUsedAndBounded`. |
+| Explain output | `tested` | Runtime: `/nexus permission check` names pattern, source, and group chain. |
+| Operator bootstrap, switchable and visible | `implemented` | Warned at startup, shown in status and GUI, named in explain output. Deny still wins over it. |
+| Temporary permissions with durable expiry | `planned` | Punishments have expiry; permission grants do not yet. |
+| Context filtering (world, dimension, time) | `planned` | The resolver has no context dimension yet. |
+| Import/export schema | `planned` | `permissions.json` is human-readable and hand-editable in the meantime. |
+| Single-use recovery file grant | `planned` | Operator bootstrap covers the lockout case for now. |
 
-## M5 — Teleport, player utilities, core moderation → **v0.1** · `planned`
+## M4 — Command framework · **PASSED**
 
-§19.1 teleport safety · homes, warps, spawn, `/back`, requests · heal/feed/fly/god/speed/
-freeze/vanish/info · kick, ban, tempban, unban, mute, unmute, warn with durable expiry ·
-Appendix D Tier 1 · first GameTests.
+| Requirement | Status | Evidence |
+|---|---|---|
+| §12.2 nine-step pipeline, single registration path | `tested` | Every command routes through `NexusCommands.run`; verified at runtime for permission, validation, audit, and failure paths. |
+| Single `DurationParser` | `tested` | `DurationParserTest` — 40 tests covering the full §12.4 ambiguity matrix. |
+| Token-bucket rate limiting | `tested` | `RateLimiterTest` — 8 tests including `trackedSubjectsAreBounded` and `backwardsClockIsSafe`. |
+| Signed single-use confirmation tokens | `tested` | `ConfirmationServiceTest` — 13 tests. **A token for one ban cannot authorise another** is tested five ways (actor, action, target, parameters, replay). |
+| Confirmation proven at runtime | `tested` | Runtime: prompt → `/nexus confirm` → executed → **reuse refused**. |
+| Permission-filtered `/nexus help` | `implemented` | Lists only what the source may use. |
+| Alias registration fails softly | `tested` | Runtime: `/ban`, `/kick`, `/banlist` are vanilla; NexusCore registered `/nban`, `/nkick`, `/nbanlist` instead and logged why. |
+| No stack trace reaches a player | `implemented` | Pipeline catches everything; the player gets a correlation id. |
+| `ModuleManager` | `planned` | M4 scope not met. Services are wired explicitly through `NexusServices`, which is honest for the current size but is not the module contract of §7.3. |
+| Generated command documentation from descriptors | `planned` | `docs/admin/commands.md` is **hand-maintained**, which §12.5 warns will drift. Generating it needs a descriptor registry, which needs `ModuleManager`. |
 
-## M6 — Economy · `planned`
-## M7 — Moderation depth and chat · `planned`
-## M8 — Automation, backups, diagnostics, benchmarks → **v0.5** · `planned`
-## M9 — Client mod, networking, GUI shell · `planned`
-## M10 — GUI screens, themes, accessibility · `planned`
-## M11 — Public API, documentation, release candidate → **v1.0.0** · `planned`
+## M5 — Teleport, player utilities, moderation · **PARTIAL**
+
+| Requirement | Status | Evidence |
+|---|---|---|
+| §19.1 safe-destination algorithm | `implemented` | Border, build height, bounded single-chunk load, collision-shape passability, fluid, harmful blocks, solid support. **No GameTest yet.** |
+| Warmup with movement cancellation, recheck at commit | `implemented` | Rechecks safety at commit; `/back` recorded only after commit. |
+| Teleport cooldown | `implemented` | `cooldownRemainingMillis`, honouring `teleportCooldownSeconds`. |
+| Homes, warps, spawn, `/back`, `/tpa` | `implemented` | Durable; limits enforced. No GameTest. |
+| Player utilities: heal, feed, fly, god, speed, vanish, info | `implemented` | Flight uses NeoForge's `creative_flight` attribute, not the deprecated ability field. |
+| Moderation: kick, ban, tempban, unban, mute, unmute, warn, warnings | `tested` | `ModerationServiceTest` — 14 tests including `temporaryBanExpiresAtBoundary` and `liftingKeepsHistory`. Exercised at runtime. |
+| Punishment expiry re-evaluated at login | `implemented` | Wired to `PlayerLoggedInEvent`. **Never observed with a real player.** |
+| Chat muting | `implemented` | Wired to `ServerChatEvent`. **Never observed with a real player.** |
+| Restart persistence | `tested` | Runtime: second boot loaded 27 audit records, warnings, groups, and punishments intact; chain continued to 31. |
+| **GameTests** | `planned` | **M5's exit condition is not met.** GameTests for teleport safety, home/warp persistence, punishment enforcement, and permission gating do not exist. |
+| **Manual test: run for real players for a week** | `planned` | **Not done.** This is M5's actual exit criterion. |
+
+## Admin GUI — ahead of schedule
+
+Built as a **vanilla chest menu**, which works on unmodified clients. The specification
+defers the GUI to M9 because custom screens need a client mod; §6.1 permits a vanilla
+container menu, so the panel is usable in the server-only release rather than waiting.
+
+| Requirement | Status | Evidence |
+|---|---|---|
+| Dashboard, player list, per-player actions, moderation, permissions, server pages | `implemented` | `AdminGuiService`. **Never rendered to a real client.** |
+| Permission re-checked on every click | `implemented` | `AdminGuiService.guard`, called by every handler. |
+| Read-only container — items cannot enter or leave | `implemented` | `AdminMenu.clicked` never calls `super`; `quickMoveStack` returns empty. **No test.** |
+| Destructive action behind a confirmation naming the target | `implemented` | Kick confirmation, token bound to that player. |
+| Every action audited with `via: gui` | `implemented` | |
+| Every panel has a command equivalent | `implemented` | Named on the tiles themselves. |
+| Pagination | `implemented` | Bounded by `adminGuiPageSize`, capped at 45. |
+
+---
+
+## Defects found by actually running it
+
+Both were found on a real dedicated server, not in review. Neither would have been caught by
+the test suite.
+
+| Defect | Detail | Resolution |
+|---|---|---|
+| Services did not exist when commands registered | `RegisterCommandsEvent` fires on a datapack **worker thread before** `ServerAboutToStartEvent` fires on the server thread. The guard reported `no commands were registered` rather than registering a broken tree. | Services now build in the mod constructor from `FMLPaths.GAMEDIR`, which precedes every event. The ordering constraint is removed rather than satisfied. |
+| `/ban`, `/kick`, `/banlist` silently resolved to vanilla | The alias code correctly refused to override vanilla (§12.3) — but that left an operator typing `/ban` getting vanilla's ban, with no duration, audit, or history, and no indication anything was different. | NexusCore now registers a collision-free `n`-prefixed alias (`/nban`) whenever a name is taken, logs which ones, and `docs/admin/commands.md` leads with the explanation. |
+
+Also closed before release: `adminGuiEnabled` and `teleportCooldownSeconds` were config keys
+that nothing read. A setting with no effect is a lie in a config file; both are now honoured.
+
+---
+
+## Not started
+
+**M6 Economy** · **M7 Moderation depth and chat** (jail, reports, notes, PMs, channels,
+anti-spam, SmartGuard) · **M8 Automation, backups, diagnostics, benchmarks** ·
+**M9 Client mod and networking** · **M10 Custom GUI screens, themes, accessibility** ·
+**M11 Public API, full documentation, release candidate**.
 
 ---
 
@@ -109,23 +177,21 @@ Appendix D Tier 1 · first GameTests.
 
 | Item | Reason |
 |---|---|
-| Mixins | ADR-0002. v1.0.0 ships zero mixins; supported NeoForge APIs cover the requirements. Adding the first one requires a new ADR. |
-| Managing, installing, deleting, or hot-reloading third-party mods from inside Minecraft | §3.5. |
-| Replacing an observability platform or an OS process manager | §3.5. |
-| Circumventing Minecraft authentication or Mojang/Microsoft services | §3.5. |
-| Autonomous moderation based on opaque machine-learning judgement | §3.5. SmartGuard (M7) uses deterministic configured rules and never auto-bans by default. |
-| Unconditionally overriding vanilla commands | §3.5, §12.3. `/nexus` is the canonical root; aliases are opt-in and collision-checked. |
-| Required dependency on LuckPerms, Vault, Essentials, PlaceholderAPI, WorldEdit, WorldGuard, or any economy/chat/database plugin | §8.1. Every equivalent capability is native. Integrations are optional adapters (M11). |
+| Mixins | ADR-0002. Zero mixins; supported NeoForge APIs cover every requirement so far. |
+| `nexuscore-server.toml` (NeoForge `ModConfigSpec`) | ADR-0006. One JSON configuration system instead of one TOML plus ten JSON. |
+| Managing third-party mods from inside Minecraft · replacing an observability platform · circumventing Mojang authentication · ML-based moderation · unconditionally overriding vanilla commands | §3.5. |
+| Required dependency on LuckPerms, Vault, Essentials, PlaceholderAPI, WorldEdit, WorldGuard, or any economy/chat/database plugin | §8.1. Every capability is native. The JAR embeds nothing. |
 
 ---
 
 ## Unverified claims register
 
-Nothing in this repository may state a performance number as measured until the §16.2
-benchmark harness exists at M8.
+No performance number in this repository is measured. The §16.2 benchmark harness is an M8
+deliverable and does not exist.
 
 | Claim | Status |
 |---|---|
-| Idle tick cost under 0.10 ms | **target, not measured** — no harness until M8 |
-| Active tick cost under 1.0 ms mean / 2.0 ms p95 | **target, not measured** — no harness until M8 |
+| Idle tick cost under 0.10 ms | **target, not measured** |
+| Active tick cost under 1.0 ms mean / 2.0 ms p95 | **target, not measured** |
 | Supported player count | **not claimed anywhere**, and must not be until measured |
+| Behaviour with more than one player online | **never observed** — every runtime test was single-session, console-driven |

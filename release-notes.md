@@ -12,7 +12,7 @@ loader, no other administration mod, and no external database.
 ## Install
 
 1. Install **NeoForge 21.1.235 or newer 21.1.x** for Minecraft 1.21.1 on your server.
-2. Drop `NexusCore-1.0.0.jar` into the server's `mods/` folder.
+2. Drop `NexusCore-1.21.1-1.0.0-neoforge.jar` into the server's `mods/` folder.
 3. Start the server.
 4. Run `/nexus version` in the console.
 

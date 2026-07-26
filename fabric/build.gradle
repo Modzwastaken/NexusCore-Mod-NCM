@@ -8,7 +8,7 @@ version = rootProject.mod_version
 group = rootProject.mod_group_id
 
 base {
-    archivesName = rootProject.mod_archive_base_name
+    archivesName = "${rootProject.mod_archive_base_name}-${rootProject.minecraft_version}"
 }
 
 java {

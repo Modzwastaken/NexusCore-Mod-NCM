@@ -66,7 +66,7 @@ NexusCore installs on the **dedicated server only**. Players join with an unmodi
 vanilla client — no modpack, no version-matched client, no handshake.
 
 1. Install NeoForge 21.1.235 (or newer 21.1.x) for Minecraft 1.21.1 on the server.
-2. Drop `NexusCore-<version>.jar` into the server's `mods/` directory.
+2. Drop `NexusCore-1.21.1-<version>-neoforge.jar` into the server's `mods/` directory.
 3. Start the server.
 4. Run `/nexus version` in the console to confirm it loaded.
 5. Join the server, and run `/adminpanel`.

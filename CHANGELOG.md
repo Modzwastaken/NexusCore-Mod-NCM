@@ -18,6 +18,238 @@ features and stay data-compatible; major releases may change data formats and mu
 migration. **The version number carries no completeness promise** — see
 [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for what actually exists.
 
+Versions shaped `x.y.N` where `N` is non-zero are **not releases**, per
+[ADR-0009](docs/architecture/ADR-0009.md) and [ADR-0010](docs/architecture/ADR-0010.md). They may
+add features. `x.y.1`–`x.y.4` are internal **development builds**; **`x.y.5` is a pre-release**,
+archived and handed to testers; only `x.y.0` — on a `.0` or `.5` minor — is a release.
+
+## [1.0.1] — 2026-07-26 — patch release — security fixes
+
+**Fixes only. No new features, no data-format change.** Everyone running v1.0.0 should take
+this build. It contains none of the in-progress v1.5 work — that is the entire reason the
+patch lane in [ADR-0011](docs/architecture/ADR-0011.md) exists.
+
+### Fixed
+
+- **`/teleport` bypassed NexusCore completely.** Vanilla registers `teleport` as the real
+  command and `tp` as a *redirect* to it. NexusCore took over only `tp`, so `/teleport` kept
+  running as pure vanilla — **no permission check, no rate limit and no audit record** — while
+  every document claimed NexusCore owned the command. Both names are now taken over.
+
+  `ban-ip` and `pardon-ip` are separate vanilla commands for the same reason and are **still
+  not covered**; they remain pure vanilla and are recorded as a known gap rather than fixed
+  here, because covering them is new behaviour rather than a fix.
+
+- **Any non-player command source was granted root.** Authorisation read
+  `CommandSourceStack.getEntity()`, so anything that was not a `ServerPlayer` was treated as
+  the console and given **root**. NexusCore's commands carry no vanilla `requires()`, so its own
+  check is the only gate — which meant `/execute as @e[type=armor_stand] run nexus …` ran with
+  full privileges, and `operatorBootstrap=false` constrained nobody.
+
+  A source presenting a **non-player entity is now refused outright**, which closes the
+  `/execute as` path, and a source with no entity is treated as the console only if it holds
+  permission level 4.
+
+  The obvious fix — read `CommandSourceStack.source`, the real issuer, which `/execute as` does
+  not change — was written first and **had to be abandoned**: that field is private in vanilla
+  and public only under NeoForge's access transformer, so it compiled on NeoForge and Forge and
+  failed on Fabric. `getPlayer()` and `isPlayer()` are no help either, since both read `entity`.
+  Permission level is the only portable discriminator: console and RCON run at 4, command blocks
+  and datapack functions at 2.
+
+  **Residual limitation:** a refused attempt made by a level-4 operator through `/execute as` is
+  still *attributed* to `CONSOLE` in the audit record, because the real issuer cannot be
+  recovered without that private field. The attempt is refused and recorded — the escalation is
+  closed — but the name on the denial is wrong. Verified at runtime, and not fixable portably
+  today.
+
+  **Behaviour change:** command blocks and datapack functions are no longer privileged. Command
+  blocks previously inherited root, which handed administration to anything that could power a
+  block — on a server with `enable-command-block=true`, any level-2 builder.
+
+  **Datapack functions are collateral, and that is a real cost.** A function's source is the
+  server itself, so unlike a command block it is genuinely server-owner-controlled and was not
+  an escalation. But a function and a command block are indistinguishable through public API —
+  both present no entity at permission level 2 — and the only accessor that would separate them,
+  `CommandSourceStack.source`, is private in vanilla and public only under NeoForge's access
+  transformer, so shared code cannot read it. Denying both is the only option that closes the
+  command-block hole. A datapack that drove NexusCore commands will stop working; run them from
+  the console or `server.properties` startup instead.
+
+- **A short write silently truncated an audit record.** `JsonStore.appendLine` ignored
+  `FileChannel.write`'s return value, so a partial write corrupted the hash chain and still
+  reported success — in the one file whose purpose is being tamper-evident. The write now loops
+  until the buffer is drained and fails loudly if it stalls.
+
+- **Every moderator could give themselves creative mode.** The `/gamemode` takeover checked
+  `nexuscore.command.player.gamemode`, and the shipped `moderator` group is granted
+  `nexuscore.command.player.*`. So the moment v1.0 took ownership of `/gamemode`, every
+  moderator gained an ability that had previously required vanilla operator level 2 — a
+  privilege escalation introduced by the takeover itself, not inherited from vanilla.
+
+  The node moved to `nexuscore.command.staff.gamemode`, which `player.*` does not match.
+  **Moving the node rather than editing the shipped group is deliberate:** default groups are
+  only written when `permissions.json` is absent, so editing them would fix new installs and
+  leave every existing server exposed indefinitely. Moving the node fixes both.
+
+- **Nobody below `admin` could confirm a destructive action.**
+  `nexuscore.command.core.confirm` was granted to no group, so a moderator could open a
+  permanent ban and then be unable to complete it. It is now a `default` grant, which is safe
+  because the confirmation token is the real authorisation — bound to actor, action, target and
+  parameters, and single-use.
+
+  **This one does need operator action on an existing server**, for the reason above: your
+  `permissions.json` already exists, so the new default will not appear in it. Run
+  `/nexus permission group add default nexuscore.command.core.confirm`, or add the node by hand.
+
+### Known, not fixed here
+
+`ban-ip` / `pardon-ip` are not taken over. A moderator can still issue an IP ban that NexusCore
+neither audits nor shows in `/banlist`. Scheduled on the ladder, not in this patch.
+
+Several further defects were found in the same sweep and are **not** in this patch, because
+fixing them is behaviour change rather than repair: `/unban` and `/unmute` lift only one of
+several active records, so a second ban leaves the player banned while the command reports
+success; `activeBans()` double-counts; `/nexus reload` silently ignores `commandsPerMinute`.
+All are recorded in `IMPLEMENTATION_STATUS.md` and scheduled on the ladder.
+
+## [1.1.1] — 2026-07-26 — development build — the ladder to v1.5.0
+
+First rung of the road to v1.5.0. This build contains no runtime change: it establishes how
+the work between here and v1.5.0 gets numbered, and adds the gate that keeps the numbering
+honest. `/nexus version` reports `1.0.1`; nothing else about the mod behaves differently.
+
+### Added
+
+- **[ADR-0009](docs/architecture/ADR-0009.md) — the 1.0.x development build ladder.** The
+  third version component is now a build counter rather than a semantic-versioning patch
+  level. `x.y.0` is a release; `x.y.N` is a numbered development build on the road to the next
+  one. v1.5.0 is reached through `1.0.1`, `1.0.2`, … rather than as a single unnumbered jump
+  in which nothing intermediate is installable or testable.
+
+  The ADR records what the scheme costs as well as what it buys: `1.0.1` reads as a patch
+  release to anything parsing the version as semver and is not one, and there is no hotfix
+  lane for `1.0.0` while the ladder is climbing. Neither is hidden.
+
+- **[ADR-0010](docs/architecture/ADR-0010.md) — five-rung lines, and `.5` is a pre-release.**
+  A minor line holds exactly five rungs: `.1`–`.4` are internal development builds, **`.5` is a
+  pre-release** that gets archived and handed to testers, and the minor then rolls. `1.0.5` is
+  followed by `1.1.1`; `1.1.0` never exists, because releases land only on the `.0` and `.5`
+  minors (ADR-0007).
+
+  So the road to v1.5.0 is lines of five. **ADR-0011, in the same build, reduced that to four
+  lines** — `1.1.x`, `1.2.x`, `1.3.x`, `1.4.x` — because `1.0.x` became the published patch line
+  for release v1.0. Twenty rungs and four pre-releases, landing exactly on `1.5.0`.
+
+  This replaces ADR-0009's unbounded counter and its hand-maintained ✅ "milestone snapshot"
+  flag. Which builds get handed out is now a property of the version number rather than a
+  column in a table that nothing checked. The term *snapshot* is retired in favour of
+  *pre-release* throughout.
+
+- **`versionLadderCheck`** — a new `check` gate in the version-owning NeoForge project. It
+  fails the build when:
+
+  - `mod_version` is not exactly `MAJOR.MINOR.PATCH`, **including surrounding whitespace**. The
+    raw property is validated, never a trimmed copy — Gradle does not trim it either, so
+    `mod_version=1.0.1 ` would otherwise pass the gate and then produce
+    `NexusCore-neoforge-1.0.1 -1.21.1.jar` and a `fabric.mod.json` that Fabric's
+    semantic-version parser rejects.
+  - the version has no entry in this changelog. This is the drift that would otherwise happen
+    on every rung.
+  - the heading carries the wrong label, in any direction. It is three-valued: `development
+    build` for `.1`–`.4`, `pre-release` for `.5`, neither for a release. Checking only that the
+    right label is *present* would let a pre-release also call itself a development build, and a
+    one-way check would let `1.5.0` ship labelled either. The label is ADR-0009's only
+    mitigation for the semver ambiguity, so it is enforced in every direction.
+  - the version is already present in `archived/`. Archived builds are immutable by rule, so
+    building at one means the bump was forgotten — the symmetric failure to bump-without-entry.
+  - the version is outside its line (ADR-0010): a sixth rung such as `1.0.6`, or a `.0` on a
+    minor that is not a release point such as `1.2.0`. Both look entirely ordinary and neither
+    exists in this scheme, so each is rejected with what to write instead.
+
+  Headings inside fenced code blocks do not count as entries, since this changelog documents
+  the scheme and will grow examples of headings. The report is written on failure as well as
+  success, matching `stubMarkerCheck`, so a report on disk always describes the run that
+  produced it.
+
+  Proven to fail **ten** distinct ways and to pass three, not merely to pass — see the evidence
+  table in [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
+
+- **"The road to v1.5.0"** in [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) — what each
+  build on the ladder is planned to contain, and which ones are pre-releases. It
+  lives there rather than in a new `ROADMAP.md` because §2.4 gives that document sole
+  authority over naming unfinished work, and a second location would drift from the first.
+
+### Changed
+
+- **ADR-0007 is amended, not superseded.** Its release ladder, its compatibility promise and
+  its refusal to let the version number imply completeness all stand. The single line reading
+  "**PATCH** (`1.0.0` → `1.0.1`) fixes defects only" no longer holds, and says so in place.
+
+- **`RELEASE_CHECKLIST.md` separates the two ceremonies.** A development build runs a short
+  gate; an `x.y.5` pre-release adds six items; `1.5.0` runs the full checklist. The stale
+  references to the retired `v0.1` and `v0.5` labels — which ADR-0007 removed and the checklist
+  still carried — are corrected, as is an artifact filename pattern predating the three-loader
+  split.
+
+- **`RELEASE_CHECKLIST.md` gains a missing M7 section.** The document ran M6 straight into M8,
+  so M7 — which v1.5.0 contains — had no checklist coverage at all. Found while checking that
+  every rung's exit condition had somewhere to be signed off against. Numbered `7a` to avoid
+  renumbering sections that are referenced by number. Its CI item and section 8's are marked
+  NOT MET with the reason, rather than left as boxes that cannot be ticked while no git remote
+  exists.
+
+- **`archived/` now holds two kinds of thing**, and its README says which is which: releases,
+  as before, and `x.y.5` pre-releases. Both are immutable; only one was ever downloaded by the
+  public.
+
+- **`THIRD_PARTY_NOTICES.md` corrected.** It still described a single `NexusCore-<version>.jar`
+  and declared its position "as of version 0.1.0 (M0)" — an artifact shape retired by ADR-0008
+  and a version label retired by ADR-0007. It now names the three-loader artifact pattern,
+  lists all three loaders as compiled-against-not-bundled, and adds the two build tools missing
+  from its table (Fabric Loom, ForgeGradle). Still nothing is embedded in any jar. Found while
+  sweeping for stale version references, not reported.
+
+### Compatibility
+
+No data format changed. Every `schemaVersion` is unchanged, and no code anywhere branches on
+the mod version — it is recorded (`generatedByVersion` in `config.json`, `nexuscore_version` on
+every audit record) and displayed, never compared. Data compatibility is governed by
+`schemaVersion` alone, which is why the version scheme can be changed without touching a
+migration.
+
+Two things a `1.0.0` data directory does see, both benign and both worth stating rather than
+discovering:
+
+- `config.json` is **restamped**, not left untouched: loading re-writes `generatedByVersion`
+  from `1.0.0` to `1.0.1` through the usual atomic protocol, keeping the `.bak`. No other key
+  changes.
+- The audit chain **spans both versions**. Records written before the bump carry
+  `nexuscore_version: "1.0.0"` and records after carry `1.0.1`, in one continuous hash chain.
+  That is the field doing the job it was added for, and verification is unaffected — the hash
+  covers each record's own content.
+
+Per ADR-0009 the data-compatibility promise applies at every rung of the ladder, not only at
+`1.5.0`.
+
+**Both were verified by running the packaged jar, not by reading the code.** The `1.0.1` jar
+was installed on the NeoForge and Fabric test servers over data directories written by
+`1.0.0`. Both started clean with no NexusCore error, read the existing seven-record audit
+chain, and `/nexus audit verify` reported `chain intact` across a chain now spanning both
+versions. `/nexus version` reports `1.0.1` on both. `/nexus system status` was run on Fabric
+only, where the status header reads `v1.0.1`. Both shut down cleanly.
+
+### Known
+
+- **NeoForge warns once per rung.** Loading a build into a world last saved by a different
+  version produces `The following mods have version differences that were not resolved:
+  nexuscore (version 1.0.0 -> 1.0.1)`. The world loads and everything works; NexusCore
+  registers no `DisplayTest` extension point to resolve the difference, deliberately, because
+  suppressing it would also suppress it at `2.0.0` where it will matter. See ADR-0009.
+- **All three loaders were verified at runtime for this build**, servers and dev clients. Forge
+  included — it had never been runtime-tested before, and its 1.0.0 dev-run limitation turns out
+  to have been fixed at 1.0.0 and never re-tested. See `forge/CHANGELOG.md`.
+
 ## [1.0.0] — 2026-07-26 — first public release: NeoForge, Fabric, and Forge
 
 The v1.0 release ships all three loaders at once. Earlier interim tags were collapsed into

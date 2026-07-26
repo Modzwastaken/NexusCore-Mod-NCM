@@ -51,21 +51,26 @@ sourceSets.main.resources {
 // same source-set output either way, so its contents are unchanged.
 sourceSets.main.output.resourcesDir = sourceSets.main.java.destinationDirectory
 
-// KNOWN LIMITATION — the ForgeGradle dev runs below do not currently load the mod.
+// RESOLVED at 1.0.1 — the dev runs below now load the mod.
 //
-// `./gradlew runClient` and `./gradlew runServer` both fail with:
+// This block previously carried a KNOWN LIMITATION notice: `runClient` and `runServer` both
+// failed with
 //     File build/resources/main constructed 0 mods: [], but had 1 mods specified: [nexuscore]
-// ForgeGradle is not emitting a MOD_CLASSES entry for build/classes/java/main, so FML sees
-// the resources directory (which holds mods.toml) as a mod file with no @Mod class in it.
-// Confirmed with --info: MOD_CLASSES is never set. It fails identically for client and
-// server, so it is the dev-run mod-source wiring, not anything side-specific.
+// because FML saw the resources directory, which holds mods.toml, as a mod file with no @Mod
+// class in it.
 //
-// This affects the development environment ONLY. The packaged jar is unaffected and is
-// verified on a real MinecraftForge 52.1.16 dedicated server. NeoGradle and Loom both handle
-// the same shared-source layout without complaint, so the layout itself is sound.
+// Re-tested on 2026-07-26 and both now work. `runClient` reaches a world and logs
+// `NexusCore ready on Forge … 94 message(s), 3 permission group(s)`, takes over the vanilla
+// commands, and a player joins; `runServer` reaches ready state and answers `/nexus version`.
+// The `constructed 0 mods` error does not appear in either.
 //
-// Until this is solved, test the Forge build the way it actually ships: build the jar and
-// drop it into a real Forge server's mods/ folder (see ../forgeserver).
+// The fix is the `resourcesDir` merge immediately above — it was written as an attempted fix,
+// the limitation notice was left in place, and nobody re-ran the dev tasks afterwards to find
+// out that it had worked. The note outlived the bug by a whole release.
+//
+// The packaged jar remains the primary Forge test, because that is what ships: build it and
+// drop it into a real Forge server's mods/ folder (see ../forgeserver). The dev runs are now a
+// working convenience on top of that, not a replacement for it.
 minecraft {
     mappings channel: 'official', version: shared.minecraft_version
 

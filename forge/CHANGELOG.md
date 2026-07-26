@@ -8,6 +8,33 @@ Artifact: `NexusCore-forge-<version>-<mcVersion>.jar`
 Toolchain: ForgeGradle 6.0.54 · **Gradle 8.10.2**
 Requires: MinecraftForge 52.1.16+
 
+## [1.0.1] — 2026-07-26 — development build
+
+### Notes
+- No Forge-specific change. Rebuilt at `1.0.1` and verified: `NexusCore-forge-1.0.1-1.21.1.jar`
+  produced, tests pass, checkstyle clean. The version is read from
+  `../neoforge/gradle.properties` and token-expanded into `META-INF/mods.toml`.
+- Versioning now follows [ADR-0010](../docs/architecture/ADR-0010.md) as well: lines of five
+  rungs, with `x.y.5` a pre-release that gets archived and handed to testers. This build is
+  `1.0.1`, an ordinary internal development build.
+- The `versionLadderCheck` gate added in this build is in the NeoForge project only
+  ([ADR-0008](../docs/architecture/ADR-0008.md), [ADR-0009](../docs/architecture/ADR-0009.md)).
+  Building this project alone will not verify the version ladder.
+### Fixed
+- **The dev-run limitation recorded at 1.0.0 is resolved.** `runClient` and `runServer` both
+  load the mod now — no `constructed 0 mods`. `runClient` reaches a world with NexusCore
+  initialised and the vanilla commands taken over; `runServer` reaches ready state and answers
+  `/nexus version`.
+
+  Nothing was changed to achieve this. The `resourcesDir` merge in `build.gradle` — written at
+  1.0.0 as an attempted fix, with the limitation notice left in place beside it — was the fix,
+  and the dev tasks were never re-run afterwards to find out. **The note outlived the bug by a
+  whole release**, which is the argument for re-testing documented limitations rather than
+  copying them forward.
+
+  The packaged jar on `../forgeserver` remains the primary Forge test, because that is what
+  ships.
+
 ## [1.0.0] — 2026-07-26
 
 ### Added

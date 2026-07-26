@@ -170,10 +170,59 @@ public final class NexusServices {
      * @return the decision, with an explanation
      */
     public PermissionDecision authorise(CommandSourceStack source, String node) {
-        if (!(source.getEntity() instanceof ServerPlayer player)) {
+        ServerPlayer actor = actorOf(source);
+        if (actor != null) {
+            return authorise(actor, node);
+        }
+        if (source.getEntity() != null) {
+            // An entity that is not a player. This is the /execute as bypass: the previous
+            // implementation treated every non-player as the console and granted ROOT, so
+            // `/execute as @e[type=armor_stand] run nexus …` ran with full privileges and was
+            // audited as CONSOLE. It defeated the permission engine outright — an operator could
+            // prefix any refused command with /execute to run it, and operatorBootstrap=false,
+            // the documented way to stop operators having blanket access, constrained nobody.
+            return new PermissionDecision(node, PermissionDecision.Result.DENY, null, "non-player-entity",
+                    "refused because the command was run as a non-player entity, which is never "
+                            + "privileged — run it directly rather than through /execute as");
+        }
+        if (isConsole(source)) {
             return PermissionDecision.root(node, "the console is root");
         }
-        return authorise(player, node);
+        // No entity and below operator level: a command block or a datapack function. Default
+        // deny (§9.1) rather than root, since anything that can power a block would otherwise
+        // inherit administration.
+        return new PermissionDecision(node, PermissionDecision.Result.DENY, null, "unprivileged-source",
+                "refused because command blocks and datapack functions are not privileged");
+    }
+
+    /**
+     * The player behind a command source, or null.
+     *
+     * @param source the command source
+     * @return the issuing player, or null when the source is not a player
+     */
+    private static ServerPlayer actorOf(CommandSourceStack source) {
+        return source.getEntity() instanceof ServerPlayer player ? player : null;
+    }
+
+    /**
+     * Whether a source with no player entity is the console rather than a command block.
+     *
+     * <p>The obvious implementation reads {@code CommandSourceStack.source}, which holds the
+     *真 issuer and is unaffected by {@code /execute as}. It cannot be used: that field is
+     * <b>private in vanilla</b> and only public under NeoForge's access transformer, so shared
+     * code that touches it compiles on NeoForge and Forge and fails on Fabric. {@code getPlayer()}
+     * and {@code isPlayer()} are no help either — both read {@code entity}, not {@code source}.
+     *
+     * <p>Permission level is the portable discriminator. The console and an authenticated RCON
+     * connection run at level 4; command blocks and datapack functions run at level 2. So a
+     * source with no entity and level 4 is the console, and one with no entity and less is not.
+     *
+     * @param source the command source
+     * @return true when this is the server console or RCON
+     */
+    private static boolean isConsole(CommandSourceStack source) {
+        return source.hasPermission(OPERATOR_LEVEL);
     }
 
     /**
@@ -227,8 +276,13 @@ public final class NexusServices {
     @SuppressWarnings("checkstyle:ParameterNumber")
     public void audit(CommandSourceStack source, String action, String targetType, String targetId,
             String result, String reason, Map<String, String> parameters, String correlationId) {
-        UUID actorUuid = source.getEntity() instanceof ServerPlayer player ? player.getUUID() : null;
-        String actorName = actorUuid == null ? "CONSOLE" : source.getTextName();
+        // Attribution follows the same rule as authorisation: the player who issued the command,
+        // not whatever /execute as last impersonated. Reading getEntity() here recorded an
+        // /execute'd action as CONSOLE, which made it unattributable.
+        ServerPlayer actor = actorOf(source);
+        UUID actorUuid = actor == null ? null : actor.getUUID();
+        String actorName = actor != null ? actor.getGameProfile().getName()
+                : (isConsole(source) ? "CONSOLE" : source.getTextName());
         audit.record(actorUuid, actorName, action, targetType, targetId, result, reason, parameters, correlationId);
     }
 
@@ -237,7 +291,11 @@ public final class NexusServices {
      * @return the subject used for rate limiting
      */
     public static UUID subjectOf(CommandSourceStack source) {
-        return source.getEntity() instanceof ServerPlayer player ? player.getUUID() : CONSOLE_SUBJECT;
+        // Same rule as authorisation and attribution, for the same reason: keying the rate limit
+        // on getEntity() let a player shed their own bucket by wrapping the command in
+        // /execute as, since every impersonated entity resolved to the shared CONSOLE_SUBJECT.
+        ServerPlayer actor = actorOf(source);
+        return actor != null ? actor.getUUID() : CONSOLE_SUBJECT;
     }
 
     /** Re-applies settings to every service that caches them. */

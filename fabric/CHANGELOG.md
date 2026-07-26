@@ -8,6 +8,20 @@ Artifact: `NexusCore-fabric-<version>-<mcVersion>.jar`
 Toolchain: Fabric Loom 1.15.4 · Gradle 9.2.1 · Mojang mappings
 Requires: Fabric Loader 0.19.3+ **and Fabric API**
 
+## [1.0.1] — 2026-07-26 — development build
+
+### Notes
+- No Fabric-specific change. Rebuilt at `1.0.1` and verified: `NexusCore-fabric-1.0.1-1.21.1.jar`
+  produced, tests pass, checkstyle clean. The version is picked up automatically — `build.gradle`
+  reads `../neoforge/gradle.properties`, and `fabric.mod.json` is token-expanded from it.
+- Versioning now follows [ADR-0010](../docs/architecture/ADR-0010.md) as well: lines of five
+  rungs, with `x.y.5` a pre-release that gets archived and handed to testers. This build is
+  `1.0.1`, an ordinary internal development build.
+- The `versionLadderCheck` gate added in this build is in the NeoForge project only, since that
+  is where the version actually lives ([ADR-0008](../docs/architecture/ADR-0008.md),
+  [ADR-0009](../docs/architecture/ADR-0009.md)). Building this project alone will not verify the
+  version ladder.
+
 ## [1.0.0] — 2026-07-26
 
 ### Added

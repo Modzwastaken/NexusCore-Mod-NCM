@@ -158,8 +158,27 @@ tasks.register('stubMarkerCheck', StubMarkerCheck) {
     report = layout.buildDirectory.file('reports/stub-markers/report.txt')
 }
 
+// ADR-0009 — the version ladder gate. `mod_version` is the single source of truth for all
+// three loaders, and the failure this catches is the one that will otherwise happen every
+// time: the number is bumped and the changelog entry is not written. It also refuses to let a
+// development build ship without saying that it is one, which is the only real mitigation for
+// `1.0.1` looking like a patch release to anything reading it as semver.
+tasks.register('versionLadderCheck', VersionLadderCheck) {
+    group = 'verification'
+    description = 'Fails the build if mod_version is malformed or undocumented (ADR-0009).'
+    modVersion = mod_version.toString()
+    changelog = rootProject.file('../CHANGELOG.md')
+    // Directory names under archived/ are v<version>; the leading 'v' is stripped so the task
+    // compares like with like. Resolved at configuration time, which keeps the task action free
+    // of `project` access and so configuration-cache safe.
+    archivedVersions = (rootProject.file('../archived').listFiles() ?: new File[0])
+            .findAll { it.isDirectory() && it.name.startsWith('v') }
+            .collect { it.name.substring(1) } as Set
+    report = layout.buildDirectory.file('reports/version-ladder/report.txt')
+}
+
 tasks.named('check') {
-    dependsOn 'stubMarkerCheck'
+    dependsOn 'stubMarkerCheck', 'versionLadderCheck'
 }
 
 /**
@@ -223,5 +242,223 @@ abstract class StubMarkerCheck extends DefaultTask {
         }
 
         logger.lifecycle("stub-marker gate: ${scanned} file(s) scanned, 0 violations")
+    }
+}
+
+/**
+ * Enforces the version ladder defined in docs/architecture/ADR-0009.md.
+ *
+ * <p>The shape rules come from ADR-0010: {@code x.y.0} is a release and lands only on a {@code .0}
+ * or {@code .5} minor; {@code x.y.1}–{@code x.y.4} are development builds; {@code x.y.5} is the
+ * line's pre-release; {@code x.y.6} does not exist.
+ *
+ * <p>Each check corresponds to a mistake that has a real cost:
+ *
+ * <ul>
+ *   <li>{@code mod_version} is <em>exactly</em> {@code MAJOR.MINOR.PATCH}, with no surrounding
+ *       whitespace. The raw property value is validated, never a trimmed copy: the build ships
+ *       what {@code gradle.properties} literally contains, so a gate that tidies the value
+ *       first would approve a string the build never uses. A trailing space produces
+ *       {@code NexusCore-neoforge-1.0.1 -1.21.1.jar} and a {@code fabric.mod.json} that
+ *       Fabric's semantic-version parser rejects.
+ *   <li>The shared changelog has an entry for exactly this version. A bumped number with no
+ *       written entry is a build nobody can find out anything about after the fact.
+ *   <li>The heading carries the <em>right</em> label and not a wrong one: {@code development
+ *       build} for {@code .1}–{@code .4}, {@code pre-release} for {@code .5}, neither for a
+ *       release. ADR-0009 accepts that {@code 1.0.1} reads as a patch release to semver-aware
+ *       tooling; the label is the mitigation, so it is enforced in every direction rather than
+ *       left to memory. Checking only for presence would let a pre-release also call itself a
+ *       development build, and a one-way check would let {@code 1.5.0} ship labelled either.
+ *   <li>The version is inside its line. A sixth rung means the line is full and the minor
+ *       should have rolled; a {@code .0} on a non-release minor means someone wrote
+ *       {@code 1.2.0} meaning "the start of the 1.2 line", which is not a version.
+ *   <li>The version is not one that has already been archived. {@code archived/} is immutable
+ *       by rule — "the fix is a new version, never an edit here" — so rebuilding at a version
+ *       already sitting in it means the bump was forgotten.
+ *   <li>Headings inside fenced code blocks do not count. The changelog documents this scheme
+ *       and will grow examples of headings; a quoted sample is not an entry.
+ * </ul>
+ *
+ * <p>The report is written on every path, success or failure, so a report on disk always
+ * describes the run that produced it rather than the last run that happened to succeed.
+ */
+abstract class VersionLadderCheck extends DefaultTask {
+
+    private static final java.util.regex.Pattern VERSION = ~/^(\d+)\.(\d+)\.(\d+)$/
+
+    /** ADR-0007: releases land only on the .0 and .5 minors. */
+    private static final List<Integer> RELEASE_MINORS = [0, 5]
+
+    /** ADR-0010: a minor line holds five rungs, and the fifth is the pre-release. */
+    private static final int LINE_LENGTH = 5
+
+    /** The marker an ordinary development build's changelog heading must carry. */
+    private static final String DEVELOPMENT_LABEL = 'development build'
+
+    /** The marker the fifth rung's changelog heading must carry instead. */
+    private static final String PRE_RELEASE_LABEL = 'pre-release'
+
+    /** The marker a published fixes-only release on a release line must carry (ADR-0011). */
+    private static final String PATCH_RELEASE_LABEL = 'patch release'
+
+    @Input
+    abstract Property<String> getModVersion()
+
+    /**
+     * Versions already present in {@code archived/}, captured at configuration time. A
+     * directory listing rather than a file tree: the jars are large and their contents are
+     * irrelevant here — only the presence of {@code v<version>/} matters.
+     */
+    @Input
+    abstract SetProperty<String> getArchivedVersions()
+
+    @InputFile
+    @PathSensitive(PathSensitivity.RELATIVE)
+    abstract RegularFileProperty getChangelog()
+
+    @OutputFile
+    abstract RegularFileProperty getReport()
+
+    @TaskAction
+    void verify() {
+        // Deliberately NOT trimmed — see the class javadoc. This is the value the build ships.
+        String version = modVersion.get()
+
+        if (version != version.trim()) {
+            fail(version, "mod_version is padded with whitespace: '${version}' (ADR-0009).\n"
+                    + 'Gradle does not trim it, so this is the version the build actually uses: the jar becomes\n'
+                    + "  NexusCore-neoforge-${version}-1.21.1.jar\n"
+                    + "and Fabric's semantic-version parser rejects it. Remove the whitespace in gradle.properties.")
+        }
+
+        var matcher = VERSION.matcher(version)
+        if (!matcher.matches()) {
+            fail(version, "mod_version '${version}' is not MAJOR.MINOR.PATCH (ADR-0009). "
+                    + 'Releases are x.y.0; development builds are x.y.N.')
+        }
+
+        int minor = Integer.parseInt(matcher.group(2))
+        int patch = Integer.parseInt(matcher.group(3))
+
+        // ADR-0011: the minor decides what the third component means.
+        //   release line     (.0/.5 minor) -> x.y.0 feature release, x.y.N published patch release
+        //   development line (any other)   -> x.y.1-4 development builds, x.y.5 pre-release
+        boolean releaseLine = RELEASE_MINORS.contains(minor)
+
+        if (!releaseLine && patch == 0) {
+            fail(version, "${version} is not a legal version (ADR-0011).\n"
+                    + "Releases land only on the .0 and .5 minors (ADR-0007), so ${matcher.group(1)}.${minor}.0 "
+                    + 'does not exist.\n'
+                    + "${matcher.group(1)}.${minor}.x is a development line — its first rung is "
+                    + "${matcher.group(1)}.${minor}.1.")
+        }
+
+        if (!releaseLine && patch > LINE_LENGTH) {
+            fail(version, "${version} is past the end of its line (ADR-0010).\n"
+                    + "A development line holds ${LINE_LENGTH} rungs: .1 to .4 are development builds and "
+                    + ".${LINE_LENGTH} is the pre-release.\n"
+                    + "Roll the minor: the next rung after ${matcher.group(1)}.${minor}.${LINE_LENGTH} is "
+                    + "${matcher.group(1)}.${minor + 1}.1.")
+        }
+
+        boolean isRelease = releaseLine && patch == 0
+        boolean isPatchRelease = releaseLine && patch > 0
+        boolean isPreRelease = !releaseLine && patch == LINE_LENGTH
+        String stage = isRelease ? 'release'
+                : isPatchRelease ? 'patch release'
+                : isPreRelease ? 'pre-release' : 'development build'
+
+        if (archivedVersions.get().contains(version)) {
+            fail(version, "${version} is already archived, and archived builds are immutable (ADR-0009).\n"
+                    + 'Building at a version that has already been handed out means mod_version was not bumped.\n'
+                    + 'ADR-0009 bumps it at the START of a rung\'s work. Bump it, then write the changelog entry.')
+        }
+
+        String heading = findHeading(changelog.get().asFile, version)
+
+        if (heading == null) {
+            fail(version, "No changelog entry for ${version} (ADR-0009).\n"
+                    + "Expected a line beginning '## [${version}]' in ${changelog.get().asFile}, "
+                    + 'outside any fenced code block.\n'
+                    + 'Bumping mod_version without writing the entry is exactly what this gate exists to stop.')
+        }
+
+        // The label is three-valued (ADR-0010): a development build says so, a pre-release says
+        // so instead, and a release says neither. Checking only that the right label is PRESENT
+        // would let a pre-release also call itself a development build, so the wrong one being
+        // ABSENT is checked too.
+        String lower = heading.toLowerCase(Locale.ROOT)
+        boolean saysDevelopment = lower.contains(DEVELOPMENT_LABEL)
+        // "pre-release" is a substring of nothing else here, but the development label must not
+        // be allowed to satisfy it, so the two are tested independently.
+        boolean saysPreRelease = lower.contains(PRE_RELEASE_LABEL)
+
+        // A published build (release or patch release) must carry NEITHER internal label: both
+        // tell a reader not to install it, which is the opposite of true.
+        if (releaseLine) {
+            if (saysDevelopment || saysPreRelease) {
+                fail(version, "${version} is a ${stage} on a release line, but its changelog heading calls "
+                        + "it a ${saysDevelopment ? DEVELOPMENT_LABEL : PRE_RELEASE_LABEL} (ADR-0011).\n"
+                        + "Heading: ${heading}\n"
+                        + 'A published build labelled as internal tells every reader not to install it.')
+            }
+            if (isPatchRelease && !heading.toLowerCase(Locale.ROOT).contains(PATCH_RELEASE_LABEL)) {
+                fail(version, "${version} is a ${stage}, and its changelog heading does not say so "
+                        + '(ADR-0011).\n'
+                        + "Heading: ${heading}\n"
+                        + "Add '— ${PATCH_RELEASE_LABEL}' to it. A patch release is fixes only — no new "
+                        + 'features and no data-format change — and the heading is what states that.')
+            }
+        } else if (!(isPreRelease ? saysPreRelease : saysDevelopment)) {
+            String expected = isPreRelease ? PRE_RELEASE_LABEL : DEVELOPMENT_LABEL
+            fail(version, "${version} is a ${stage}, and its changelog heading does not say so (ADR-0010).\n"
+                    + "Heading: ${heading}\n"
+                    + "Add '— ${expected}' to it. The label is what tells a reader whether this build is "
+                    + 'internal, meant for testers, or published.')
+        } else if (isPreRelease ? saysDevelopment : saysPreRelease) {
+            String forbidden = isPreRelease ? DEVELOPMENT_LABEL : PRE_RELEASE_LABEL
+            fail(version, "${version} is a ${stage}, but its changelog heading calls it a ${forbidden} "
+                    + '(ADR-0010).\n'
+                    + "Heading: ${heading}\n"
+                    + 'One build cannot be both. Use exactly one label.')
+        }
+
+        writeReport("version ladder: ${version} (${stage}), documented\n${heading}\n")
+        logger.lifecycle("version ladder: ${version} — ${stage}, changelog entry present")
+    }
+
+    /**
+     * Finds the changelog heading for {@code version}, ignoring anything inside a fenced code
+     * block. The prefix includes the closing bracket, so {@code ## [1.0.1]} cannot match
+     * {@code ## [1.0.10]} — which matters, because this ladder reaches 1.0.13.
+     *
+     * <p>Matching is anchored at column zero, so an indented or block-quoted heading is not an
+     * entry either.
+     */
+    private static String findHeading(File changelogFile, String version) {
+        String prefix = "## [${version}]"
+        boolean insideFence = false
+        for (String line : changelogFile.readLines('UTF-8')) {
+            String trimmed = line.trim()
+            if (trimmed.startsWith('```') || trimmed.startsWith('~~~')) {
+                insideFence = !insideFence
+                continue
+            }
+            if (!insideFence && line.startsWith(prefix)) {
+                return line
+            }
+        }
+        return null
+    }
+
+    private void writeReport(String text) {
+        File reportFile = report.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.setText(text, 'UTF-8')
+    }
+
+    private void fail(String version, String message) {
+        writeReport("version ladder: ${version} REJECTED\n${message}\n")
+        throw new GradleException(message)
     }
 }

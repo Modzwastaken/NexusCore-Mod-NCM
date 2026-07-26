@@ -205,8 +205,19 @@ public final class NexusCommands {
         // /tp and /gamemode are rebuilt with vanilla's full grammar rather than aliased, so
         // selectors, coordinates and `facing` keep working. They are only taken when the whole
         // vanilla node can be removed cleanly — a half-replaced /tp is worse than none.
+        //
+        // BOTH names must be taken. Vanilla's TeleportCommand registers `teleport` as the real
+        // node and `tp` as a *redirect* to it:
+        //     LiteralCommandNode<?> node = dispatcher.register(literal("teleport")…);
+        //     dispatcher.register(literal("tp").requires(…hasPermission(2)).redirect(node));
+        // Replacing only `tp` therefore left `/teleport` as fully working vanilla — no
+        // permission check, no rate limit and no audit record — while every document claimed
+        // NexusCore owned the command. `ban-ip` and `pardon-ip` are separate vanilla commands
+        // for the same reason: they are not aliases of `ban` and `pardon`, so taking those two
+        // never touched them.
         if (takeOver) {
             registerVanillaReplacement(dispatcher, "tp", VanillaCommands.teleport(services));
+            registerVanillaReplacement(dispatcher, "teleport", VanillaCommands.teleport(services));
             registerVanillaReplacement(dispatcher, "gamemode", VanillaCommands.gamemode(services));
         }
 

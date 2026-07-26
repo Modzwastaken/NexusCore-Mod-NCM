@@ -482,6 +482,11 @@ public final class PermissionService {
         for (String node : List.of(
                 "nexuscore.command.core.version",
                 "nexuscore.command.core.help",
+                // Confirmation is safe to grant broadly: the token is the real authorisation and
+                // is bound to actor, action, target and parameters, and is single-use. Without
+                // it, anyone below `admin` could START a destructive action and then be unable to
+                // complete it — a moderator could open a permanent ban and never confirm it.
+                "nexuscore.command.core.confirm",
                 "nexuscore.command.teleport.home",
                 "nexuscore.command.teleport.sethome",
                 "nexuscore.command.teleport.delhome",

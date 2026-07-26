@@ -1,0 +1,73 @@
+plugins {
+    id 'java'
+    id 'checkstyle'
+    id 'fabric-loom' version '1.15.4'
+}
+
+version = rootProject.mod_version
+group = rootProject.mod_group_id
+
+base {
+    archivesName = rootProject.mod_archive_base_name
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
+}
+
+// Produces build/libs/NexusCore-<version>-fabric.jar, matching the NeoForge artifact's shape.
+tasks.named('jar', Jar) {
+    archiveClassifier = 'fabric'
+}
+
+repositories {
+    mavenCentral()
+}
+
+// The port's whole strategy: compile the *same* source files, not a copy of them. A copied
+// tree diverges the first time someone fixes a bug in one and not the other. Only the entry
+// point differs per platform, so only the entry point lives in this module.
+//
+// Mojang mappings are used rather than Yarn for the same reason — under Yarn every shared
+// file would need different type names and none of this would compile unchanged.
+sourceSets.main.java.srcDirs += rootProject.file('src/main/java')
+sourceSets.main.resources.srcDirs += rootProject.file('src/main/resources/assets')
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    // The NeoForge entry point is the one file that cannot be shared.
+    exclude 'com/mwtstudios/nexuscore/NexusCore.java'
+    exclude 'com/mwtstudios/nexuscore/platform/NeoForgeFlightController.java'
+}
+
+sourceSets.main.java {
+    exclude 'com/mwtstudios/nexuscore/NexusCore.java'
+    exclude 'com/mwtstudios/nexuscore/platform/NeoForgeFlightController.java'
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${rootProject.minecraft_version}"
+    mappings loom.officialMojangMappings()
+    modImplementation "net.fabricmc:fabric-loader:${rootProject.fabric_loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${rootProject.fabric_api_version}"
+}
+
+checkstyle {
+    toolVersion = '10.21.1'
+    configFile = rootProject.file('config/checkstyle/checkstyle.xml')
+    maxWarnings = 0
+    ignoreFailures = false
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('fabric.mod.json') {
+        expand version: project.version,
+                mod_id: rootProject.mod_id,
+                mod_display_name: rootProject.mod_display_name,
+                mod_authors: rootProject.mod_authors,
+                mod_license: rootProject.mod_license,
+                minecraft_version: rootProject.minecraft_version,
+                fabric_loader_version: rootProject.fabric_loader_version
+    }
+}

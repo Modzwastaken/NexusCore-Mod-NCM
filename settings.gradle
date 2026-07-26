@@ -5,6 +5,10 @@ pluginManagement {
             name = 'NeoForged'
             url = 'https://maven.neoforged.net/releases'
         }
+        maven {
+            name = 'Fabric'
+            url = 'https://maven.fabricmc.net/'
+        }
     }
 }
 
@@ -13,3 +17,8 @@ plugins {
 }
 
 rootProject.name = 'NexusCore'
+
+// The root project is the NeoForge build. Fabric is a sibling module that compiles the same
+// shared sources with its own toolchain; nothing is moved, so the released NeoForge build is
+// unaffected by the port. See docs/architecture/ADR-0008.md.
+include 'fabric'

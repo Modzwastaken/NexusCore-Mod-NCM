@@ -17,6 +17,7 @@ import com.mwtstudios.nexuscore.identity.IdentityService;
 import com.mwtstudios.nexuscore.message.MessageService;
 import com.mwtstudios.nexuscore.moderation.ModerationService;
 import com.mwtstudios.nexuscore.permission.PermissionService;
+import com.mwtstudios.nexuscore.platform.NeoForgeFlightController;
 import com.mwtstudios.nexuscore.player.PlayerUtilityService;
 import com.mwtstudios.nexuscore.storage.JsonStore;
 import com.mwtstudios.nexuscore.teleport.TeleportService;
@@ -110,7 +111,7 @@ public final class NexusCore {
         audit.setEnabled(settings.auditEnabled);
         PermissionService permissions = new PermissionService(store, settings.permissionCacheSize);
         TeleportService teleport = new TeleportService(store, settings, System::currentTimeMillis);
-        PlayerUtilityService players = new PlayerUtilityService();
+        PlayerUtilityService players = new PlayerUtilityService(new NeoForgeFlightController());
         ModerationService moderation = new ModerationService(store, System::currentTimeMillis);
         RateLimiter rateLimiter = new RateLimiter(settings.commandsPerMinute, System::currentTimeMillis);
         ConfirmationService confirmations =

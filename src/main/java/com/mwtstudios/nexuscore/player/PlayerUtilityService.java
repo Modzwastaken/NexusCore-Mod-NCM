@@ -6,15 +6,12 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 
+import com.mwtstudios.nexuscore.platform.FlightController;
+
 import net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.entity.ai.attributes.AttributeInstance;
-import net.minecraft.world.entity.ai.attributes.AttributeModifier;
-
-import net.neoforged.neoforge.common.NeoForgeMod;
 
 /**
  * The staff quality-of-life toolkit: heal, feed, fly, god, speed, vanish, and player info.
@@ -34,12 +31,23 @@ public final class PlayerUtilityService {
     private static final float DEFAULT_WALK_SPEED = 0.1f;
     private static final float DEFAULT_FLY_SPEED = 0.05f;
 
-    /** Identifies NexusCore's own flight grant, so it can be revoked without touching others'. */
-    private static final ResourceLocation FLIGHT_MODIFIER_ID =
-            ResourceLocation.fromNamespaceAndPath("nexuscore", "flight");
-
     /** Vanished players. Session-only: vanish does not survive a restart, by design. */
     private final Set<UUID> vanished = new LinkedHashSet<>();
+
+    /** Supplied by the platform, because flight is the one thing loaders genuinely differ on. */
+    private final FlightController flight;
+
+    /**
+     * @param flight the platform's flight mechanism
+     */
+    public PlayerUtilityService(FlightController flight) {
+        this.flight = flight;
+    }
+
+    /** @return how this platform grants flight, for diagnostics */
+    public String flightMechanism() {
+        return flight.describe();
+    }
 
     /**
      * Restores health, hunger, saturation, and extinguishes the player.
@@ -67,31 +75,11 @@ public final class PlayerUtilityService {
     /**
      * Toggles the ability to fly.
      *
-     * <p>Flight is granted through NeoForge's {@code CREATIVE_FLIGHT} attribute rather than by
-     * writing {@code Abilities.mayfly} directly. NeoForge deprecated that field precisely
-     * because direct writes fight with every other mod that grants flight: the last writer
-     * wins and the loser's grant vanishes. An attribute modifier is additive and is keyed by
-     * {@code nexuscore:flight}, so revoking NexusCore's grant leaves anyone else's intact.</p>
-     *
      * @param player the target
      * @param enabled true to allow flight
      */
     public void setFlight(ServerPlayer player, boolean enabled) {
-        AttributeInstance flight = player.getAttribute(NeoForgeMod.CREATIVE_FLIGHT);
-        if (flight == null) {
-            // The attribute is registered by NeoForge and attached to players. Its absence
-            // means the platform is not what NexusCore was built against, so say so rather
-            // than silently doing nothing.
-            throw new IllegalStateException("the NeoForge creative_flight attribute is not present on this player; "
-                    + "NexusCore cannot grant flight on this platform build");
-        }
-        flight.removeModifier(FLIGHT_MODIFIER_ID);
-        if (enabled) {
-            flight.addPermanentModifier(new AttributeModifier(FLIGHT_MODIFIER_ID, 1.0, AttributeModifier.Operation.ADD_VALUE));
-        } else if (!player.isCreative() && !player.isSpectator()) {
-            player.getAbilities().flying = false;
-        }
-        player.onUpdateAbilities();
+        flight.setFlight(player, enabled);
     }
 
     /**
@@ -99,7 +87,7 @@ public final class PlayerUtilityService {
      * @return true when the player may currently fly, from any source
      */
     public boolean canFly(ServerPlayer player) {
-        return player.mayFly();
+        return flight.canFly(player);
     }
 
     /**
@@ -107,8 +95,7 @@ public final class PlayerUtilityService {
      * @return true when NexusCore specifically is what is granting flight
      */
     public boolean hasNexusFlight(ServerPlayer player) {
-        AttributeInstance flight = player.getAttribute(NeoForgeMod.CREATIVE_FLIGHT);
-        return flight != null && flight.getModifier(FLIGHT_MODIFIER_ID) != null;
+        return flight.hasNexusFlight(player);
     }
 
     /**
@@ -235,7 +222,7 @@ public final class PlayerUtilityService {
                 player.level().dimension().location().toString(),
                 String.format(Locale.ROOT, "%.1f, %.1f, %.1f", player.getX(), player.getY(), player.getZ()),
                 player.connection.latency(),
-                player.mayFly(),
+                flight.canFly(player),
                 player.getAbilities().invulnerable,
                 isVanished(player.getUUID()));
     }

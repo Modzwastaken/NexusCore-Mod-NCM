@@ -14,6 +14,19 @@ The v1.0 release ships all three loaders at once. Earlier interim tags were coll
 this release; nothing had been published externally, so no released version is being
 rewritten.
 
+### Resource pack metadata
+
+Added `pack.mcmeta`. A mod jar containing `assets/` is loaded as a resource pack, and Forge
+validates it with vanilla's strict codec, which requires `description` and `pack_format`.
+NeoForge and Fabric never complained because NeoForge substitutes a lenient
+`OPTIONAL_FORMAT` codec that makes both fields optional — so the missing file only surfaced on
+Forge, as a dismissible error screen.
+
+A mod jar is read as **both** a resource pack (format 34 on 1.21.1) and a data pack (format
+48), which one `pack_format` cannot satisfy, so the file declares
+`supported_formats: {min_inclusive: 34, max_inclusive: 48}` to cover both. Formats taken from
+Minecraft's own `DetectedVersion`, not from memory.
+
 ### Forge dev runs fixed
 
 `./gradlew runClient` and `runServer` in the Forge project failed with

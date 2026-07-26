@@ -164,10 +164,16 @@ public final class TeleportService {
      * @param onCommit invoked with the player and the outcome when a warmup resolves
      */
     public void tick(MinecraftServer server, java.util.function.BiConsumer<ServerPlayer, Outcome> onCommit) {
+        long now = clock.getAsLong();
+
+        // Expiring requests must happen every tick, not only when a warmup is pending.
+        // Guarding this behind `pending.isEmpty()` meant a /tpa request never expired on a
+        // quiet server, so accepting one an hour later still worked.
+        requests.entrySet().removeIf(entry -> entry.getValue().expiresAtMillis <= now);
+
         if (pending.isEmpty()) {
             return;
         }
-        long now = clock.getAsLong();
         List<UUID> resolved = new ArrayList<>();
 
         for (Map.Entry<UUID, Pending> entry : pending.entrySet()) {
@@ -189,8 +195,6 @@ public final class TeleportService {
             }
         }
         resolved.forEach(pending::remove);
-
-        requests.entrySet().removeIf(entry -> entry.getValue().expiresAtMillis <= now);
     }
 
     /**
@@ -358,6 +362,20 @@ public final class TeleportService {
     /** @return the configured spawn, if one has been set */
     public Optional<Location> spawn() {
         return Optional.ofNullable(spawn.spawn);
+    }
+
+    /**
+     * Records a return point directly, without a teleport having happened.
+     *
+     * <p>Used when a player dies: {@code /back} taking you to where you died is the single
+     * most requested behaviour of this command, and a death is exactly the case where the
+     * player did not teleport and so would otherwise have no return point.</p>
+     *
+     * @param player the player
+     * @param location where they were
+     */
+    public void recordReturnPoint(UUID player, Location location) {
+        back.put(player, location);
     }
 
     /**

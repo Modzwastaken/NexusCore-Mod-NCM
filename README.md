@@ -18,7 +18,7 @@ required.
 
 ## Current state
 
-**Version 0.1.0 — milestones M0 through M5 (partial).**
+**Version 1.0.0 — first public release.** ([release notes](release-notes.md))
 
 Working today, on a server-only install with vanilla clients:
 
@@ -28,13 +28,14 @@ Working today, on a server-only install with vanilla clients:
 - **Audit** — append-only, SHA-256 hash-chained, tamper-evident, with write-time redaction
 - **Commands** — a nine-step pipeline every command routes through: permission, validation,
   rate limit, confirmation, service call, feedback, audit
-- **Teleport** — homes, warps, spawn, `/back`, `/tpa`, with real destination-safety checks
-- **Player tools** — heal, feed, fly, god, speed, vanish, playerinfo
+- **Teleport** — homes, warps, spawn, `/back` (including back-to-death), `/tpa`, staff `/tp`,
+  with real destination-safety checks
+- **Player tools** — heal, feed, fly, god, speed, vanish, playerinfo, seen, list, near
 - **Moderation** — kick, ban, tempban, unban, mute, unmute, warn, with durable expiry and
   history that cannot be erased
 - **Admin GUI** — a chest-menu panel that works on **unmodified vanilla clients**
 
-Verified by 160 passing tests and an end-to-end run on a real NeoForge 21.1.235 dedicated
+Verified by 162 passing tests and an end-to-end run on a real NeoForge 21.1.235 dedicated
 server, including a restart, with zero errors.
 
 **Not yet:** GameTests, economy, chat channels, scheduler, backups, the custom-screen client
@@ -47,18 +48,21 @@ list, including this one.
 
 ## Release ladder
 
-| Release | Milestone | Contents |
-|---|---|---|
-| **v0.1 "Bedrock"** | M5 | Server-only. Permissions with groups · JSON storage with atomic writes · audit log · config and messages · 14 commands · homes, warps, spawn, safe teleport · player utilities · kick, ban, tempban, mute, warn. |
-| **v0.5 "Console"** | M8 | Adds ledger-backed economy and shops · full moderation · chat channels and anti-spam · durable scheduler · backups with verified restore · diagnostics. Still server-only. |
-| **v1.0 "Full"** | M11 | Adds the client mod, thirteen GUI screens, themes and accessibility, public API, and integration adapters. |
+Versions advance `v1.0` → `v1.5` → `v2.0` ([ADR-0007](docs/architecture/ADR-0007.md)).
+**The version number is not a completeness claim** — `IMPLEMENTATION_STATUS.md` is.
 
-**Server-only mode is supported forever.** It is how v0.1 and v0.5 work, and it is not a
-degraded path. Every GUI action has a command equivalent.
+| Release | Contents |
+|---|---|
+| **v1.0** *(current)* | Permissions, storage, audit, command pipeline, teleport, player tools, moderation, admin GUI. Server-only. |
+| **v1.5** *(planned)* | Economy and shops · chat channels, private messages, anti-spam · jail and reports · durable scheduler · backups with verified restore. |
+| **v2.0** *(planned)* | Client mod, custom GUI screens, themes and accessibility, public API, integration adapters. |
+
+**Server-only mode is supported forever.** It is not a degraded path, and every GUI action
+has a command equivalent.
 
 ## Installing
 
-NexusCore v0.1 installs on the **dedicated server only**. Players join with an unmodified
+NexusCore installs on the **dedicated server only**. Players join with an unmodified
 vanilla client — no modpack, no version-matched client, no handshake.
 
 1. Install NeoForge 21.1.235 (or newer 21.1.x) for Minecraft 1.21.1 on the server.
@@ -130,7 +134,8 @@ Other useful targets:
 - [Command reference](docs/admin/commands.md)
 - [Permissions](docs/admin/permissions.md) — how a decision is reached, and the one rule that surprises people
 - [Admin panel](docs/admin/admin-gui.md)
-- [Architecture decisions](docs/architecture/) — ADR-0001 through ADR-0006
+- [Release notes](release-notes.md)
+- [Architecture decisions](docs/architecture/) — ADR-0001 through ADR-0007
 - [Implementation status](IMPLEMENTATION_STATUS.md)
 - [Release checklist](RELEASE_CHECKLIST.md)
 - [Changelog](CHANGELOG.md)

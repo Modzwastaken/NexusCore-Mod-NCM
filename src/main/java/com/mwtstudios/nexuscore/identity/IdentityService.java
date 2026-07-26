@@ -132,6 +132,19 @@ public final class IdentityService {
     }
 
     /**
+     * @param uuid the player
+     * @return their recorded profile, if NexusCore has ever seen them
+     */
+    public Optional<KnownPlayer> profileOf(UUID uuid) {
+        Profile profile = document.players.get(uuid.toString());
+        if (profile == null) {
+            return Optional.empty();
+        }
+        return Optional.of(new KnownPlayer(uuid, profile.currentName,
+                profile.firstSeenEpochMillis, profile.lastSeenEpochMillis));
+    }
+
+    /**
      * @return every player NexusCore has recorded, newest activity first
      */
     public List<KnownPlayer> knownPlayers() {

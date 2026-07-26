@@ -11,6 +11,7 @@ import java.util.UUID;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.FloatArgumentType;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
@@ -96,13 +97,15 @@ public final class NexusCommands {
                 .then(Commands.literal("player")
                         .then(healNode(services)).then(feedNode(services)).then(flyNode(services))
                         .then(godNode(services)).then(speedNode(services)).then(vanishNode(services))
-                        .then(infoNode(services)))
+                        .then(infoNode(services)).then(seenNode(services)).then(listNode(services))
+                        .then(nearNode(services)))
                 .then(Commands.literal("teleport")
                         .then(homeNode(services)).then(setHomeNode(services)).then(delHomeNode(services))
                         .then(homesNode(services)).then(warpNode(services)).then(setWarpNode(services))
                         .then(delWarpNode(services)).then(warpsNode(services)).then(spawnNode(services))
                         .then(setSpawnNode(services)).then(backNode(services)).then(tpaNode(services))
-                        .then(tpAcceptNode(services)).then(tpDenyNode(services)))
+                        .then(tpAcceptNode(services)).then(tpDenyNode(services))
+                        .then(tpNode(services)).then(tpHereNode(services)))
                 .then(Commands.literal("moderation")
                         .then(kickNode(services)).then(banNode(services)).then(tempBanNode(services))
                         .then(unbanNode(services)).then(muteNode(services)).then(unmuteNode(services))
@@ -136,6 +139,10 @@ public final class NexusCommands {
         aliases.put("speed", speedNode(services));
         aliases.put("vanish", vanishNode(services));
         aliases.put("playerinfo", infoNode(services));
+        aliases.put("seen", seenNode(services));
+        aliases.put("list", listNode(services));
+        aliases.put("near", nearNode(services));
+        aliases.put("tphere", tpHereNode(services));
         aliases.put("home", homeNode(services));
         aliases.put("sethome", setHomeNode(services));
         aliases.put("delhome", delHomeNode(services));
@@ -368,7 +375,30 @@ public final class NexusCommands {
                                                         "nexuscore.command.permission.group", "permission.group.remove",
                                                         source -> groupChange(source, services,
                                                                 StringArgumentType.getString(context, "player"),
-                                                                StringArgumentType.getString(context, "group"), false)))))));
+                                                                StringArgumentType.getString(context, "group"), false)))))))
+                .then(Commands.literal("set")
+                        .then(Commands.argument("player", StringArgumentType.word())
+                                .then(Commands.argument("node", StringArgumentType.word())
+                                        .then(Commands.literal("allow")
+                                                .executes(context -> run(context, services,
+                                                        "nexuscore.command.permission.set", "permission.set",
+                                                        source -> setNode(source, services,
+                                                                StringArgumentType.getString(context, "player"),
+                                                                StringArgumentType.getString(context, "node"), true))))
+                                        .then(Commands.literal("deny")
+                                                .executes(context -> run(context, services,
+                                                        "nexuscore.command.permission.set", "permission.set",
+                                                        source -> setNode(source, services,
+                                                                StringArgumentType.getString(context, "player"),
+                                                                StringArgumentType.getString(context, "node"), false)))))))
+                .then(Commands.literal("unset")
+                        .then(Commands.argument("player", StringArgumentType.word())
+                                .then(Commands.argument("node", StringArgumentType.word())
+                                        .executes(context -> run(context, services,
+                                                "nexuscore.command.permission.set", "permission.unset",
+                                                source -> unsetNode(source, services,
+                                                        StringArgumentType.getString(context, "player"),
+                                                        StringArgumentType.getString(context, "node")))))));
     }
 
     private static Feedback permissionCheck(CommandSourceStack source, NexusServices services, String name, String node)
@@ -402,6 +432,12 @@ public final class NexusCommands {
 
     private static LiteralArgumentBuilder<CommandSourceStack> auditTree(NexusServices services) {
         return Commands.literal("audit")
+                .then(Commands.literal("tail")
+                        .executes(context -> run(context, services, "nexuscore.command.audit.tail", "audit.tail",
+                                source -> auditTail(services, 10)))
+                        .then(Commands.argument("count", IntegerArgumentType.integer(1, 100))
+                                .executes(context -> run(context, services, "nexuscore.command.audit.tail", "audit.tail",
+                                        source -> auditTail(services, IntegerArgumentType.getInteger(context, "count"))))))
                 .then(Commands.literal("verify")
                         .executes(context -> run(context, services, "nexuscore.command.audit.verify", "audit.verify",
                                 source -> {
@@ -1059,6 +1095,193 @@ public final class NexusCommands {
                         }));
     }
 
+
+    private static Feedback setNode(CommandSourceStack source, NexusServices services, String name, String node,
+            boolean allow) throws Refused {
+        UUID target = resolve(source, services, name);
+        try {
+            services.permissions().setSubjectNode(target, node, allow);
+        } catch (IllegalArgumentException e) {
+            throw new Refused(e.getMessage());
+        }
+        return Feedback.of(services.messages().render("permission.set.success",
+                        "target", name, "node", node, "value", allow ? "ALLOW" : "DENY"))
+                .withTarget("player", target.toString())
+                .withAudit("node", node)
+                .withAudit("value", allow ? "ALLOW" : "DENY")
+                .broadcast();
+    }
+
+    private static Feedback unsetNode(CommandSourceStack source, NexusServices services, String name, String node)
+            throws Refused {
+        UUID target = resolve(source, services, name);
+        if (!services.permissions().removeSubjectNode(target, node)) {
+            throw new Refused(services.messages().raw("permission.unset.none", "target", name, "node", node));
+        }
+        return Feedback.of(services.messages().render("permission.unset.success", "target", name, "node", node))
+                .withTarget("player", target.toString())
+                .withAudit("node", node)
+                .broadcast();
+    }
+
+    private static Feedback auditTail(NexusServices services, int count) {
+        List<String> records = services.audit().tail(count);
+        if (records.isEmpty()) {
+            return Feedback.of(services.messages().render("audit.tail.none"));
+        }
+        StringBuilder text = new StringBuilder("&b--- Last " + records.size() + " audit record(s) ---");
+        for (String line : records) {
+            text.append("\n&7").append(summariseAuditLine(line));
+        }
+        return Feedback.of(Component.literal(MessageService.colourise(text.toString())));
+    }
+
+    /** Renders one audit record compactly. Never echoes redacted parameters back out. */
+    private static String summariseAuditLine(String line) {
+        try {
+            com.google.gson.JsonObject entry = com.google.gson.JsonParser.parseString(line).getAsJsonObject();
+            return entry.get("timestamp_utc").getAsString().substring(11, 19)
+                    + " &f" + entry.get("actor_name").getAsString()
+                    + " &7" + entry.get("action").getAsString()
+                    + " &8" + entry.get("result").getAsString();
+        } catch (RuntimeException e) {
+            return "(unreadable record)";
+        }
+    }
+
+    // ---- player lookups ----------------------------------------------------------------
+
+    private static LiteralArgumentBuilder<CommandSourceStack> seenNode(NexusServices services) {
+        return Commands.literal("seen")
+                .then(Commands.argument("player", StringArgumentType.word())
+                        .executes(context -> run(context, services, "nexuscore.command.player.seen", "player.seen",
+                                source -> {
+                                    String name = StringArgumentType.getString(context, "player");
+                                    UUID target = resolve(source, services, name);
+                                    ServerPlayer online = source.getServer().getPlayerList().getPlayer(target);
+                                    if (online != null && !hiddenFrom(services, source, target)) {
+                                        return Feedback.of(services.messages().render("player.seen.online",
+                                                "target", online.getGameProfile().getName()));
+                                    }
+                                    var profile = services.identity().profileOf(target)
+                                            .orElseThrow(() -> new Refused(services.messages()
+                                                    .raw("error.unknown-player", "name", name)));
+                                    return Feedback.of(services.messages().render("player.seen.offline",
+                                                    "target", profile.name(),
+                                                    "ago", DurationParser.describeElapsed(
+                                                            profile.lastSeenEpochMillis(), System.currentTimeMillis()),
+                                                    "first", java.time.Instant.ofEpochMilli(
+                                                            profile.firstSeenEpochMillis()).toString().substring(0, 10)))
+                                            .withTarget("player", target.toString());
+                                })));
+    }
+
+    private static LiteralArgumentBuilder<CommandSourceStack> listNode(NexusServices services) {
+        return Commands.literal("list")
+                .executes(context -> run(context, services, "nexuscore.command.player.list", "player.list",
+                        source -> {
+                            List<String> visible = new ArrayList<>();
+                            int hidden = 0;
+                            for (ServerPlayer player : source.getServer().getPlayerList().getPlayers()) {
+                                if (hiddenFrom(services, source, player.getUUID())) {
+                                    hidden++;
+                                    continue;
+                                }
+                                String name = player.getGameProfile().getName();
+                                visible.add(services.players().isVanished(player.getUUID()) ? name + " &8(vanished)&7" : name);
+                            }
+                            visible.sort(String::compareToIgnoreCase);
+                            String text = services.messages().raw("player.list.header",
+                                    "count", String.valueOf(visible.size()),
+                                    "max", String.valueOf(source.getServer().getMaxPlayers()))
+                                    + (visible.isEmpty() ? "" : " " + String.join("&7, &f", visible));
+                            return Feedback.of(Component.literal(MessageService.colourise(text
+                                    + (hidden > 0 ? " &8(+" + hidden + " hidden)" : ""))));
+                        }));
+    }
+
+    private static LiteralArgumentBuilder<CommandSourceStack> nearNode(NexusServices services) {
+        return Commands.literal("near")
+                .executes(context -> run(context, services, "nexuscore.command.player.near", "player.near",
+                        source -> near(services, source, 100)))
+                .then(Commands.argument("radius", IntegerArgumentType.integer(1, 5000))
+                        .executes(context -> run(context, services, "nexuscore.command.player.near", "player.near",
+                                source -> near(services, source, IntegerArgumentType.getInteger(context, "radius")))));
+    }
+
+    private static Feedback near(NexusServices services, CommandSourceStack source, int radius) throws Refused {
+        ServerPlayer self = requirePlayer(source);
+        List<String> found = new ArrayList<>();
+        for (ServerPlayer other : source.getServer().getPlayerList().getPlayers()) {
+            if (other.getUUID().equals(self.getUUID()) || !other.level().equals(self.level())
+                    || hiddenFrom(services, source, other.getUUID())) {
+                continue;
+            }
+            double distance = other.position().distanceTo(self.position());
+            if (distance <= radius) {
+                found.add(other.getGameProfile().getName() + " &8(" + Math.round(distance) + "m)&7");
+            }
+        }
+        if (found.isEmpty()) {
+            return Feedback.of(services.messages().render("player.near.none", "radius", String.valueOf(radius)));
+        }
+        found.sort(String::compareToIgnoreCase);
+        return Feedback.of(Component.literal(MessageService.colourise(
+                services.messages().raw("player.near.header", "count", String.valueOf(found.size()),
+                        "radius", String.valueOf(radius)) + " &f" + String.join("&7, &f", found))));
+    }
+
+    /**
+     * A vanished player is hidden from anyone without the vanish permission, so /list, /near,
+     * and /seen do not leak the presence of staff who deliberately hid themselves.
+     */
+    private static boolean hiddenFrom(NexusServices services, CommandSourceStack source, UUID subject) {
+        if (!services.players().isVanished(subject)) {
+            return false;
+        }
+        return !services.authorise(source, "nexuscore.command.player.vanish").allowed();
+    }
+
+    // ---- staff teleports ---------------------------------------------------------------
+
+    private static LiteralArgumentBuilder<CommandSourceStack> tpNode(NexusServices services) {
+        return Commands.literal("tp")
+                .then(Commands.argument("target", EntityArgument.player())
+                        .executes(context -> run(context, services, "nexuscore.command.teleport.tp", "teleport.tp",
+                                source -> staffTeleport(services, requirePlayer(source),
+                                        EntityArgument.getPlayer(context, "target"))))
+                        .then(Commands.argument("destination", EntityArgument.player())
+                                .executes(context -> run(context, services, "nexuscore.command.teleport.tp", "teleport.tp",
+                                        source -> staffTeleport(services, EntityArgument.getPlayer(context, "target"),
+                                                EntityArgument.getPlayer(context, "destination"))))));
+    }
+
+    private static LiteralArgumentBuilder<CommandSourceStack> tpHereNode(NexusServices services) {
+        return Commands.literal("tphere")
+                .then(Commands.argument("target", EntityArgument.player())
+                        .executes(context -> run(context, services, "nexuscore.command.teleport.tp", "teleport.tphere",
+                                source -> staffTeleport(services, EntityArgument.getPlayer(context, "target"),
+                                        requirePlayer(source)))));
+    }
+
+    /** Staff teleports skip warmup and cooldown: they are a moderation tool, not travel. */
+    private static Feedback staffTeleport(NexusServices services, ServerPlayer moving, ServerPlayer destination)
+            throws Refused {
+        if (moving.getUUID().equals(destination.getUUID())) {
+            throw new Refused(services.messages().raw("teleport.request.self"));
+        }
+        TeleportService.Outcome outcome = services.teleport().begin(moving,
+                TeleportService.Location.of(destination), "to " + destination.getGameProfile().getName(), true);
+        if (!outcome.moved()) {
+            throw new Refused(services.messages().raw("teleport.failed", "reason", outcome.detail()));
+        }
+        return Feedback.of(services.messages().render("teleport.tp.success",
+                        "target", moving.getGameProfile().getName(),
+                        "destination", destination.getGameProfile().getName()))
+                .withTarget("player", moving.getUUID().toString())
+                .broadcast();
+    }
+
     // ---- shared helpers ----------------------------------------------------------------
 
     private static void broadcast(NexusServices services, CommandSourceStack source, String key,
@@ -1144,6 +1367,15 @@ public final class NexusCommands {
 
         private Feedback withAudit(String key, String value) {
             this.auditParameters.put(key, value);
+            return this;
+        }
+
+        /**
+         * Also show this to other operators. Used for actions that change another player's
+         * access or position, where silent success hides staff activity from other staff.
+         */
+        private Feedback broadcast() {
+            this.broadcastToOperators = true;
             return this;
         }
 

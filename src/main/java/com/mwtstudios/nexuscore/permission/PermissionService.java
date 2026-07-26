@@ -492,7 +492,10 @@ public final class PermissionService {
                 "nexuscore.command.teleport.back",
                 "nexuscore.command.teleport.request",
                 "nexuscore.command.teleport.accept",
-                "nexuscore.command.teleport.deny")) {
+                "nexuscore.command.teleport.deny",
+                "nexuscore.command.player.list",
+                "nexuscore.command.player.seen",
+                "nexuscore.command.player.near")) {
             def.nodes.put(node, "ALLOW");
         }
         document.groups.put("default", def);

@@ -19,8 +19,12 @@ fails the build if they do.
 cited. A file that looks finished but has never been compiled is `in progress`, however
 complete it appears.
 
-**Last updated:** 2026-07-25 · **Milestones passed:** M0, M1, M2, M3, M4, M5 (partial) ·
-**Version:** 0.1.0
+**Last updated:** 2026-07-26 · **Version:** 1.0.0 (first public release) ·
+**Milestones passed:** M0, M1, M2, M3, M4, M5 (partial)
+
+> **v1.0 does not mean feature complete.** The version scheme (ADR-0007) is the owner's
+> release numbering, not the specification's M11 gate. This document, not the version
+> number, is the record of what exists.
 
 ---
 
@@ -32,7 +36,7 @@ utilities, moderation with confirmations, and a working admin GUI.
 
 **Two things are true at once, and both matter:**
 
-1. **160 automated tests pass**, and the whole feature set has been exercised end to end on a
+1. **162 automated tests pass**, and the whole feature set has been exercised end to end on a
    real NeoForge 21.1.235 dedicated server with zero errors, including a restart.
 2. **No human player has ever joined this server.** Every runtime check was driven through
    the console. Anything that only happens with a real player in the world —
@@ -156,6 +160,9 @@ the test suite.
 
 | Defect | Detail | Resolution |
 |---|---|---|
+| `/tpa` requests never expired on a quiet server | The expiry sweep sat after an early `return` that only ran when a teleport warmup was pending. With nothing pending, a request stayed acceptable indefinitely. | Expiry now runs every tick, before the pending check. |
+| Permission node with no command | `nexuscore.command.teleport.tp` was granted to moderators and used by the GUI, but no `/tp` command existed. | `/nexus teleport tp` and `/tphere` added. |
+| `Feedback.broadcastToOperators` was a dead field | Always false, never settable — admin actions succeeded silently. | Wired to `broadcast()`; access and position changes now surface to other operators. |
 | Services did not exist when commands registered | `RegisterCommandsEvent` fires on a datapack **worker thread before** `ServerAboutToStartEvent` fires on the server thread. The guard reported `no commands were registered` rather than registering a broken tree. | Services now build in the mod constructor from `FMLPaths.GAMEDIR`, which precedes every event. The ordering constraint is removed rather than satisfied. |
 | `/ban`, `/kick`, `/banlist` silently resolved to vanilla | The alias code correctly refused to override vanilla (§12.3) — but that left an operator typing `/ban` getting vanilla's ban, with no duration, audit, or history, and no indication anything was different. | NexusCore now registers a collision-free `n`-prefixed alias (`/nban`) whenever a name is taken, logs which ones, and `docs/admin/commands.md` leads with the explanation. |
 

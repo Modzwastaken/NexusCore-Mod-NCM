@@ -30,6 +30,7 @@ import net.neoforged.fml.loading.FMLPaths;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.ServerChatEvent;
+import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
@@ -88,6 +89,7 @@ public final class NexusCore {
         NeoForge.EVENT_BUS.addListener(this::onPlayerLogin);
         NeoForge.EVENT_BUS.addListener(this::onPlayerLogout);
         NeoForge.EVENT_BUS.addListener(this::onServerChat);
+        NeoForge.EVENT_BUS.addListener(this::onPlayerDeath);
 
         LOGGER.info("{} {} bootstrapped on the {} event bus", displayName, version, modEventBus.getClass().getSimpleName());
     }
@@ -178,6 +180,20 @@ public final class NexusCore {
         services.teleport().forget(id);
         services.players().forget(id);
         services.rateLimiter().forget(id);
+    }
+
+    /**
+     * Records where a player died so {@code /back} returns them there.
+     *
+     * <p>This is the behaviour players actually expect from {@code /back}, and a death is
+     * exactly the case where no teleport happened and so no return point would otherwise
+     * exist. Recorded on death rather than on respawn, because by respawn time the original
+     * position is gone.</p>
+     */
+    private void onPlayerDeath(LivingDeathEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            services.teleport().recordReturnPoint(player.getUUID(), TeleportService.Location.of(player));
+        }
     }
 
     private void onServerChat(ServerChatEvent event) {

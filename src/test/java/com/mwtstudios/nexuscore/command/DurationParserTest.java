@@ -137,6 +137,36 @@ class DurationParserTest {
     }
 
     @Test
+    @DisplayName("describeElapsed renders how long ago something was")
+    void describeElapsed() {
+        assertEquals("just now", DurationParser.describeElapsed(1_000L, 1_000L));
+        assertEquals("just now", DurationParser.describeElapsed(1_000L, 1_500L));
+        assertEquals("30s", DurationParser.describeElapsed(1_000L, 31_000L));
+        assertEquals("1d", DurationParser.describeElapsed(0L, 86_400_000L));
+        assertEquals("1w2d", DurationParser.describeElapsed(0L, 777_600_000L));
+    }
+
+    @Test
+    @DisplayName("formatApproximate keeps at most the two largest units, and stops at a gap")
+    void formatApproximateIsReadable() {
+        // The exact form of this duration is 52w2d6h37m8s, which is not a useful answer to
+        // "when were they last seen".
+        Duration long1 = Duration.ofSeconds(52L * 7 * 86400 + 2 * 86400 + 6 * 3600 + 37 * 60 + 8);
+        assertEquals("52w2d", DurationParser.formatApproximate(long1));
+        assertEquals("1d12h", DurationParser.formatApproximate(Duration.ofHours(36)));
+        assertEquals("30s", DurationParser.formatApproximate(Duration.ofSeconds(30)));
+        assertEquals("0s", DurationParser.formatApproximate(Duration.ZERO));
+        // A gap stops the rendering rather than skipping to a much smaller unit.
+        assertEquals("1w", DurationParser.formatApproximate(Duration.ofDays(7).plusSeconds(5)));
+    }
+
+    @Test
+    @DisplayName("describeElapsed does not produce a negative for a clock that moved backwards")
+    void describeElapsedHandlesBackwardsClock() {
+        assertEquals("just now", DurationParser.describeElapsed(10_000L, 1_000L));
+    }
+
+    @Test
     @DisplayName("describeRemaining distinguishes permanent, expired, and remaining")
     void describeRemaining() {
         assertEquals("permanent", DurationParser.describeRemaining(Long.MAX_VALUE, 0L));

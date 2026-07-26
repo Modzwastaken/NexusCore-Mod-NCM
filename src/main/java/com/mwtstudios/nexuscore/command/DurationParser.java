@@ -151,6 +151,55 @@ public final class DurationParser {
     }
 
     /**
+     * Renders how long ago an instant was.
+     *
+     * @param thenEpochMillis the past instant
+     * @param nowEpochMillis the current time
+     * @return a formatted elapsed time, or {@code just now} for under a second
+     */
+    public static String describeElapsed(long thenEpochMillis, long nowEpochMillis) {
+        long elapsed = nowEpochMillis - thenEpochMillis;
+        if (elapsed < 1000L) {
+            return "just now";
+        }
+        return formatApproximate(Duration.ofMillis(elapsed));
+    }
+
+    /**
+     * Renders a duration to its two largest units, for reading rather than for re-parsing.
+     *
+     * <p>{@link #format} is exact because a ban length must round-trip through the parser.
+     * A "last seen" time has no such requirement, and {@code 52w2d6h37m8s} is a worse answer
+     * to "when were they last here" than {@code 52w2d}.</p>
+     *
+     * @param duration the duration
+     * @return text using at most the two largest non-zero units
+     */
+    public static String formatApproximate(Duration duration) {
+        if (duration.isZero() || duration.isNegative()) {
+            return "0s";
+        }
+        long seconds = duration.getSeconds();
+        StringBuilder text = new StringBuilder();
+        int used = 0;
+        for (Map.Entry<Character, Duration> unit : UNITS.entrySet()) {
+            if (used == 2) {
+                break;
+            }
+            long unitSeconds = unit.getValue().getSeconds();
+            long count = seconds / unitSeconds;
+            if (count > 0) {
+                text.append(count).append(unit.getKey());
+                seconds -= count * unitSeconds;
+                used++;
+            } else if (used > 0) {
+                break;
+            }
+        }
+        return text.toString();
+    }
+
+    /**
      * A successfully parsed duration.
      *
      * @param permanent true when the input named no expiry at all

@@ -2,14 +2,40 @@
 
 All notable changes to NexusCore are recorded here.
 
-Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning follows
-the release ladder in the master build prompt §3.4: `0.1.0` → `0.5.0` → `1.0.0`. Pre-1.0
-releases may break data formats **only** with a written migration. From 1.0.0, semantic
-versioning applies against the public API.
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning is
+`v1.0` → `v1.5` → `v2.0`, per [ADR-0007](docs/architecture/ADR-0007.md). Minor releases add
+features and stay data-compatible; major releases may change data formats and must ship a
+migration. **The version number carries no completeness promise** — see
+[IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for what actually exists.
 
-## [Unreleased]
+## [1.0.0] — 2026-07-26 — first public release
 
-### Added — M1 to M5: the first genuinely usable release
+### Added — v1.0 polish
+
+- `/nexus teleport tp <player> [destination]` and `/tphere` — staff teleports, no warmup or
+  cooldown. The permission node existed and was granted to moderators, but no command
+  reached it.
+- `/seen <player>` — last-seen and first-joined, from NexusCore's own identity records.
+- `/list` — online players, vanish-aware.
+- `/near [radius]` — nearby players in the same world, vanish-aware.
+- `/nexus permission set <player> <node> allow|deny` and `/nexus permission unset` — the
+  service supported direct nodes; nothing exposed them.
+- `/nexus audit tail [count]` — recent audit activity without reading the file.
+- **`/back` now returns you to where you died.** A death is exactly the case where no
+  teleport happened, so there would otherwise be no return point.
+- `DurationParser.describeElapsed` for "how long ago" rendering.
+- Admin actions that change another player's access or position are now surfaced to other
+  operators, rather than succeeding silently.
+
+### Fixed — v1.0
+
+- **`/tpa` requests never expired on a quiet server.** The expiry sweep sat behind an early
+  return that only ran when a teleport warmup was pending, so with no pending teleports a
+  request stayed acceptable indefinitely.
+- `/seen` computed elapsed time through an obscure arithmetic trick; replaced with a tested
+  helper.
+
+### Added — the v1.0 feature set
 
 **Configuration and messages (M1)**
 
@@ -94,7 +120,7 @@ versioning applies against the public API.
 - No economy, chat, scheduler, backups, or benchmark harness (M6–M8).
 - Every performance figure in the specification remains a **target, not a measurement**.
 
-### Added — M0, walking skeleton
+### Added — foundation
 
 - NeoForge MDK project for Minecraft 1.21.1, Java 21 toolchain, UTF-8 compilation.
 - Pinned platform versions: NeoForge `21.1.235`, supported range `[21.1.235,)`, NeoGradle

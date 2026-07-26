@@ -5,24 +5,17 @@ import java.util.Map;
 import java.util.UUID;
 
 import com.mojang.logging.LogUtils;
-import com.mwtstudios.nexuscore.audit.AuditService;
-import com.mwtstudios.nexuscore.command.ConfirmationService;
 import com.mwtstudios.nexuscore.command.DurationParser;
 import com.mwtstudios.nexuscore.command.NexusCommands;
-import com.mwtstudios.nexuscore.command.RateLimiter;
-import com.mwtstudios.nexuscore.config.ConfigurationService;
-import com.mwtstudios.nexuscore.config.NexusSettings;
+import com.mwtstudios.nexuscore.core.NexusBootstrap;
+import com.mwtstudios.nexuscore.core.NexusPlatform;
 import com.mwtstudios.nexuscore.core.NexusServices;
 import com.mwtstudios.nexuscore.gui.AdminGuiService;
-import com.mwtstudios.nexuscore.identity.IdentityService;
 import com.mwtstudios.nexuscore.message.DeathMessages;
-import com.mwtstudios.nexuscore.message.MessageService;
-import com.mwtstudios.nexuscore.moderation.ModerationService;
 import com.mwtstudios.nexuscore.moderation.PunishmentMessages;
-import com.mwtstudios.nexuscore.permission.PermissionService;
+import com.mwtstudios.nexuscore.module.ModuleManager;
+import com.mwtstudios.nexuscore.platform.FlightController;
 import com.mwtstudios.nexuscore.platform.MayflyFlightController;
-import com.mwtstudios.nexuscore.player.PlayerUtilityService;
-import com.mwtstudios.nexuscore.storage.JsonStore;
 import com.mwtstudios.nexuscore.teleport.TeleportService;
 
 import net.minecraft.server.level.ServerPlayer;
@@ -64,6 +57,7 @@ public final class NexusCoreForge {
     private static final Logger LOGGER = LogUtils.getLogger();
 
     private final NexusServices services;
+    private final ModuleManager modules;
     private final AdminGuiService gui;
     private final String displayName = "NexusCore Administration Framework";
     private final String version;
@@ -74,27 +68,9 @@ public final class NexusCoreForge {
                 .map(container -> container.getModInfo().getVersion().toString())
                 .orElse("unknown");
 
-        Path dataRoot = FMLPaths.GAMEDIR.get().resolve(DATA_DIRECTORY);
-        JsonStore store = new JsonStore(dataRoot);
-
-        ConfigurationService configuration = new ConfigurationService(store, version);
-        configuration.load();
-        NexusSettings settings = configuration.settings();
-
-        MessageService messages = new MessageService(store);
-        IdentityService identity = new IdentityService(store);
-        AuditService audit = new AuditService(store, version);
-        audit.setEnabled(settings.auditEnabled);
-        PermissionService permissions = new PermissionService(store, settings.permissionCacheSize);
-        TeleportService teleport = new TeleportService(store, settings, System::currentTimeMillis);
-        PlayerUtilityService players = new PlayerUtilityService(new MayflyFlightController());
-        ModerationService moderation = new ModerationService(store, System::currentTimeMillis);
-        RateLimiter rateLimiter = new RateLimiter(settings.commandsPerMinute, System::currentTimeMillis);
-        ConfirmationService confirmations =
-                new ConfirmationService(settings.confirmationTimeoutSeconds, System::currentTimeMillis);
-
-        this.services = new NexusServices(store, configuration, messages, identity, audit, permissions,
-                teleport, players, moderation, rateLimiter, confirmations, version);
+        NexusBootstrap.Started started = NexusBootstrap.start(new ForgePlatform(), version);
+        this.services = started.services();
+        this.modules = started.modules();
         this.gui = new AdminGuiService(services);
 
         MinecraftForge.EVENT_BUS.addListener(this::onRegisterCommands);
@@ -106,14 +82,6 @@ public final class NexusCoreForge {
         MinecraftForge.EVENT_BUS.addListener(this::onServerChat);
         MinecraftForge.EVENT_BUS.addListener(this::onPlayerDeath);
 
-        LOGGER.info("NexusCore ready on Forge: data at {}, {} message(s), {} permission group(s), {} audit record(s)",
-                dataRoot, messages.size(), permissions.groupNames().size(), audit.count());
-        LOGGER.info("NexusCore flight mechanism: {}", players.flightMechanism());
-        if (settings.operatorBootstrap) {
-            LOGGER.warn("NexusCore operator bootstrap is ENABLED: any level-{} operator has full NexusCore access. "
-                    + "Create real groups, then set operatorBootstrap=false in {}.",
-                    NexusServices.OPERATOR_LEVEL, dataRoot.resolve(NexusSettings.FILE));
-        }
     }
 
     private void onRegisterCommands(RegisterCommandsEvent event) {
@@ -128,6 +96,7 @@ public final class NexusCoreForge {
         services.confirmations().clear();
         LOGGER.info("NexusCore stopped: {} audit record(s) written, chain {}",
                 services.audit().count(), services.audit().verify().intact() ? "intact" : "BROKEN");
+        modules.stop();
     }
 
     private void onServerTick(TickEvent.ServerTickEvent.Post event) {
@@ -180,6 +149,30 @@ public final class NexusCoreForge {
         if (event.getEntity() instanceof ServerPlayer player) {
             services.teleport().recordReturnPoint(player.getUUID(), TeleportService.Location.of(player));
             DeathMessages.broadcast(player.server, services.messages(), services.settings(), player);
+        }
+    }
+
+    /** Forge's half of {@link NexusPlatform}. */
+    private record ForgePlatform() implements NexusPlatform {
+
+        @Override
+        public String name() {
+            return "Forge";
+        }
+
+        @Override
+        public Path dataRoot() {
+            return FMLPaths.GAMEDIR.get().resolve(DATA_DIRECTORY);
+        }
+
+        @Override
+        public FlightController flightController() {
+            return new MayflyFlightController();
+        }
+
+        @Override
+        public String flightDescription() {
+            return "Abilities.mayfly (single flag — may conflict with other flight mods)";
         }
     }
 }

@@ -23,6 +23,52 @@ Per [ADR-0012](docs/architecture/ADR-0012.md): **`x.y.0` is a version** — `1.0
 Five builds fill a version, then the minor moves up: `1.0.5` is followed by `1.1.0`, never by
 `1.0.6`. Every heading below says which kind it is.
 
+## [1.0.3] — 2026-07-26 — pre-release — ModuleManager
+
+The §7.3 module contract, which M4 left `planned`. No behaviour change: every service starts in
+the same order, with the same settings, and the 178 existing tests pass untouched.
+
+### Added
+
+- **`ModuleManager`, `NexusModule`, `ModuleContext`** — services are now registered as modules and
+  resolved from a registry instead of being constructed by hand. A module declares its id, whether
+  it is `core`, and what it depends on; the manager topologically orders them, rejects dependency
+  cycles and missing dependencies, and stops them in reverse order.
+
+- **`NexusBootstrap`** — one shared place that registers the eleven standard modules and starts
+  them. **This removes a triplication that was a real defect risk**: `buildServices()` existed
+  verbatim in all three loader entry points, differing only in the flight controller, so any
+  change to service wiring had to be made three times or the loaders would silently diverge in
+  behaviour that no test compares.
+
+- **`NexusPlatform`** — the two things that genuinely differ per loader (the data root and the
+  flight controller) behind one interface, so the bootstrap itself is loader-agnostic.
+
+- **`ModuleManagerTest`** — 19 tests: dependency ordering (registered deliberately in the wrong
+  order), deterministic tie-breaking over 20 runs, diamonds starting a shared dependency once,
+  cycle and self-cycle rejection, unknown and disabled dependencies, duplicate ids, duplicate
+  service types, refusal to disable a core module, reverse-order shutdown, and shutdown
+  continuing after one module throws.
+
+### Verified
+
+- **11 modules start on all three loaders.** Packaged jars on the real NeoForge 21.1.235, Fabric
+  and MinecraftForge 52.1.16 dedicated servers: `NexusCore started 11 module(s)`, `/nexus version`
+  reports 1.0.3, the `/execute as` refusal still fires, audit chain intact, clean shutdown, zero
+  NexusCore errors. **197 tests pass** — the 178 that existed plus the 19 new ones.
+
+### Changed
+
+- Modules are classified `core` or optional, which is what M1's safe mode needs to have anything
+  to disable. **Nothing is disabled yet** — that is 1.0.5, and it needs command gating too, or a
+  disabled module leaves commands pointing at a service that was never started. `ModuleManager`
+  therefore throws a named `ModuleException` for an unstarted module rather than returning null,
+  so a premature attempt fails loudly instead of surfacing as an NPE in a command handler.
+
+- `NexusServices` keeps its accessor API unchanged — it is now a view over the registry. Its
+  twelve-argument constructor is retained because the tests build services directly, and forcing
+  a registry into a unit test would make the tests worse to prove a point about production wiring.
+
 ## [1.0.2] — 2026-07-26 — pre-release — the version scheme and its gate
 
 No runtime change. This build settles how NexusCore is numbered and adds the gate that keeps the

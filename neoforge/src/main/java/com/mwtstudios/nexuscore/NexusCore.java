@@ -4,24 +4,17 @@ import java.nio.file.Path;
 import java.util.UUID;
 
 import com.mojang.logging.LogUtils;
-import com.mwtstudios.nexuscore.audit.AuditService;
-import com.mwtstudios.nexuscore.command.ConfirmationService;
 import com.mwtstudios.nexuscore.command.DurationParser;
 import com.mwtstudios.nexuscore.command.NexusCommands;
-import com.mwtstudios.nexuscore.command.RateLimiter;
-import com.mwtstudios.nexuscore.config.ConfigurationService;
-import com.mwtstudios.nexuscore.config.NexusSettings;
+import com.mwtstudios.nexuscore.core.NexusBootstrap;
+import com.mwtstudios.nexuscore.core.NexusPlatform;
 import com.mwtstudios.nexuscore.core.NexusServices;
 import com.mwtstudios.nexuscore.gui.AdminGuiService;
-import com.mwtstudios.nexuscore.identity.IdentityService;
 import com.mwtstudios.nexuscore.message.DeathMessages;
-import com.mwtstudios.nexuscore.message.MessageService;
-import com.mwtstudios.nexuscore.moderation.ModerationService;
 import com.mwtstudios.nexuscore.moderation.PunishmentMessages;
-import com.mwtstudios.nexuscore.permission.PermissionService;
+import com.mwtstudios.nexuscore.module.ModuleManager;
+import com.mwtstudios.nexuscore.platform.FlightController;
 import com.mwtstudios.nexuscore.platform.NeoForgeFlightController;
-import com.mwtstudios.nexuscore.player.PlayerUtilityService;
-import com.mwtstudios.nexuscore.storage.JsonStore;
 import com.mwtstudios.nexuscore.teleport.TeleportService;
 
 import net.minecraft.server.MinecraftServer;
@@ -44,8 +37,10 @@ import org.slf4j.Logger;
 /**
  * Entry point for the NexusCore Administration Framework.
  *
- * <p>Per §7.1 this class owns bootstrap only. It constructs the services once the server
- * exists, wires the event listeners, and does no business logic of its own.</p>
+ * <p>Per §7.1 this class owns bootstrap only: it supplies the NeoForge half of
+ * {@link NexusPlatform}, hands it to {@link NexusBootstrap}, wires the event listeners, and does no
+ * business logic of its own. Service construction and ordering belong to {@code StandardModules}
+ * and {@code ModuleManager}, shared by all three loaders.</p>
  *
  * <p><b>Why services are built in the constructor.</b> The obvious place is
  * {@code ServerAboutToStartEvent}, since that is where the {@code MinecraftServer} first
@@ -73,6 +68,7 @@ public final class NexusCore {
     private final String version;
 
     private final NexusServices services;
+    private final ModuleManager modules;
     private final AdminGuiService gui;
 
     /**
@@ -84,7 +80,9 @@ public final class NexusCore {
     public NexusCore(IEventBus modEventBus, ModContainer modContainer) {
         this.displayName = modContainer.getModInfo().getDisplayName();
         this.version = modContainer.getModInfo().getVersion().toString();
-        this.services = buildServices();
+        NexusBootstrap.Started started = NexusBootstrap.start(new NeoForgePlatform(version), version);
+        this.services = started.services();
+        this.modules = started.modules();
         this.gui = new AdminGuiService(services);
 
         NeoForge.EVENT_BUS.addListener(this::onRegisterCommands);
@@ -101,38 +99,6 @@ public final class NexusCore {
 
     // ---- lifecycle ---------------------------------------------------------------------
 
-    private NexusServices buildServices() {
-        Path dataRoot = FMLPaths.GAMEDIR.get().resolve(DATA_DIRECTORY);
-        JsonStore store = new JsonStore(dataRoot);
-
-        ConfigurationService configuration = new ConfigurationService(store, version);
-        configuration.load();
-        NexusSettings settings = configuration.settings();
-
-        MessageService messages = new MessageService(store);
-        IdentityService identity = new IdentityService(store);
-        AuditService audit = new AuditService(store, version);
-        audit.setEnabled(settings.auditEnabled);
-        PermissionService permissions = new PermissionService(store, settings.permissionCacheSize);
-        TeleportService teleport = new TeleportService(store, settings, System::currentTimeMillis);
-        PlayerUtilityService players = new PlayerUtilityService(new NeoForgeFlightController());
-        ModerationService moderation = new ModerationService(store, System::currentTimeMillis);
-        RateLimiter rateLimiter = new RateLimiter(settings.commandsPerMinute, System::currentTimeMillis);
-        ConfirmationService confirmations =
-                new ConfirmationService(settings.confirmationTimeoutSeconds, System::currentTimeMillis);
-
-        LOGGER.info("NexusCore ready: data at {}, {} message(s), {} permission group(s), {} audit record(s)",
-                dataRoot, messages.size(), permissions.groupNames().size(), audit.count());
-        if (settings.operatorBootstrap) {
-            LOGGER.warn("NexusCore operator bootstrap is ENABLED: any level-{} operator has full NexusCore access. "
-                    + "Create real groups, then set operatorBootstrap=false in {}.",
-                    NexusServices.OPERATOR_LEVEL, dataRoot.resolve(NexusSettings.FILE));
-        }
-
-        return new NexusServices(store, configuration, messages, identity, audit, permissions,
-                teleport, players, moderation, rateLimiter, confirmations, version);
-    }
-
     private void onRegisterCommands(RegisterCommandsEvent event) {
         NexusCommands.register(event.getDispatcher(), services, gui, displayName, version);
     }
@@ -145,6 +111,7 @@ public final class NexusCore {
         services.confirmations().clear();
         LOGGER.info("NexusCore stopped: {} audit record(s) written, chain {}",
                 services.audit().count(), services.audit().verify().intact() ? "intact" : "BROKEN");
+        modules.stop();
     }
 
     private void onServerTick(ServerTickEvent.Post event) {
@@ -212,5 +179,32 @@ public final class NexusCore {
             player.sendSystemMessage(PunishmentMessages.muteNotice(
                     services.messages(), mute, System.currentTimeMillis()));
         });
+    }
+
+    /**
+     * NeoForge's half of {@link NexusPlatform}: where the game directory is, and the one flight
+     * mechanism that is genuinely better here than on the other two loaders.
+     */
+    private record NeoForgePlatform(String version) implements NexusPlatform {
+
+        @Override
+        public String name() {
+            return "NeoForge";
+        }
+
+        @Override
+        public Path dataRoot() {
+            return FMLPaths.GAMEDIR.get().resolve(DATA_DIRECTORY);
+        }
+
+        @Override
+        public FlightController flightController() {
+            return new NeoForgeFlightController();
+        }
+
+        @Override
+        public String flightDescription() {
+            return "creative_flight attribute (additive, per-mod — coexists with other flight mods)";
+        }
     }
 }

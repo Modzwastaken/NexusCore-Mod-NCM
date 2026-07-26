@@ -7,11 +7,11 @@ Changes specific to the **NeoForge** build. Anything affecting all three loaders
 Artifact: `NexusCore-neoforge-<version>-<mcVersion>.jar`
 Toolchain: NeoGradle 7.1.38 · Gradle 9.2.1
 
-## [1.0.1] — 2026-07-26 — development build
+## [1.0.2] — 2026-07-26 — pre-release
 
 ### Added
 - **`versionLadderCheck`**, a new `check` gate enforcing
-  [ADR-0009](../docs/architecture/ADR-0009.md) and [ADR-0010](../docs/architecture/ADR-0010.md).
+  [ADR-0012](../docs/architecture/ADR-0012.md).
   It fails the build if `mod_version` is malformed or whitespace-padded, if the shared changelog
   has no entry for it, if that entry's heading carries the wrong label for the build's kind
   (`development build` / `pre-release` / neither), if the version is already archived, or if the

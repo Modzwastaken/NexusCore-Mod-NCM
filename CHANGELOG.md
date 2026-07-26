@@ -18,12 +18,102 @@ features and stay data-compatible; major releases may change data formats and mu
 migration. **The version number carries no completeness promise** — see
 [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for what actually exists.
 
-Versions shaped `x.y.N` where `N` is non-zero are **not releases**, per
-[ADR-0009](docs/architecture/ADR-0009.md) and [ADR-0010](docs/architecture/ADR-0010.md). They may
-add features. `x.y.1`–`x.y.4` are internal **development builds**; **`x.y.5` is a pre-release**,
-archived and handed to testers; only `x.y.0` — on a `.0` or `.5` minor — is a release.
+Per [ADR-0012](docs/architecture/ADR-0012.md): **`x.y.0` is a version** — `1.0.0`, `1.1.0`,
+`1.2.0` … — and **`x.y.1` through `x.y.5` are its builds**, each a *hotfix* or a *pre-release*.
+Five builds fill a version, then the minor moves up: `1.0.5` is followed by `1.1.0`, never by
+`1.0.6`. Every heading below says which kind it is.
 
-## [1.0.1] — 2026-07-26 — patch release — security fixes
+## [1.0.2] — 2026-07-26 — pre-release — the version scheme and its gate
+
+No runtime change. This build settles how NexusCore is numbered and adds the gate that keeps the
+numbering honest. `/nexus version` reports `1.0.2`; nothing else behaves differently.
+
+### Added
+
+- **[ADR-0012](docs/architecture/ADR-0012.md) — the version scheme.** `x.y.0` is a **version**;
+  `x.y.1` through `x.y.5` are its **builds**, each a hotfix or a pre-release; `x.y.6` does not
+  exist. Five builds fill a version and the minor moves up:
+
+  ```
+  1.0.0  version (released)
+    1.0.1 … 1.0.5   builds
+  1.1.0  version
+    1.1.1 … 1.1.5   builds
+  1.2.0  version …
+  ```
+
+  Every minor behaves identically — there is no special minor and no minor without a `.0`. The
+  road to v1.5.0 is simply this sequence run out to `1.4.5`, then `1.5.0`.
+
+- **`versionLadderCheck`** — a `check` gate in the version-owning NeoForge project. It fails the
+  build when:
+
+  - `mod_version` is not exactly `MAJOR.MINOR.PATCH`, **including surrounding whitespace**. The
+    raw property is validated, never a trimmed copy — Gradle does not trim it either, so
+    `mod_version=1.0.2 ` would otherwise pass the gate and then produce
+    `NexusCore-neoforge-1.0.2 -1.21.1.jar` and a `fabric.mod.json` that Fabric's semantic-version
+    parser rejects.
+  - the version has no entry in this changelog, or the only match sits inside a fenced code
+    block. This changelog documents the scheme and will grow examples of headings; a quoted
+    sample is not an entry.
+  - the third component exceeds 5 — the minor should have moved up.
+  - a build's heading does not say `hotfix` or `pre-release`, or says **both**, or a version's
+    heading claims to be one of them.
+  - the version is already present in `archived/`, which is immutable by rule, so building at one
+    means the bump was forgotten.
+
+  Proven to fail on every one of those, not merely to pass — see the evidence table in
+  [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
+
+- **"The road to v1.5.0"** in [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) — what each
+  build is planned to contain. It lives there rather than in a new `ROADMAP.md` because §2.4
+  gives that document sole authority over naming unfinished work, and a second location would
+  drift from the first.
+
+### Changed
+
+- **Three earlier attempts at this scheme are retired.** ADR-0009 introduced a build counter,
+  ADR-0010 added five-rung lines with `.5` as a pre-release, and ADR-0011 split minors into
+  release lines and development lines to make room for a hotfix. Each solved a problem the
+  previous one created, and together they made `1.1.0` an *illegal* version string. ADR-0012
+  supersedes ADR-0010 and ADR-0011 outright and states the whole rule in one place. The ADRs
+  stay in the tree as the record of how the scheme was arrived at.
+
+- **`1.0.0.1` and `1.0.0-1` were tested against the real parsers and rejected.** Maven's
+  `DefaultArtifactVersion` reads `1.0.0.1` as `major=0` — it supports three numeric components,
+  not four — and Fabric's `VersionParser` sorts `1.0.0-1` **below** the release it fixes, because
+  semver reads `-1` as a pre-release identifier. That is the worst possible failure for a hotfix.
+  Recorded in ADR-0011, and the reason `1.0.1` is the hotfix number.
+
+- **`RELEASE_CHECKLIST.md`** keys its ceremonies to *build* and *version*, and gains a missing M7
+  section — the document ran M6 straight into M8, so a milestone v1.5.0 contains had no coverage
+  at all. Stale `v0.1`/`v0.5` labels retired by ADR-0007 are corrected, as is an artifact
+  filename pattern predating the three-loader split.
+
+- **`THIRD_PARTY_NOTICES.md`** described a single `NexusCore-<version>.jar` and dated itself "as
+  of version 0.1.0 (M0)" — an artifact shape retired by ADR-0008 and a version label retired by
+  ADR-0007. It now names the three-loader pattern and adds the two build tools missing from its
+  table. Still nothing is embedded in any jar.
+
+### Fixed
+
+- **The Forge dev-run limitation was resolved and nobody noticed.** `runClient` and `runServer`
+  were documented as failing with `constructed 0 mods`; both work. The `resourcesDir` merge
+  written at 1.0.0 as an attempted fix *was* the fix, the limitation notice was left beside it,
+  and the dev tasks were never re-run. The note outlived the bug by a whole release — which is
+  the argument for re-testing documented limitations rather than copying them forward.
+
+### Compatibility
+
+No data format changed. Every `schemaVersion` is unchanged, and no code branches on the mod
+version — it is recorded (`generatedByVersion` in `config.json`, `nexuscore_version` on every
+audit record) and displayed, never compared.
+
+Loading an older data directory restamps `config.json` through the usual atomic protocol, keeping
+the `.bak`, and the audit chain spans both versions in one continuous hash chain. Both verified
+by running the packaged jar against a `1.0.0` data directory on real servers.
+
+## [1.0.1] — 2026-07-26 — hotfix — security fixes
 
 **Fixes only. No new features, no data-format change.** Everyone running v1.0.0 should take
 this build. It contains none of the in-progress v1.5 work — that is the entire reason the
@@ -112,143 +202,6 @@ fixing them is behaviour change rather than repair: `/unban` and `/unmute` lift 
 several active records, so a second ban leaves the player banned while the command reports
 success; `activeBans()` double-counts; `/nexus reload` silently ignores `commandsPerMinute`.
 All are recorded in `IMPLEMENTATION_STATUS.md` and scheduled on the ladder.
-
-## [1.1.1] — 2026-07-26 — development build — the ladder to v1.5.0
-
-First rung of the road to v1.5.0. This build contains no runtime change: it establishes how
-the work between here and v1.5.0 gets numbered, and adds the gate that keeps the numbering
-honest. `/nexus version` reports `1.0.1`; nothing else about the mod behaves differently.
-
-### Added
-
-- **[ADR-0009](docs/architecture/ADR-0009.md) — the 1.0.x development build ladder.** The
-  third version component is now a build counter rather than a semantic-versioning patch
-  level. `x.y.0` is a release; `x.y.N` is a numbered development build on the road to the next
-  one. v1.5.0 is reached through `1.0.1`, `1.0.2`, … rather than as a single unnumbered jump
-  in which nothing intermediate is installable or testable.
-
-  The ADR records what the scheme costs as well as what it buys: `1.0.1` reads as a patch
-  release to anything parsing the version as semver and is not one, and there is no hotfix
-  lane for `1.0.0` while the ladder is climbing. Neither is hidden.
-
-- **[ADR-0010](docs/architecture/ADR-0010.md) — five-rung lines, and `.5` is a pre-release.**
-  A minor line holds exactly five rungs: `.1`–`.4` are internal development builds, **`.5` is a
-  pre-release** that gets archived and handed to testers, and the minor then rolls. `1.0.5` is
-  followed by `1.1.1`; `1.1.0` never exists, because releases land only on the `.0` and `.5`
-  minors (ADR-0007).
-
-  So the road to v1.5.0 is lines of five. **ADR-0011, in the same build, reduced that to four
-  lines** — `1.1.x`, `1.2.x`, `1.3.x`, `1.4.x` — because `1.0.x` became the published patch line
-  for release v1.0. Twenty rungs and four pre-releases, landing exactly on `1.5.0`.
-
-  This replaces ADR-0009's unbounded counter and its hand-maintained ✅ "milestone snapshot"
-  flag. Which builds get handed out is now a property of the version number rather than a
-  column in a table that nothing checked. The term *snapshot* is retired in favour of
-  *pre-release* throughout.
-
-- **`versionLadderCheck`** — a new `check` gate in the version-owning NeoForge project. It
-  fails the build when:
-
-  - `mod_version` is not exactly `MAJOR.MINOR.PATCH`, **including surrounding whitespace**. The
-    raw property is validated, never a trimmed copy — Gradle does not trim it either, so
-    `mod_version=1.0.1 ` would otherwise pass the gate and then produce
-    `NexusCore-neoforge-1.0.1 -1.21.1.jar` and a `fabric.mod.json` that Fabric's
-    semantic-version parser rejects.
-  - the version has no entry in this changelog. This is the drift that would otherwise happen
-    on every rung.
-  - the heading carries the wrong label, in any direction. It is three-valued: `development
-    build` for `.1`–`.4`, `pre-release` for `.5`, neither for a release. Checking only that the
-    right label is *present* would let a pre-release also call itself a development build, and a
-    one-way check would let `1.5.0` ship labelled either. The label is ADR-0009's only
-    mitigation for the semver ambiguity, so it is enforced in every direction.
-  - the version is already present in `archived/`. Archived builds are immutable by rule, so
-    building at one means the bump was forgotten — the symmetric failure to bump-without-entry.
-  - the version is outside its line (ADR-0010): a sixth rung such as `1.0.6`, or a `.0` on a
-    minor that is not a release point such as `1.2.0`. Both look entirely ordinary and neither
-    exists in this scheme, so each is rejected with what to write instead.
-
-  Headings inside fenced code blocks do not count as entries, since this changelog documents
-  the scheme and will grow examples of headings. The report is written on failure as well as
-  success, matching `stubMarkerCheck`, so a report on disk always describes the run that
-  produced it.
-
-  Proven to fail **ten** distinct ways and to pass three, not merely to pass — see the evidence
-  table in [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
-
-- **"The road to v1.5.0"** in [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) — what each
-  build on the ladder is planned to contain, and which ones are pre-releases. It
-  lives there rather than in a new `ROADMAP.md` because §2.4 gives that document sole
-  authority over naming unfinished work, and a second location would drift from the first.
-
-### Changed
-
-- **ADR-0007 is amended, not superseded.** Its release ladder, its compatibility promise and
-  its refusal to let the version number imply completeness all stand. The single line reading
-  "**PATCH** (`1.0.0` → `1.0.1`) fixes defects only" no longer holds, and says so in place.
-
-- **`RELEASE_CHECKLIST.md` separates the two ceremonies.** A development build runs a short
-  gate; an `x.y.5` pre-release adds six items; `1.5.0` runs the full checklist. The stale
-  references to the retired `v0.1` and `v0.5` labels — which ADR-0007 removed and the checklist
-  still carried — are corrected, as is an artifact filename pattern predating the three-loader
-  split.
-
-- **`RELEASE_CHECKLIST.md` gains a missing M7 section.** The document ran M6 straight into M8,
-  so M7 — which v1.5.0 contains — had no checklist coverage at all. Found while checking that
-  every rung's exit condition had somewhere to be signed off against. Numbered `7a` to avoid
-  renumbering sections that are referenced by number. Its CI item and section 8's are marked
-  NOT MET with the reason, rather than left as boxes that cannot be ticked while no git remote
-  exists.
-
-- **`archived/` now holds two kinds of thing**, and its README says which is which: releases,
-  as before, and `x.y.5` pre-releases. Both are immutable; only one was ever downloaded by the
-  public.
-
-- **`THIRD_PARTY_NOTICES.md` corrected.** It still described a single `NexusCore-<version>.jar`
-  and declared its position "as of version 0.1.0 (M0)" — an artifact shape retired by ADR-0008
-  and a version label retired by ADR-0007. It now names the three-loader artifact pattern,
-  lists all three loaders as compiled-against-not-bundled, and adds the two build tools missing
-  from its table (Fabric Loom, ForgeGradle). Still nothing is embedded in any jar. Found while
-  sweeping for stale version references, not reported.
-
-### Compatibility
-
-No data format changed. Every `schemaVersion` is unchanged, and no code anywhere branches on
-the mod version — it is recorded (`generatedByVersion` in `config.json`, `nexuscore_version` on
-every audit record) and displayed, never compared. Data compatibility is governed by
-`schemaVersion` alone, which is why the version scheme can be changed without touching a
-migration.
-
-Two things a `1.0.0` data directory does see, both benign and both worth stating rather than
-discovering:
-
-- `config.json` is **restamped**, not left untouched: loading re-writes `generatedByVersion`
-  from `1.0.0` to `1.0.1` through the usual atomic protocol, keeping the `.bak`. No other key
-  changes.
-- The audit chain **spans both versions**. Records written before the bump carry
-  `nexuscore_version: "1.0.0"` and records after carry `1.0.1`, in one continuous hash chain.
-  That is the field doing the job it was added for, and verification is unaffected — the hash
-  covers each record's own content.
-
-Per ADR-0009 the data-compatibility promise applies at every rung of the ladder, not only at
-`1.5.0`.
-
-**Both were verified by running the packaged jar, not by reading the code.** The `1.0.1` jar
-was installed on the NeoForge and Fabric test servers over data directories written by
-`1.0.0`. Both started clean with no NexusCore error, read the existing seven-record audit
-chain, and `/nexus audit verify` reported `chain intact` across a chain now spanning both
-versions. `/nexus version` reports `1.0.1` on both. `/nexus system status` was run on Fabric
-only, where the status header reads `v1.0.1`. Both shut down cleanly.
-
-### Known
-
-- **NeoForge warns once per rung.** Loading a build into a world last saved by a different
-  version produces `The following mods have version differences that were not resolved:
-  nexuscore (version 1.0.0 -> 1.0.1)`. The world loads and everything works; NexusCore
-  registers no `DisplayTest` extension point to resolve the difference, deliberately, because
-  suppressing it would also suppress it at `2.0.0` where it will matter. See ADR-0009.
-- **All three loaders were verified at runtime for this build**, servers and dev clients. Forge
-  included — it had never been runtime-tested before, and its 1.0.0 dev-run limitation turns out
-  to have been fixed at 1.0.0 and never re-tested. See `forge/CHANGELOG.md`.
 
 ## [1.0.0] — 2026-07-26 — first public release: NeoForge, Fabric, and Forge
 

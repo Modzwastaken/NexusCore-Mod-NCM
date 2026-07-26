@@ -19,19 +19,18 @@ fails the build if they do.
 cited. A file that looks finished but has never been compiled is `in progress`, however
 complete it appears.
 
-**Last updated:** 2026-07-26 · **Version:** 1.0.1 (patch release) ·
-**Last feature release:** 1.0.0 · **Milestones passed:** M0, M1, M2, M3, M4, M5 (partial)
+**Last updated:** 2026-07-26 · **Build:** 1.0.2 (pre-release) ·
+**Last version:** 1.0.0 · **Milestones passed:** M0, M1, M2, M3, M4, M5 (partial)
 
 > **v1.0 does not mean feature complete.** The version scheme (ADR-0007) is the owner's
 > release numbering, not the specification's M11 gate. This document, not the version
 > number, is the record of what exists.
 
-> **1.0.1 is a published patch release, and it is fixes only.** It closes two confirmed
-> critical defects in v1.0.0 — `/teleport` bypassing NexusCore entirely, and every non-player
-> command source being granted root — plus a silent audit-log truncation. It carries **none**
-> of the in-progress v1.5 work. Per [ADR-0011](docs/architecture/ADR-0011.md), `1.0.x` is the
-> patch line for release v1.0; development toward v1.5.0 happens in `1.1.x`–`1.4.x`, planned
-> in [The road to v1.5.0](#the-road-to-v150) below and, per §2.4, only there.
+> **Versions and builds.** Per [ADR-0012](docs/architecture/ADR-0012.md), `x.y.0` is a
+> **version** and `x.y.1`–`x.y.5` are its **builds**, each a hotfix or a pre-release; after five
+> the minor moves up. `1.0.1` is the security **hotfix** for v1.0.0 — fixes only, branched from
+> the `v1.0.0` tag. `1.0.2` is this build. What each later build is planned to contain is in
+> [The road to v1.5.0](#the-road-to-v150) below and, per §2.4, only there.
 
 ---
 
@@ -65,7 +64,7 @@ utilities, moderation with confirmations, and a working admin GUI.
 | Stub-marker gate | `tested` | Passes clean, **and proven to fail** on an injected `TODO`. |
 | Checkstyle formatting + static analysis | `tested` | 0 violations across main and test, **and proven to fail** on an injected violation. |
 | Reproducible archives | `tested` | Identical SHA-256 across two independent clean builds. |
-| Version ladder gate (ADR-0009/0010/0011) | `tested` | `versionLadderCheck`. Passes on all four legal shapes and **proven to fail eleven ways** — see the 1.1.1 evidence table below. |
+| Version gate (ADR-0012) | `tested` | `versionLadderCheck`. Passes on every legal shape and **proven to fail nine ways** — see the 1.0.2 evidence table below. |
 | CI workflow | `implemented` | `.github/workflows/build.yml`. **Never executed** — no git remote configured. |
 
 ## M1 — Configuration, messages, lifecycle · **PASSED**
@@ -176,7 +175,7 @@ than accepted on assertion.
 missing `core.confirm` grant.
 
 The rest are **not** in 1.0.1, because fixing them is behaviour change rather than repair and a
-patch release is fixes only (ADR-0011). They are scheduled on the ladder.
+hotfix is fixes only. They are scheduled on the sequence below — 1.4.5 carries the backlog.
 
 | Defect | Severity | Detail |
 |---|---|---|
@@ -230,95 +229,96 @@ in v1.5.0 and have no rung.
 
 ## The road to v1.5.0
 
-Per [ADR-0009](docs/architecture/ADR-0009.md), [ADR-0010](docs/architecture/ADR-0010.md) and
-[ADR-0011](docs/architecture/ADR-0011.md), v1.5.0 is reached through numbered development builds
-arranged in **four lines of five** — `1.1.x`, `1.2.x`, `1.3.x`, `1.4.x`. Each rung is built and
-tested on all three loaders before the next begins; a rung is not "done" because its code
-exists, but because it meets the exit condition named here.
+Per [ADR-0012](docs/architecture/ADR-0012.md): **`x.y.0` is a version, `x.y.1`–`x.y.5` are its
+builds** (each a hotfix or a pre-release), and after five builds the minor moves up. The route to
+v1.5.0 is that sequence run out:
 
-`x.y.1`–`x.y.4` are internal. **`x.y.5` is a pre-release**: archived, handed to testers, and the
-only build in its line anyone outside the project is asked to install. The minor then rolls —
-`1.1.5` is followed by `1.2.1`, and `1.2.0` never exists.
+```
+1.0.0  released      1.0.1 … 1.0.5      →  1.1.0   1.1.1 … 1.1.5
+   →  1.2.0   1.2.1 … 1.2.5   →  1.3.0   1.3.1 … 1.3.5
+   →  1.4.0   1.4.1 … 1.4.5   →  1.5.0
+```
 
-**`1.0.x` is not on this ladder.** ADR-0011 makes it the published patch line for release
-v1.0.0: `1.0.1` is the security patch, and any later `1.0.N` is fixes only. Development starts
-at `1.1.1`. That is why the ladder has four lines and not five.
+Each build is built and tested on all three loaders before the next begins. A build is not
+"done" because its code exists, but because it meets the exit condition named here.
 
-**The ordering is deliberate.** M6's economy needs the write-ahead journal (§11.1) that M2
-left `planned` — this document already calls that "the first thing M6's economy will need".
-Generated command documentation needs the `ModuleManager` that M4 left `planned`. Those are
-two separate dependencies on two different deliverables, not two dependencies of the economy;
-between them they mean the ladder closes the M4 and M5 gaps first, then adds features.
+**The ordering is deliberate.** M6's economy needs the write-ahead journal (§11.1) that M2 left
+`planned` — this document already calls that "the first thing M6's economy will need". Generated
+command documentation needs the `ModuleManager` that M4 left `planned`. Those are two separate
+dependencies on two different deliverables, so the sequence closes the M4 and M5 gaps first, then
+adds features.
 
-**Every rung below except 1.1.1 is `planned` in the §20.4 sense: scheduled, no code.** 1.1.1
-is built, and its row records what was actually verified. A rung's contents are a plan, not
-a promise, and this table is rewritten as reality arrives rather than defended.
+**Everything below except 1.0.1 and 1.0.2 is `planned` in the §20.4 sense: scheduled, no code.**
+A build's contents are a plan, not a promise, and this table is rewritten as reality arrives
+rather than defended.
 
-The **Exit condition** column is load-bearing: `RELEASE_CHECKLIST.md` gates each rung on it, so
-a cell must name something checkable. Where a criterion has genuinely not been decided yet, the
-cell says so rather than being left blank.
+The **Exit condition** column is load-bearing: `RELEASE_CHECKLIST.md` gates each build on it, so
+a cell must name something checkable. Where a criterion has not been decided yet, the cell says
+so rather than being left blank.
 
-**Twenty rungs is a hard ceiling, and 1.4.x is over-subscribed.** ADR-0010's five-rung line is
-a budget rather than a fact about the work, but ADR-0011 turns the *total* into a structural
-limit: exactly four development lines exist between `1.0.0` and `1.5.0`, so there are twenty
-rungs and there is no twenty-first. M7 and M8 currently share `1.4.x`, which is tighter than
-any other line. If that work does not fit, the overflow cannot become `1.4.6` — **scope moves
-out of v1.5.0, or v1.5.0 moves.** Recorded now rather than discovered at `1.4.4`.
+**Five builds per version is a floor, not a ceiling on the work.** If a version's work needs more
+than five builds it moves up early and carries the remainder — recorded when it happens. The
+sequence is open-ended, so nothing has to be crushed to fit.
 
-### Line 1.1.x — foundations and structure
+### Version 1.0 — security, and the foundations
 
 | Build | Contents | Exit condition |
 |---|---|---|
-| **1.1.1** | The ladder itself: ADR-0009, ADR-0010, ADR-0011, `versionLadderCheck`, this table. No runtime change. | Gate proven to pass on all four legal shapes **and to fail eleven ways**; all three loaders build clean; the packaged jar verified against a 1.0.0 data directory on two real servers. **Met** — see below. |
-| **1.1.2** | `ModuleManager` (§7.3). Services move from explicit `NexusServices` wiring to the module contract. | Every service resolves through the module registry, and the existing 178 tests pass unchanged — a rewiring of every service is the rung most in need of a named regression check, and that suite is it. |
-| **1.1.3** | Shared sources move out of `neoforge/src/` into `common/`. The layout wart ADR-0008 documents but does not fix. | All three loaders build from `common/`, and each jar is **byte-identical** to its 1.0.2 counterpart — a move that changes a single byte of output is not a move. |
-| **1.1.4** | Safe mode with non-core modules disabled (M1) and generated command documentation from descriptors (M4). Both wait on `ModuleManager`. | `docs/admin/commands.md` is generated, not hand-maintained, and a test asserts it matches the registry; a server started in safe mode has its non-core modules disabled and says so. **M4 complete.** |
-| **1.1.5** · *pre-release* | GameTests: teleport safety, home/warp persistence, punishment enforcement, permission gating. Plus the missing `AdminMenu` read-only container test. | The four GameTests named in M5 exist and pass, and a test proves items cannot enter or leave the admin menu. **First build handed to testers.** |
+| **1.0.1** · *hotfix* | The v1.0.0 security patch: `/teleport` bypass, `/execute as` root, `/gamemode` wildcard escalation, audit short write, missing `core.confirm` grant. | **Met.** Three loaders build, 178 tests; packaged jars verified on all three dedicated servers — `/execute as` refused, `/teleport` taken over, audit chain intact. Branched from the `v1.0.0` tag. |
+| **1.0.2** · *pre-release* | The version scheme (ADR-0012) and `versionLadderCheck`. No runtime change. | **Met.** Gate proven to pass on four legal shapes and to fail nine ways; three loaders build clean at 1.0.2. |
+| **1.0.3** · *pre-release* | `ModuleManager` (§7.3). Services move from explicit `NexusServices` wiring to the module contract. | Every service resolves through the module registry, and the existing 178 tests pass unchanged — a rewiring of every service is the build most in need of a named regression check, and that suite is it. |
+| **1.0.4** · *pre-release* | Shared sources move out of `neoforge/src/` into `common/`. The layout wart ADR-0008 documents but does not fix. | All three loaders build from `common/`, and each jar is **byte-identical** to its 1.0.3 counterpart — a move that changes a single byte of output is not a move. |
+| **1.0.5** · *pre-release* | Safe mode with non-core modules disabled (M1) and generated command documentation from descriptors (M4). Both wait on `ModuleManager`. | `docs/admin/commands.md` is generated, not hand-maintained, with a test asserting it matches the registry; a server started in safe mode disables its non-core modules and says so. **M4 complete.** |
 
-### Line 1.2.x — M5 completion and the storage foundation M6 needs
-
-| Build | Contents | Exit condition |
-|---|---|---|
-| **1.2.1** | Sustained multi-player runtime verification. Everything currently `implemented` but never observed with a real player — GUI rendering, vanish, chat muting, ban-at-login, teleport safety in practice. | Every item in the "never observed" column of this document has been observed with at least two real players, or is recorded as still unobserved with the reason. |
-| **1.2.2** | Whatever 1.1.1 finds. Deliberately reserved rather than assumed empty — the last two runtime rounds each produced defects no test had caught. | Every defect found in 1.1.1 is fixed with a regression test, or recorded as accepted with a reason. |
-| **1.2.3** | Write-ahead journal for multi-file transactions (§11.1). The M2 gap, and M6's prerequisite. | Journal replay verified by a simulated crash mid-transaction. |
-| **1.2.4** | Migration fixtures and the schema-bump machinery, which the journal and the coming economy schema both need. | A 1.0.0 data directory loads through the migration path with exact expected results; the `blocked` fixtures row above is unblocked. |
-| **1.2.5** · *pre-release* | M5 closure: the week-long real-player run that is M5's actual exit criterion. | Run with real players for a week with no unrecorded defect. **M5 complete.** |
-
-### Line 1.3.x — M6 economy
+### Version 1.1 — M5 completion and the storage foundation M6 needs
 
 | Build | Contents | Exit condition |
 |---|---|---|
-| **1.3.1** | Currency core: fixed-point integer minor units. | No `float` or `double` anywhere in currency code, asserted by a test that scans the sources — not by review. |
-| **1.3.2** | Atomic transfer and idempotency keys, on top of 1.1.3's journal. | Debit and credit commit in one transaction boundary; an idempotency replay test proves the same key produces exactly one committed transaction. |
-| **1.3.3** | Reversal as a compensating entry. | A reversal creates a new entry and no historical row is edited, asserted by a test. |
-| **1.3.4** | Shops. | A shop purchase is all-or-nothing under an injected mid-transaction failure. |
-| **1.3.5** · *pre-release* | Economy commands and operator documentation. | All six §10.2 invariants have passing **named** tests; balances and history survive restart. **M6 complete.** |
+| **1.1.0** · *version* | The M4-complete milestone, rolled up from the 1.0 builds. | All of 1.0.1–1.0.5 verified together on all three loaders. |
+| **1.1.1** | GameTests: teleport safety, home/warp persistence, punishment enforcement, permission gating. Plus the missing `AdminMenu` read-only container test. | The four GameTests named in M5 exist and pass, and a test proves items cannot enter or leave the admin menu. |
+| **1.1.2** | Sustained multi-player runtime verification — GUI rendering, vanish, chat muting, ban-at-login, teleport safety in practice. | Every item in the "never observed" column of this document has been observed with at least two real players, or is recorded as still unobserved with the reason. |
+| **1.1.3** | Whatever 1.1.2 finds. Reserved rather than assumed empty — the last two runtime rounds each produced defects no test had caught. | Every defect found is fixed with a regression test, or recorded as accepted with a reason. |
+| **1.1.4** | Write-ahead journal for multi-file transactions (§11.1). The M2 gap, and M6's prerequisite. | Journal replay verified by a simulated crash mid-transaction. |
+| **1.1.5** | Migration fixtures and the schema-bump machinery. The week-long real-player run that is M5's actual exit criterion. | A 1.0.0 data directory loads through the migration path with exact expected results; a week of real-player use with no unrecorded defect. **M5 complete.** |
 
-### Line 1.4.x — M7 and M8 · **over-subscribed, and said so**
-
-M7 (chat and moderation depth) and M8 (automation, backups, diagnostics, benchmarks) were two
-lines before ADR-0011 took `1.0.x` for the patch lane. They now share five rungs, and five rungs
-is not enough for two milestones. This line is written as the plan of record, and it is also the
-first place to look when the ladder slips.
-
-**When it overflows there is no `1.4.6`** — the twenty-rung ceiling is structural, not a budget.
-The options at that point are to move scope out of v1.5.0 or to move v1.5.0, and that is a
-decision for the owner rather than something to absorb by quietly widening a rung.
+### Version 1.2 — M6 economy
 
 | Build | Contents | Exit condition |
 |---|---|---|
-| **1.4.1** | M7 chat: channels and private messages. | Channel routing delivers only to subscribers and private messages reach only the recipient, each with a named test; **no chat path bypasses the existing mute check**, asserted for both. |
-| **1.4.2** | M7 depth: anti-spam, jail, reports, notes. | Anti-spam limit configurable with a boundary test; jail survives restart and relog and cannot be left by any teleport path (`/home`, `/warp`, `/spawn`, `/back`, `/tpa`); reports and notes persist and appear in the audit chain. **M7 complete except SmartGuard, excluded below.** |
-| **1.4.3** | M8 automation: durable scheduler, backups, restore with a dry run. | Scheduler survives restart with correct missed-run behaviour; the dry run validates manifest, checksum and schema before applying, proven against a deliberately corrupted backup. |
-| **1.4.4** | M8 diagnostics and benchmarks: `/nexus doctor`, `/nexus doctor storage`, support bundle, harness (§16.2), measured budgets. | Both doctor commands distinguish a seeded fault from a clean system; the support bundle contains no secrets, verified by test; the harness produces JSON and a committed baseline and a local run compares against it. **The unverified-claims register below is closed — every number in it is measured or withdrawn. M8 complete.** CI comparison is *not* part of this condition: the M0 table records the CI workflow as never executed with no remote configured, and no rung changes that. |
-| **1.4.5** · *pre-release* | Release candidate: documentation sweep and the full three-loader matrix. | `RELEASE_CHECKLIST.md` sections 0–7a and 8 all pass on the candidate. |
+| **1.2.0** · *version* | The M5-complete milestone. | 1.1.x verified together; the unverified-claims register reflects what the real-player run established. |
+| **1.2.1** | Currency core: fixed-point integer minor units. | No `float` or `double` anywhere in currency code, asserted by a test that scans the sources — not by review. |
+| **1.2.2** | Atomic transfer and idempotency keys, on 1.1.4's journal. | Debit and credit commit in one transaction boundary; an idempotency replay test proves one key yields exactly one committed transaction. |
+| **1.2.3** | Reversal as a compensating entry. | A reversal creates a new entry and no historical row is edited, asserted by a test. |
+| **1.2.4** | Shops. | A shop purchase is all-or-nothing under an injected mid-transaction failure. |
+| **1.2.5** | Economy commands and operator documentation. | All six §10.2 invariants have passing **named** tests; balances and history survive restart. **M6 complete.** |
 
-### 1.5.0 — the release
+### Version 1.3 — M7 chat and moderation depth
 
 | Build | Contents | Exit condition |
 |---|---|---|
-| **1.5.0** | Release ceremony only. No code that was not already in 1.4.5. | `RELEASE_CHECKLIST.md` sections 0–7a and 8 signed off, in full. Sections 9–11 (M9, M10, M11) are **NOT MET by design** — they are v2.0 scope — and the sign-off records them that way, which is what the checklist's own "recorded as NOT MET with the specific reason" rule requires. The same applies to the four M3 items and SmartGuard excluded below. |
+| **1.3.0** · *version* | The M6-complete milestone. | 1.2.x verified together. |
+| **1.3.1** | Chat channels. | Routing delivers only to subscribers, with a named test. |
+| **1.3.2** | Private messages. | Delivery reaches only the recipient; **no chat path bypasses the existing mute check**, asserted for channels and private messages both. |
+| **1.3.3** | Anti-spam. | The limit is configurable and enforced, with a boundary test. |
+| **1.3.4** | Jail. | Survives restart and relog, and a jailed player cannot leave by any teleport path — `/home`, `/warp`, `/spawn`, `/back`, `/tpa`. |
+| **1.3.5** | Reports and notes. | Both persist across restart and appear in the audit chain. **M7 complete except SmartGuard, excluded below.** |
+
+### Version 1.4 — M8 automation, diagnostics, benchmarks
+
+| Build | Contents | Exit condition |
+|---|---|---|
+| **1.4.0** · *version* | The M7-complete milestone. | 1.3.x verified together. |
+| **1.4.1** | Durable scheduler. | Survives restart with correct missed-run behaviour, with a named test. |
+| **1.4.2** | Backups, and restore with a dry run. | The dry run validates manifest, checksum and schema before applying; restore proven against a deliberately corrupted backup. |
+| **1.4.3** | Diagnostics: `/nexus doctor`, `/nexus doctor storage`, support bundle. | Both doctor commands distinguish a seeded fault from a clean system; the support bundle contains no secrets, verified by test. |
+| **1.4.4** | Benchmark harness (§16.2) and measured budget numbers. | Harness produces JSON and a committed baseline, and a local run compares against it. **The unverified-claims register below is closed — every number in it measured or withdrawn.** CI comparison is *not* part of this: the M0 table records the CI workflow as never executed with no remote configured. |
+| **1.4.5** | Release candidate: documentation sweep, the confirmed-defect backlog above, and the full three-loader matrix. | `RELEASE_CHECKLIST.md` sections 0–7a and 8 all pass on the candidate. **M8 complete.** |
+
+### 1.5.0 — the feature release
+
+| Build | Contents | Exit condition |
+|---|---|---|
+| **1.5.0** · *version* | Release ceremony only. No code that was not already in 1.4.5. | `RELEASE_CHECKLIST.md` sections 0–7a and 8 signed off, in full. Sections 9–11 (M9, M10, M11) are **NOT MET by design** — v2.0 scope — and the sign-off records them that way, which is what the checklist's own "recorded as NOT MET with the specific reason" rule requires. The same applies to the four M3 items and SmartGuard excluded below. |
 
 ### Not on this ladder
 
@@ -335,17 +335,17 @@ Named here so they are not mistaken for oversights. Each is `planned` with no ru
 If any of these is wanted in v1.5.0, it gets a rung; it does not get quietly folded into
 another one.
 
-### 1.1.1 — what was actually verified
+### 1.0.2 — what was actually verified
 
 The rung that establishes the ladder is the wrong one to take on trust, so it was run rather
 than reasoned about.
 
 | Check | Status | Evidence |
 |---|---|---|
-| All three loaders build clean at 1.0.1 | `tested` | `clean build` green in `neoforge/`, `fabric/`, `forge/`. Artifacts `NexusCore-<loader>-1.0.1-1.21.1.jar`. |
+| All three loaders build clean at 1.0.2 | `tested` | `clean build` green in `neoforge/`, `fabric/`, `forge/`. Artifacts `NexusCore-<loader>-1.0.1-1.21.1.jar`. |
 | Version reaches packaged metadata, not just filenames | `tested` | `version = "1.0.1"` in `neoforge.mods.toml`, `mods.toml`, and `fabric.mod.json`, all token-expanded from the one `mod_version`. Zero jar entries still naming 1.0.0. |
-| `versionLadderCheck` **fails** when it should | `tested` | Eleven injected violations, each rejected with its own message. Re-verified under the ADR-0011 rules: malformed version (`-Pmod_version=1.0`); undocumented version (`1.0.9`); sixth rung (`1.1.6` — "roll the minor"); `.0` on a development minor (`1.2.0` — "a development line has no .0 rung"); pre-release whose heading says `development build` (`1.1.5`); release whose heading says `pre-release` (`1.5.0`). Verified earlier on unchanged code paths: whitespace-padded `mod_version`; rebuild at an already-archived version (`1.0.0`); heading only inside a fenced code block; patch release mislabelled `development build`; patch release with no label. |
-| `versionLadderCheck` **passes** when it should | `tested` | All four legal shapes: `1.0.1` patch release, `1.1.1` development build, `1.1.5` pre-release, `1.5.0` release. The last three used temporary changelog headings; `CHANGELOG.md` confirmed byte-identical afterwards. |
+| `versionLadderCheck` **fails** when it should | `tested` | Nine injected violations under the ADR-0012 rules, each rejected with its own message: malformed version (`-Pmod_version=1.0`); whitespace-padded `mod_version` (`1.0.2 `); sixth build (`1.0.6` — "move up to 1.1.0"); in-range version with no changelog entry (`1.2.3`); heading only inside a fenced code block (`1.0.3`); version whose heading calls it a hotfix (`1.1.0`); build with no label (`1.1.2`); build labelled **both** hotfix and pre-release (`1.1.3`); rebuild at an already-archived version (`1.0.0`). |
+| `versionLadderCheck` **passes** when it should | `tested` | Every legal shape: `1.0.2` (build, pre-release), `1.1.0` (version), `1.1.5` (build, hotfix), `1.5.0` (version). Temporary changelog headings were used and `CHANGELOG.md` confirmed byte-identical afterwards. |
 | Heading lookup cannot collide on a prefix | `tested` | A `## [1.0.10]` heading was temporarily inserted above `## [1.0.1]` and the gate run at both versions: each resolved to its own heading, because the `]` is part of the search prefix. **The rationale for this test is now gone** — ADR-0010 caps the build counter at 5 and the minor at 9, so no two-digit component can occur. Kept because the check costs nothing and the collision would be silent, not because the ladder still reaches 1.0.13. |
 | Heading inside a fenced code block is not an entry | `tested` | A `## [1.0.2]` heading added inside a ```` ``` ```` block was rejected: `No changelog entry for 1.0.2`. Reverted; the changelog already contains fenced blocks, so this is a shape the file will grow into. |
 | `/nexus version` reports the build | `tested` | Runtime, **both** NeoForge and Fabric: `NexusCore Administration Framework version 1.0.1`. The string comes from loader metadata, so no source file names a version. |

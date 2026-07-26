@@ -8,7 +8,7 @@ This file lists every third-party component **redistributed inside**
 
 ## Embedded components
 
-**As of 1.0.1: none, in any of the three jars.**
+**As of 1.0.2: none, in any of the three jars.**
 
 No jar contains Jar-in-Jar dependencies or shaded or repackaged third-party code. Each ships
 NexusCore's own compiled classes, its resources, and its mod metadata — nothing else.

@@ -237,15 +237,15 @@ directory without operator intervention.
 **v1.5** is intended to add the economy, chat channels and private messages, jail and
 reports, the durable scheduler, and backups with verified restore.
 
-It is being built as a ladder of numbered development builds in **lines of five** — `1.0.1`
-… `1.0.5`, then `1.1.1` … `1.1.5`, and so on to `1.5.0` — rather than as one jump, so each
-increment is installable and testable ([ADR-0009](docs/architecture/ADR-0009.md),
-[ADR-0010](docs/architecture/ADR-0010.md)).
+It is being built as a sequence of numbered builds rather than one jump, so each increment is
+installable and testable ([ADR-0012](docs/architecture/ADR-0012.md)): `1.0.1` … `1.0.5`, then
+`1.1.0`, and so on to `1.5.0`.
 
-**None of those builds is a release**, and this page covers releases only. The `x.y.5` builds
-are **pre-releases**: if you would like to help test one, those are the ones that get handed
-out. Everything else is internal. If you are running a production server, **v1.0.0 is the
-version for you** until v1.5.0 arrives.
+**`x.y.0` is a version; `x.y.1`–`x.y.5` are its builds** — each a hotfix or a pre-release. This
+page covers versions only.
+
+**If you are running v1.0.0, take the `1.0.1` hotfix**: it closes a permission bypass. Otherwise
+v1.0.0 remains the production version until v1.5.0 arrives.
 
 What each build is planned to contain is in
 [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md#the-road-to-v150).

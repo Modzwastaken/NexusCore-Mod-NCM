@@ -16,18 +16,13 @@ dropped.
 
 ## Which checklist applies
 
-[ADR-0009](docs/architecture/ADR-0009.md) puts numbered development builds between releases, and
-[ADR-0010](docs/architecture/ADR-0010.md) arranges them in lines of five. They do not run this
-whole document — running it twenty-five times would cost more than the ladder is worth — but
-they are not unchecked either.
+[ADR-0012](docs/architecture/ADR-0012.md) numbers `x.y.0` as a **version** and `x.y.1`–`x.y.5`
+as its **builds**. The version number alone says which ceremony applies.
 
-The version number alone says which ceremony applies: `.1`–`.4` development, `.5` pre-release,
-`.0` release.
+### Build (`x.y.1`–`x.y.5`) — the short gate
 
-### Development build (`x.y.1`–`x.y.4`) — the short gate
-
-Every rung on the ladder. Nothing here is optional; a build that fails one of these is not
-cut, and the number is not spent.
+Every build, hotfix or pre-release. Nothing here is optional; a build that fails one of these is
+not cut, and the number is not spent.
 
 - [ ] `mod_version` bumped in `neoforge/gradle.properties` **before** the work starts
 - [ ] `./gradlew clean build` succeeds in **all three** loader projects — `neoforge/`,
@@ -36,38 +31,36 @@ cut, and the number is not spent.
 - [ ] All tests pass on all three; no test ignored, disabled, or weakened
 - [ ] `checkstyleMain` and `checkstyleTest` clean on all three
 - [ ] `stubMarkerCheck` and `versionLadderCheck` pass
-- [ ] Shared `CHANGELOG.md` entry written, heading labelled `— development build`
+- [ ] Shared `CHANGELOG.md` entry written, heading labelled `— hotfix` or `— pre-release`
       (`versionLadderCheck` enforces this, but write it because it is true, not because a task
       demands it)
-- [ ] The version is inside its line — a sixth rung means the minor should have rolled
+- [ ] The third component is 5 or less — a sixth build means the minor should have moved up
 - [ ] Loader changelog entries written where the change was loader-specific
-- [ ] `IMPLEMENTATION_STATUS.md` updated: the rung's row reflects what actually happened, and
+- [ ] `IMPLEMENTATION_STATUS.md` updated: the build's row reflects what actually happened, and
       any status that changed is re-evidenced
-- [ ] The rung's **exit condition**, as written in that table, is met — or the row says it is
+- [ ] The build's **exit condition**, as written in that table, is met — or the row says it is
       not, and why
 
-### Pre-release (`x.y.5`) — the short gate, plus
+### Handed to someone — the short gate, plus
 
-The fifth and last rung of every line ([ADR-0010](docs/architecture/ADR-0010.md)). Determined by
-the version number, not by a flag in a table: if the third component is `5`, this applies.
+Any build another person is asked to install, whichever number it carries.
 
-- [ ] Changelog heading says `— pre-release`, not `— development build`
-      (`versionLadderCheck` enforces this)
 - [ ] Packaged jar installed and started on all three test servers — `neoforgeserver/`,
       `fabricserver/`, `forgeserver/` — not IDE output
 - [ ] All three jars copied to `archived/v<version>/`, **never rebuilt afterwards**
 - [ ] `checksums.txt` generated from the archived jars themselves
-- [ ] `archived/README.md` row added, typed **Pre-release**
-- [ ] **Somebody was actually asked to install it.** A pre-release nobody was given is ceremony
-      with no content; if that is what happened, record it rather than archiving silently.
+- [ ] `archived/README.md` row added
+- [ ] **Somebody was actually asked to install it.** An archived build nobody was given is
+      ceremony with no content; if that is what happened, record it rather than archiving
+      silently.
 
-### Release (`x.y.0`, minor `.0` or `.5`) — everything below
+### Version (`x.y.0`) — everything below
 
-`1.5.0` and `2.0.0`. The whole document, plus the sign-off table at the end.
+`1.1.0`, `1.5.0`, `2.0.0`. The whole document, plus the sign-off table at the end.
 
 ---
 
-## 0. Applies to every release (`x.y.0`)
+## 0. Applies to every version (`x.y.0`)
 
 - [ ] `./gradlew clean build` succeeds from a **clean checkout** on a clean environment
 - [ ] All tests pass; no critical test ignored, disabled, or weakened
@@ -170,7 +163,7 @@ the version number, not by a flag in a table: if the third component is `5`, thi
 ## 7a. From M7 — moderation depth and chat
 
 This section did not exist: the document ran M6 straight into M8, so M7 was the one milestone
-with no checklist coverage at all. Added because v1.5.0 contains M7 (rungs 1.0.9 and 1.0.10)
+with no checklist coverage at all. Added because v1.5.0 contains M7 (the 1.3.x builds)
 and a release cannot be signed off against a section that is not there. Numbered `7a` rather
 than renumbering sections 8 to 11, which are referenced by number elsewhere.
 

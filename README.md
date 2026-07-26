@@ -22,12 +22,13 @@ required.
 
 ## Current state
 
-**Latest release: 1.0.0 — first public release.** ([release notes](release-notes.md))
+**Latest version: 1.0.0.** ([release notes](release-notes.md))
+**Security hotfix available: 1.0.1** — everyone on v1.0.0 should take it; see
+[CHANGELOG.md](CHANGELOG.md).
 
-**In development: 1.0.1**, the first rung on the ladder to v1.5.0. Per
-[ADR-0009](docs/architecture/ADR-0009.md), versions shaped `x.y.N` are numbered development
-builds rather than patch releases; only `x.y.0` is a release. What each build is planned to
-contain is in [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md#the-road-to-v150).
+**In development: 1.0.2.** Per [ADR-0012](docs/architecture/ADR-0012.md), `x.y.0` is a version
+and `x.y.1`–`x.y.5` are its builds. What each build is planned to contain is in
+[IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md#the-road-to-v150).
 
 Working today, on a server-only install with vanilla clients:
 
@@ -67,18 +68,17 @@ Releases advance `v1.0` → `v1.5` → `v2.0` ([ADR-0007](docs/architecture/ADR-
 | **v1.5** *(in progress)* | Economy and shops · chat channels, private messages, anti-spam · jail and reports · durable scheduler · backups with verified restore. |
 | **v2.0** *(planned)* | Client mod, custom GUI screens, themes and accessibility, public API, integration adapters. |
 
-Between releases sit numbered development builds, arranged in **lines of five**
-([ADR-0009](docs/architecture/ADR-0009.md), [ADR-0010](docs/architecture/ADR-0010.md)):
+Between versions sit numbered builds ([ADR-0012](docs/architecture/ADR-0012.md)):
 
 | Version shape | What it is |
 |---|---|
-| `x.y.0` (on a `.0` or `.5` minor) | **Release.** `1.0.0`, `1.5.0`, `2.0.0`. |
-| `x.y.1` – `x.y.4` | **Development build.** Internal; built and tested on all three loaders. |
-| `x.y.5` | **Pre-release.** Archived and handed to testers. The line then rolls: `1.0.5` → `1.1.1`. |
+| `x.y.0` | **A version.** `1.0.0`, `1.1.0`, `1.2.0` … |
+| `x.y.1` – `x.y.5` | **A build** of that version: a hotfix or a pre-release. |
+| `x.y.6` | Does not exist. Five builds fill a version, then the minor moves up. |
 
-So the road to `1.5.0` runs `1.0.x` → `1.1.x` → `1.2.x` → `1.3.x` → `1.4.x`, five rungs each.
-`1.1.0` never exists. **If the third component is not `0`, it is not a release** — whatever
-semantic versioning would otherwise imply about it.
+So the route to `1.5.0` is `1.0.1`…`1.0.5` → `1.1.0` → `1.1.1`…`1.1.5` → `1.2.0` → … → `1.4.5`
+→ `1.5.0`. **If the third component is not `0`, it is a build, not a version** — whatever
+semantic versioning would otherwise imply.
 
 **Server-only mode is supported forever.** It is not a degraded path, and every GUI action
 has a command equivalent.
@@ -177,7 +177,7 @@ Other useful targets:
 - [Permissions](docs/admin/permissions.md) — how a decision is reached, and the one rule that surprises people
 - [Admin panel](docs/admin/admin-gui.md)
 - [Release notes](release-notes.md)
-- [Architecture decisions](docs/architecture/) — ADR-0001 through ADR-0010
+- [Architecture decisions](docs/architecture/) — ADR-0001 through ADR-0012
 - [Implementation status](IMPLEMENTATION_STATUS.md)
 - [Release checklist](RELEASE_CHECKLIST.md)
 - Changelogs — [shared](CHANGELOG.md) · [NeoForge](neoforge/CHANGELOG.md) · [Fabric](fabric/CHANGELOG.md) · [Forge](forge/CHANGELOG.md)

@@ -7,8 +7,8 @@ plugins {
 // Versions live in ONE place: the NeoForge project's gradle.properties.
 def shared = new Properties()
 file('../neoforge/gradle.properties').withInputStream { shared.load(it) }
-def sharedSrc = file('../neoforge/src/main/java')
-def sharedRes = file('../neoforge/src/main/resources')
+def sharedSrc = file('../common/src/main/java')
+def sharedRes = file('../common/src/main/resources')
 
 version = shared.mod_version
 group = shared.mod_group_id
@@ -25,19 +25,11 @@ repositories {
     mavenCentral()
 }
 
-// Same strategy as Fabric: compile the shared sources, do not copy them. Only the entry point
-// and the flight controller are platform-specific.
+// Same strategy as Fabric: compile the shared sources, do not copy them. Since 1.0.4 they live
+// in ../common, which holds only shared code, so no excludes are needed here either.
 sourceSets.main.java.srcDirs += sharedSrc
 sourceSets.main.resources.srcDirs += sharedRes
 
-sourceSets.main.java {
-    exclude 'com/mwtstudios/nexuscore/NexusCore.java'
-    exclude 'com/mwtstudios/nexuscore/platform/NeoForgeFlightController.java'
-}
-
-sourceSets.main.resources {
-    exclude 'META-INF/neoforge.mods.toml'
-}
 
 // Send processed resources into the SAME directory as the compiled classes.
 //
@@ -120,6 +112,17 @@ tasks.withType(Test).configureEach {
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
+}
+
+// §18.5 — reproducible archives: stable entry order, no embedded build timestamps.
+//
+// This was present only in neoforge/build.gradle until 1.0.4, so §18.5 held for exactly one of
+// the three shipped jars. Two clean builds of an unchanged Forge tree produced different SHA-256
+// sums; the Fabric jar happened to match because Loom's remapJar rewrites it, which is luck
+// rather than a guarantee. Found by the byte-identity check this build's exit condition demands.
+tasks.withType(AbstractArchiveTask).configureEach {
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
 }
 
 // Same ruleset as the other two loaders, so a contribution cannot pass one build and fail

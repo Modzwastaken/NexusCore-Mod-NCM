@@ -46,12 +46,43 @@ class MessageCatalogueTest {
     /** Keys resolved dynamically or reserved for the mod's own metadata. */
     private static final Set<String> NOT_REFERENCED_DIRECTLY = Set.of("nexuscore.name");
 
-    private static Path projectRoot() {
-        Path here = Path.of("").toAbsolutePath();
-        while (here != null && !Files.isDirectory(here.resolve("src/main/java"))) {
-            here = here.getParent();
+    /**
+     * Every production source root in the repository.
+     *
+     * <p>There is more than one, and assuming otherwise broke this test at 1.0.4. It used to walk
+     * up from the working directory to the first folder containing {@code src/main/java} and scan
+     * that — which was the NeoForge project, and back then the NeoForge project held all the shared
+     * code. After the move to {@code common/}, that folder holds two files, so every key in the
+     * catalogue looked unreferenced.</p>
+     *
+     * <p>All roots are scanned, not just {@code common/}: a key referenced only from a loader's
+     * entry point is still referenced, and treating it as dead wording would be wrong.</p>
+     *
+     * @return the existing {@code <module>/src/main/java} directories
+     * @throws IOException if the repository cannot be read
+     */
+    private static List<Path> sourceRoots() throws IOException {
+        Path repositoryRoot = Path.of("").toAbsolutePath();
+        while (repositoryRoot != null && !Files.isDirectory(repositoryRoot.resolve("common/src/main/java"))) {
+            repositoryRoot = repositoryRoot.getParent();
         }
-        return here;
+        assertTrue(repositoryRoot != null,
+                "could not find common/src/main/java above " + Path.of("").toAbsolutePath());
+
+        try (Stream<Path> modules = Files.list(repositoryRoot)) {
+            return modules.map(module -> module.resolve("src/main/java"))
+                    .filter(Files::isDirectory)
+                    .sorted()
+                    .toList();
+        }
+    }
+
+    private static Set<String> scanAll(Pattern pattern) throws IOException {
+        Set<String> keys = new TreeSet<>();
+        for (Path root : sourceRoots()) {
+            keys.addAll(scan(root, pattern));
+        }
+        return keys;
     }
 
     private static JsonObject catalogue() throws IOException {
@@ -79,10 +110,7 @@ class MessageCatalogueTest {
     @Test
     @DisplayName("every message key referenced in production code exists in en_us.json")
     void everyReferencedKeyExists() throws IOException {
-        Path root = projectRoot();
-        assertTrue(root != null, "could not locate the project root from " + Path.of("").toAbsolutePath());
-
-        Set<String> referenced = scan(root.resolve("src/main/java"), KEY_CALL);
+        Set<String> referenced = scanAll(KEY_CALL);
         assertFalse(referenced.isEmpty(), "the scanner found no message keys at all; the pattern is probably wrong");
 
         JsonObject catalogue = catalogue();
@@ -107,8 +135,7 @@ class MessageCatalogueTest {
     @Test
     @DisplayName("no catalogue key is dead wording that nothing references")
     void noUnreferencedKeys() throws IOException {
-        Path root = projectRoot();
-        Set<String> referenced = scan(root.resolve("src/main/java"), ANY_LITERAL);
+        Set<String> referenced = scanAll(ANY_LITERAL);
         JsonObject catalogue = catalogue();
 
         Set<String> unused = new TreeSet<>();

@@ -23,6 +23,73 @@ Per [ADR-0012](docs/architecture/ADR-0012.md): **`x.y.0` is a version** — `1.0
 Five builds fill a version, then the minor moves up: `1.0.5` is followed by `1.1.0`, never by
 `1.0.6`. Every heading below says which kind it is.
 
+## [1.0.4] — 2026-07-26 — pre-release — shared sources move to common/
+
+A pure layout change. Nothing about the mod's behaviour changes, and the test for that is strict:
+**the same version, built from the old layout and the new one, produces byte-identical jars.**
+
+Comparing a 1.0.4 jar against a 1.0.3 jar would not test anything — the version string is
+token-expanded into `neoforge.mods.toml`, `mods.toml` and `fabric.mod.json`, so those bytes differ
+by design. The comparison is therefore done by building the **new** layout at `-Pmod_version=1.0.3`
+and diffing against the 1.0.3 artifacts, which isolates the layout change from the version bump.
+
+### Changed
+
+- **Shared sources moved from `neoforge/src/` to `common/src/`.** ADR-0008 documented this as a
+  wart and did not fix it: 37 of the 39 shared source files lived inside the NeoForge project, and
+  Fabric and Forge reached across into `../neoforge/src/main/java` and then **excluded the two
+  NeoForge-only files by path string**. Two consequences, both real:
+
+  - The layout said "NeoForge owns the shared code", which is false — all three loaders compile it
+    equally.
+  - The excludes were string paths in two build files. Renaming or adding a NeoForge-only class
+    meant editing `fabric/build.gradle` and `forge/build.gradle` too, and forgetting to would
+    compile a NeoForge-only class into a Fabric jar, where it would fail at class-load rather
+    than at build time.
+
+  After the move there are **no excludes at all**: `common/` holds only what every loader compiles,
+  and each loader project holds only its own entry point and platform code. The rule is now
+  expressed by directory rather than by a list of exceptions.
+
+- Shared tests moved to `common/src/test/`. They are compiled by the NeoForge project, which is
+  where they already ran; the move is so they sit beside the code they test.
+
+- `neoforge/gradle.properties` **stays where it is**, and remains the single source of version
+  truth. Gradle requires per-project settings like `org.gradle.jvmargs` and the Parchment
+  coordinates to live in the project directory, so this file cannot move to `common/` — and
+  splitting it into a shared half and a NeoForge half to satisfy tidiness would create exactly
+  the two-places-to-edit problem this build is removing.
+
+### Fixed
+
+- **Two of the three jars were never reproducible.** §18.5 requires stable entry order and no
+  embedded build timestamps, and `IMPLEMENTATION_STATUS.md` recorded it as `tested` — but the
+  `AbstractArchiveTask` block that enforces it existed only in `neoforge/build.gradle`. Two clean
+  builds of an unchanged Forge tree produced **different** SHA-256 sums. The Fabric jar happened to
+  match because Loom's `remapJar` rewrites it, which is luck rather than a guarantee.
+
+  Found by this build's own exit condition: the byte-identity comparison failed on Forge, and
+  chasing why turned up a defect that had nothing to do with the move. Both build files now carry
+  the block, and all three loaders produce identical jars across two clean builds.
+
+- **`MessageCatalogueTest` assumed a single source root.** It walked up from the working directory
+  to the first folder containing `src/main/java` and scanned that — the NeoForge project, which
+  used to hold all the shared code. After the move it holds two files, so every one of the 94
+  catalogue keys looked like dead wording and the test failed. It now scans **every**
+  `<module>/src/main/java`, which is also more correct than before: a key referenced only from a
+  loader's entry point was previously invisible to it.
+
+### Verified
+
+- **Byte-identity, properly isolated.** The old layout was rebuilt from its own commit in a git
+  worktree with the same reproducibility fix applied, at the same version, and compared:
+  **identical on all three loaders.** Comparing against the originally-shipped 1.0.3 jars would
+  have proved nothing, since those were built before the reproducibility fix.
+- All three jars have the same 109 entries, and **zero** NeoForge-only classes or metadata leak
+  into the Fabric and Forge jars — the property the deleted excludes used to enforce by hand.
+- 197 tests pass. Packaged jars run on all three real dedicated servers: `NexusCore started 11
+  module(s)`, `/nexus version` reports 1.0.4, audit chain intact, clean shutdown, zero errors.
+
 ## [1.0.3] — 2026-07-26 — pre-release — ModuleManager
 
 The §7.3 module contract, which M4 left `planned`. No behaviour change: every service starts in

@@ -1,6 +1,6 @@
 # Current build outputs, regenerated on every build. NOT a release record.
 # The immutable record of a published version is archived/v<version>/checksums.txt.
-# Build: 1.0.3 (pre-release, ADR-0012)
-2a77bc989dd699923227d5f050d6c7b5a3dc96b9fb0776acae4a593a211d7aac  neoforge/build/libs/NexusCore-neoforge-1.0.3-1.21.1.jar
-37584c4744e5eb59bf732408c7a93e45b93bfd0da47c51fded5db9e836d024fd  fabric/build/libs/NexusCore-fabric-1.0.3-1.21.1.jar
-a38b4f76404c5addd02ac6b017253a5157d3c24ce709b29e1a81d652a13ca08d  forge/build/libs/NexusCore-forge-1.0.3-1.21.1.jar
+# Build: 1.0.4 (pre-release, ADR-0012)
+4ee76afcf27cd14a98535d6d8a1ae6083db618cc83cd1bcf2e5fb8e6b87f2f42  neoforge/build/libs/NexusCore-neoforge-1.0.4-1.21.1.jar
+f26d7a2a2ff30841db4bfcfebb2616e8fc1f0b14d362309b07b233421015e4a5  fabric/build/libs/NexusCore-fabric-1.0.4-1.21.1.jar
+8235a69796fb960ba4fb2631dd89096a1a1d303c51478e2c6507e5c05b5bf373  forge/build/libs/NexusCore-forge-1.0.4-1.21.1.jar

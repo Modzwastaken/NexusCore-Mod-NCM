@@ -8,8 +8,8 @@ plugins {
 // loader is how a release ends up with three jars claiming different Minecraft versions.
 def shared = new Properties()
 file('../neoforge/gradle.properties').withInputStream { shared.load(it) }
-def sharedSrc = file('../neoforge/src/main/java')
-def sharedRes = file('../neoforge/src/main/resources')
+def sharedSrc = file('../common/src/main/java')
+def sharedRes = file('../common/src/main/resources')
 
 version = shared.mod_version
 group = shared.mod_group_id
@@ -52,21 +52,12 @@ sourceSets.main.java.srcDirs += sharedSrc
 // server, which reported "0 message(s)".
 sourceSets.main.resources.srcDirs += sharedRes
 
+// No excludes since 1.0.4: ../common holds only shared code. Previously this reached into
+// ../neoforge/src and named the two NeoForge-only files by path string, here and in
+// forge/build.gradle — so a new NeoForge-only class meant editing both, or shipping it into a
+// Fabric jar where it would fail at class-load rather than at build time.
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
-    // The NeoForge entry point is the one file that cannot be shared.
-    exclude 'com/mwtstudios/nexuscore/NexusCore.java'
-    exclude 'com/mwtstudios/nexuscore/platform/NeoForgeFlightController.java'
-}
-
-sourceSets.main.resources {
-    // The NeoForge metadata must not travel into the Fabric jar.
-    exclude 'META-INF/neoforge.mods.toml'
-}
-
-sourceSets.main.java {
-    exclude 'com/mwtstudios/nexuscore/NexusCore.java'
-    exclude 'com/mwtstudios/nexuscore/platform/NeoForgeFlightController.java'
 }
 
 dependencies {
@@ -86,6 +77,17 @@ tasks.withType(Test).configureEach {
         events 'passed', 'skipped', 'failed'
         exceptionFormat 'full'
     }
+}
+
+// §18.5 — reproducible archives: stable entry order, no embedded build timestamps.
+//
+// This was present only in neoforge/build.gradle until 1.0.4, so §18.5 held for exactly one of
+// the three shipped jars. Two clean builds of an unchanged Forge tree produced different SHA-256
+// sums; the Fabric jar happened to match because Loom's remapJar rewrites it, which is luck
+// rather than a guarantee. Found by the byte-identity check this build's exit condition demands.
+tasks.withType(AbstractArchiveTask).configureEach {
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
 }
 
 checkstyle {

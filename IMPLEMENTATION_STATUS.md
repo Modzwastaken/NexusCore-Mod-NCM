@@ -19,7 +19,7 @@ fails the build if they do.
 cited. A file that looks finished but has never been compiled is `in progress`, however
 complete it appears.
 
-**Last updated:** 2026-07-26 · **Build:** 1.0.3 (pre-release) ·
+**Last updated:** 2026-07-26 · **Build:** 1.0.4 (pre-release) ·
 **Last version:** 1.0.0 · **Milestones passed:** M0, M1, M2, M3, M4, M5 (partial)
 
 > **v1.0 does not mean feature complete.** The version scheme (ADR-0007) is the owner's
@@ -29,7 +29,7 @@ complete it appears.
 > **Versions and builds.** Per [ADR-0012](docs/architecture/ADR-0012.md), `x.y.0` is a
 > **version** and `x.y.1`–`x.y.5` are its **builds**, each a hotfix or a pre-release; after five
 > the minor moves up. `1.0.1` is the security **hotfix** for v1.0.0 — fixes only, branched from
-> the `v1.0.0` tag. `1.0.3` is this build. What each later build is planned to contain is in
+> the `v1.0.0` tag. `1.0.4` is this build. What each later build is planned to contain is in
 > [The road to v1.5.0](#the-road-to-v150) below and, per §2.4, only there.
 
 ---
@@ -63,7 +63,7 @@ utilities, moderation with confirmations, and a working admin GUI.
 | `neoforge.mods.toml` as the only metadata file | `tested` | Packaged-JAR inspection; no legacy `mods.toml`. |
 | Stub-marker gate | `tested` | Passes clean, **and proven to fail** on an injected `TODO`. |
 | Checkstyle formatting + static analysis | `tested` | 0 violations across main and test, **and proven to fail** on an injected violation. |
-| Reproducible archives | `tested` | Identical SHA-256 across two independent clean builds. |
+| Reproducible archives | `tested` | Identical SHA-256 across two independent clean builds, **on all three loaders**. Until 1.0.4 the enforcing `AbstractArchiveTask` block was in `neoforge/build.gradle` only, and two clean Forge builds genuinely produced different jars — so this row was true for one artifact of three. Found by 1.0.4's byte-identity check. |
 | Version gate (ADR-0012) | `tested` | `versionLadderCheck`. Passes on every legal shape and **proven to fail nine ways** — see the 1.0.2 evidence table below. |
 | CI workflow | `implemented` | `.github/workflows/build.yml`. **Never executed** — no git remote configured. |
 
@@ -267,7 +267,7 @@ sequence is open-ended, so nothing has to be crushed to fit.
 | **1.0.1** · *hotfix* | The v1.0.0 security patch: `/teleport` bypass, `/execute as` root, `/gamemode` wildcard escalation, audit short write, missing `core.confirm` grant. | **Met.** Three loaders build, 178 tests; packaged jars verified on all three dedicated servers — `/execute as` refused, `/teleport` taken over, audit chain intact. Branched from the `v1.0.0` tag. |
 | **1.0.2** · *pre-release* | The version scheme (ADR-0012) and `versionLadderCheck`. No runtime change. | **Met.** Gate proven to pass on four legal shapes and to fail nine ways; three loaders build clean at 1.0.2. |
 | **1.0.3** · *pre-release* | `ModuleManager` (§7.3). Services move from explicit `NexusServices` wiring to the module contract. | **Met.** All 11 services resolve through the registry; `NexusCore started 11 module(s)` on all three real servers with zero errors; the 178 pre-existing tests pass unchanged alongside 19 new ones. |
-| **1.0.4** · *pre-release* | Shared sources move out of `neoforge/src/` into `common/`. The layout wart ADR-0008 documents but does not fix. | All three loaders build from `common/`, and each jar is **byte-identical** to its 1.0.3 counterpart — a move that changes a single byte of output is not a move. |
+| **1.0.4** · *pre-release* | Shared sources moved out of `neoforge/src/` into `common/`. The layout wart ADR-0008 documents but does not fix. **Met.** Also fixed: Forge/Fabric archive reproducibility, and `MessageCatalogueTest`'s single-source-root assumption. | All three loaders build from `common/`, and **the same version built from both layouts produces byte-identical jars** — compared by rebuilding the new layout at `-Pmod_version=1.0.3`, since a 1.0.4 jar legitimately differs from a 1.0.3 one in its expanded metadata. |
 | **1.0.5** · *pre-release* | Safe mode with non-core modules disabled (M1) and generated command documentation from descriptors (M4). Both wait on `ModuleManager`. | `docs/admin/commands.md` is generated, not hand-maintained, with a test asserting it matches the registry; a server started in safe mode disables its non-core modules and says so. **M4 complete.** |
 
 ### Version 1.1 — M5 completion and the storage foundation M6 needs

@@ -346,7 +346,12 @@ public final class NexusServices {
         NexusSettings settings = settings();
         permissions.applySettings(settings);
         permissions.invalidate();
-        teleport.applySettings(settings);
+        // Guarded, and via has() rather than the accessor: this read the raw field, so in safe mode
+        // `/nexus reload` threw a plain NullPointerException rather than the ModuleException the
+        // pipeline knows how to report. A core command crashed because an optional module was off.
+        if (has("teleport")) {
+            teleport.applySettings(settings);
+        }
         confirmations.setTimeoutSeconds(settings.confirmationTimeoutSeconds);
         audit.setEnabled(settings.auditEnabled);
     }

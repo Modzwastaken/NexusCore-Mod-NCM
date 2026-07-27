@@ -1,8 +1,13 @@
 package com.mwtstudios.nexuscore.gui;
 
 import java.util.Map;
+import java.util.UUID;
 import java.util.function.Consumer;
 
+import com.mojang.logging.LogUtils;
+import com.mwtstudios.nexuscore.message.MessageService;
+
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Inventory;
@@ -11,6 +16,8 @@ import net.minecraft.world.inventory.ChestMenu;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.ItemStack;
+
+import org.slf4j.Logger;
 
 /**
  * A read-only chest menu used as the NexusCore admin panel.
@@ -29,6 +36,8 @@ import net.minecraft.world.item.ItemStack;
  * instead, and every handler re-checks permission (§15: UI visibility is not security).</p>
  */
 public final class AdminMenu extends ChestMenu {
+
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     /** Slots per row in a chest menu. */
     public static final int COLUMNS = 9;
@@ -78,12 +87,38 @@ public final class AdminMenu extends ChestMenu {
         if (player instanceof ServerPlayer serverPlayer && slotId >= 0 && slotId < panelSize) {
             Consumer<ServerPlayer> action = actions.get(slotId);
             if (action != null) {
-                action.accept(serverPlayer);
+                runGuarded(serverPlayer, action);
             }
         }
         // Deliberately no super call, for any slot or click type. Re-sync so the client's
         // optimistic prediction of the click is corrected immediately.
         sendAllDataToRemote();
+    }
+
+    /**
+     * Runs a tile's action so that nothing escapes into vanilla's container handling.
+     *
+     * <p>§12.2's "no stack trace ever reaches a player" was true of the command pipeline and
+     * <b>not</b> of this path: a click handler ran with no {@code try} anywhere above it, so any
+     * runtime failure inside one propagated out of {@code clicked} into
+     * {@code ServerGamePacketListenerImpl.handleContainerClick}. Safe mode made that reachable in
+     * an ordinary way — a handler calling a module that was never started throws
+     * {@code ModuleException} — but the hole predates safe mode and applies to any handler bug.</p>
+     *
+     * <p>The container is closed rather than left open, because a panel whose state was built
+     * halfway through a failure is showing the player something untrue.</p>
+     */
+    private void runGuarded(ServerPlayer viewer, Consumer<ServerPlayer> action) {
+        try {
+            action.accept(viewer);
+        } catch (RuntimeException e) {
+            String correlationId = UUID.randomUUID().toString();
+            LOGGER.error("NexusCore admin GUI action failed for {} (correlation {})",
+                    viewer.getGameProfile().getName(), correlationId, e);
+            viewer.closeContainer();
+            viewer.sendSystemMessage(Component.literal(MessageService.colourise(
+                    "&c&lNEXUS &c\u00bb &7That panel action failed. Reference: &f" + correlationId)));
+        }
     }
 
     /** Shift-click moves nothing. */

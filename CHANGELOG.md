@@ -23,6 +23,116 @@ Per [ADR-0012](docs/architecture/ADR-0012.md): **`x.y.0` is a version** — `1.0
 Five builds fill a version, then the minor moves up: `1.0.5` is followed by `1.1.0`, never by
 `1.0.6`. Every heading below says which kind it is.
 
+## [1.1.0] — 2026-07-26 — the M4-complete version
+
+**A version, not a build** ([ADR-0012](docs/architecture/ADR-0012.md)): the 1.0 line is full at
+five builds, so the minor moves up. This rolls up `1.0.1`–`1.0.5` and verifies them together on all
+three loaders. Its builds are `1.1.1`–`1.1.5`.
+
+**M4 is complete.** M1's safe mode is complete. The version carries no completeness promise beyond
+that — see [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
+
+### What this version contains
+
+Everything from the 1.0 line, in one artifact:
+
+| Build | Contents |
+|---|---|
+| `1.0.1` | Security hotfix: `/teleport` bypass, `/execute as` root, `/gamemode` wildcard escalation, audit short write, missing `core.confirm` grant |
+| `1.0.2` | ADR-0012's version scheme and `versionLadderCheck` |
+| `1.0.3` | `ModuleManager` — the §7.3 module contract |
+| `1.0.4` | Shared sources to `common/`; archive reproducibility on all three loaders |
+| `1.0.5` | Safe mode; generated command reference |
+
+### Fixed
+
+Found while verifying the line together, all in code 1.0.5 introduced or exposed:
+
+- **The admin GUI could not open at all in safe mode, and its handlers had no crash barrier.**
+  `openDashboard` read `services.moderation()` to build one tile, so the entire panel — the screen
+  an operator would use to look around a degraded server — refused. `openPlayerList` and
+  `openPlayerActions` read `services.players()` the same way. All three now degrade, showing a
+  barrier tile that names the unstarted module.
+
+- **Nothing caught an exception thrown by a GUI tile handler.** `AdminMenu.clicked` called
+  `action.accept(player)` with no `try` anywhere above it, so a failure inside a handler propagated
+  out into vanilla's `handleContainerClick`. §12.2's "no stack trace ever reaches a player" was true
+  of the command pipeline and **not** of this path — and it predates safe mode, applying to any
+  handler bug. Clicks now run guarded: the failure is logged with a correlation id, the container is
+  closed rather than left showing half-built state, and the player gets the reference.
+
+  `act()` also caught only `ActionRefused`, so a disabled module escaped even the guarded action
+  path. It now catches `ModuleException` and audits the attempt as a failure like any other.
+
+- **A descriptor attributed a command to the wrong module.** `(GUI) players page` claimed module
+  `core` while its page calls `services.players()`, so `/nexus help` would have advertised it in
+  safe mode and running it would have failed. Corrected to `player-utilities`, and the generated
+  reference updated.
+
+### Added
+
+- **`SafeModeGuardTest`** — the guards get guarded. `NexusServices.has` ends in
+  `default -> true`, which is correct for a core module and silent breakage for a typo:
+  `has("moderaton")` returns true and the guard around a disabled service does nothing. A test
+  scans every `has("…")` literal in the sources and fails on any id the switch does not know —
+  **proven to fail** on an injected `moderaton`. It also checks that every catalogue descriptor
+  names a real module, that safe mode disables exactly the non-core set, and that the property
+  parser rejects the near-misses an operator actually types (`yes`, `on`) while still reporting
+  `OFF` so the mistake is visible in the log.
+
+- **`/teleport` was deleted, not replaced — a regression I shipped in 1.0.1.** The 1.0.1 hotfix
+  added `registerVanillaReplacement(dispatcher, "teleport", VanillaCommands.teleport(services))`,
+  but that builder's root literal is named **`tp`**. So the call removed vanilla's `/teleport` and
+  then handed Brigadier another node called `tp`; `addChild` finds the existing `tp` child and
+  **merges into it** rather than creating a `teleport` child. Net effect for two builds:
+  **`/teleport` did not exist**, every command block, datapack function and `/execute run teleport`
+  using the canonical name failed — while the log printed *"NexusCore took over /teleport"*.
+
+  The `rename()` helper needed to do this correctly was already in the same file, five lines away,
+  with a comment explaining exactly why it exists. Now used. Two tests pin it down, including one
+  asserting Brigadier's merge behaviour directly so the reason lives in a test and not only a
+  comment.
+
+  **I had evidence of this at 1.0.1 and did not chase it**: `help teleport` returned
+  "Unknown command or insufficient permissions" in that session's own test output. I noted it as
+  odd and moved on.
+
+- **Safe mode left the server unable to kick a griefer.** Alias registration ran with no module
+  gating, so with `overrideVanillaCommands=true` safe mode reflectively **deleted** vanilla's
+  `/kick`, `/ban`, `/banlist`, `/pardon` and `/list` and installed NexusCore nodes that then
+  refused — leaving an operator with neither NexusCore's moderation nor vanilla's, in the one mode
+  that exists for recovering a broken server. `ModuleManager.disable`'s own javadoc predicted this
+  exact step and the 1.0.5 caller was written without it. Aliases are now registered only for
+  modules that started; vanilla's nodes stay in place. Verified: in safe mode NexusCore now takes
+  over only `/tp`, `/teleport` and `/gamemode`, none of which touch an optional service.
+
+- **`/nexus reload` threw a NullPointerException in safe mode.** `applySettings()` read the raw
+  `teleport` field instead of the guarded accessor, so the null escaped as a plain NPE rather than
+  the `ModuleException` the pipeline knows how to report — a core command crashing because an
+  optional module was off, and half-applying the new settings on the way.
+
+- **`/nexus help` claimed vanilla's commands as NexusCore's.** It printed the descriptor's short
+  alias *alone*, so it listed `/ban`, `/kick`, `/list` and `/banlist` — names that are only
+  NexusCore's when `overrideVanillaCommands` is on **and** the takeover succeeded **and**
+  `registerAliases` is on. It now shows the canonical form with the alias in parentheses, and only
+  when aliases are actually registered.
+
+- **The vanilla takeover was gated on the wrong setting.** It lived inside
+  `if (registerAliases)`, so `overrideVanillaCommands=true` did nothing when `registerAliases=false`
+  — an operator wanting NexusCore's `/ban` without short aliases silently got neither. The two
+  settings are now independent, as their names imply.
+
+- **Four descriptors described commands that do not exist as written**: `/nexus confirm` omitted its
+  required `<token>`; `speed` and `vanish` promised a `[player]` argument the tree does not have;
+  and `/tphere` was listed as an alias of `/nexus teleport tp` when it is a different command with
+  different arguments. `/delwarp` had no descriptor at all and shares the `setwarp` node — so the
+  reference understated what that permission grants. All corrected; `/tphere` and `/delwarp` now
+  have their own entries, taking the reference to 50 commands.
+
+### Verified
+
+Everything below is stated for **all three loaders** unless said otherwise.
+
 ## [1.0.5] — 2026-07-26 — pre-release — safe mode, and a generated command reference
 
 The last build of the 1.0 line, and the two things M1 and M4 left `planned`. **M4 is complete.**

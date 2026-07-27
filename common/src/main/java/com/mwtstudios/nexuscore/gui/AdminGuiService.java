@@ -11,6 +11,7 @@ import java.util.function.Consumer;
 import com.mwtstudios.nexuscore.core.NexusServices;
 import com.mwtstudios.nexuscore.message.TimeText;
 import com.mwtstudios.nexuscore.moderation.ModerationService;
+import com.mwtstudios.nexuscore.module.ModuleException;
 import com.mwtstudios.nexuscore.player.PlayerUtilityService;
 import com.mwtstudios.nexuscore.teleport.TeleportService;
 
@@ -88,12 +89,22 @@ public final class AdminGuiService {
                 "&8Command: /nexus player ..."),
                 clicker -> openPlayerList(clicker, 0));
 
-        panel.set(12, icon(Items.IRON_SWORD, "&cModeration",
-                "&7" + services.moderation().activeBans().size() + " active ban(s)",
-                "&7" + services.moderation().totalRecords() + " record(s) in total",
-                "",
-                "&8Command: /nexus moderation ..."),
-                this::openModeration);
+        // Degrades rather than throwing: reading moderation counts here made the WHOLE dashboard
+        // unopenable in safe mode, so the one screen an operator would use to look around was the
+        // first thing to refuse.
+        if (services.has("moderation")) {
+            panel.set(12, icon(Items.IRON_SWORD, "&cModeration",
+                    "&7" + services.moderation().activeBans().size() + " active ban(s)",
+                    "&7" + services.moderation().totalRecords() + " record(s) in total",
+                    "",
+                    "&8Command: /nexus moderation ..."),
+                    this::openModeration);
+        } else {
+            panel.set(12, icon(Items.BARRIER, "&8Moderation",
+                    "&8Module not started (safe mode)",
+                    "",
+                    "&8Restart without -Dnexuscore.safemode to enable"), clicker -> { });
+        }
 
         panel.set(14, icon(Items.BOOK, "&bPermissions",
                 "&7" + services.permissions().groupNames().size() + " group(s)",
@@ -138,6 +149,11 @@ public final class AdminGuiService {
         int from = current * pageSize;
         for (int i = 0; i < pageSize && from + i < online.size(); i++) {
             ServerPlayer target = online.get(from + i);
+            if (!services.has("player-utilities")) {
+                panel.set(i, icon(Items.BARRIER, "&8" + target.getGameProfile().getName(),
+                        "&8Player utilities not started (safe mode)"), clicker -> { });
+                continue;
+            }
             PlayerUtilityService.Snapshot snapshot = services.players().describe(target);
             panel.set(i, icon(Items.PLAYER_HEAD, "&f" + snapshot.name(),
                     "&7Health: &f" + String.format(Locale.ROOT, "%.1f/%.1f", snapshot.health(), snapshot.maxHealth()),
@@ -427,6 +443,13 @@ public final class AdminGuiService {
                     "player", target.getUUID().toString(), "failed", refused.getMessage(),
                     Map.of("via", "gui"), correlationId);
             viewer.sendSystemMessage(services.messages().render("gui.admin.action-failed", "reason", refused.getMessage()));
+        } catch (ModuleException disabled) {
+            // A tile whose module safe mode left out. Audited as a failure like any other refused
+            // action, so the attempt is still on the record.
+            services.audit().record(viewer.getUUID(), viewer.getGameProfile().getName(), action,
+                    "player", target.getUUID().toString(), "failed", disabled.getMessage(),
+                    Map.of("via", "gui"), correlationId);
+            viewer.sendSystemMessage(services.messages().render("error.module.disabled"));
         }
     }
 

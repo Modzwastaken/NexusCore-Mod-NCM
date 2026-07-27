@@ -28,7 +28,7 @@ public final class CommandCatalogue {
             d("/nexus help", "nexuscore.command.core.help", "list the commands you may use", "core"),
             d("/nexus reload", "nexuscore.command.core.reload",
                     "re-read config.json and report what changed, transactionally", "core"),
-            d("/nexus confirm", "nexuscore.command.core.confirm",
+            d("/nexus confirm <token>", "nexuscore.command.core.confirm",
                     "complete a destructive action you were prompted about", "core"),
             d("/nexus system status", "nexuscore.command.system.status",
                     "show data directory, counts, and audit chain state", "core"),
@@ -68,8 +68,12 @@ public final class CommandCatalogue {
                     "accept a pending teleport request", "teleport"),
             d("/nexus teleport deny", "tpdeny", "nexuscore.command.teleport.deny",
                     "refuse a pending teleport request", "teleport"),
-            d("/nexus teleport tp <player> [destination]", "tphere", "nexuscore.command.teleport.tp",
+            d("/nexus teleport tp <player> [destination]", "nexuscore.command.teleport.tp",
                     "staff teleport, with no warmup, cooldown or safety search", "teleport"),
+            d("/tphere <player>", "nexuscore.command.teleport.tp",
+                    "bring a player to you — same node as the staff teleport above", "teleport"),
+            d("/nexus teleport delwarp <name>", "delwarp", "nexuscore.command.teleport.setwarp",
+                    "delete a warp — shares the setwarp node, so creating implies deleting", "teleport"),
 
             // ---- player utilities ----------------------------------------------------------
             d("/nexus player heal [player]", "heal", "nexuscore.command.player.heal", "restore health", "player-utilities"),
@@ -77,10 +81,10 @@ public final class CommandCatalogue {
             d("/nexus player fly [player]", "fly", "nexuscore.command.player.fly", "toggle flight", "player-utilities"),
             d("/nexus player god [player]", "god", "nexuscore.command.player.god",
                     "toggle invulnerability", "player-utilities"),
-            d("/nexus player speed <value> [player]", "speed", "nexuscore.command.player.speed",
-                    "set walk and fly speed", "player-utilities"),
-            d("/nexus player vanish [player]", "vanish", "nexuscore.command.player.vanish",
-                    "hide from the player list and from sight", "player-utilities"),
+            d("/nexus player speed <value>", "speed", "nexuscore.command.player.speed",
+                    "set your own walk and fly speed", "player-utilities"),
+            d("/nexus player vanish", "vanish", "nexuscore.command.player.vanish",
+                    "hide yourself from the player list and from sight", "player-utilities"),
             d("/nexus player info <player>", "playerinfo", "nexuscore.command.player.info",
                     "show a player's state, groups and punishments", "player-utilities"),
             d("/nexus player seen <player>", "seen", "nexuscore.command.player.seen",
@@ -116,7 +120,8 @@ public final class CommandCatalogue {
 
             // ---- admin GUI -----------------------------------------------------------------
             d("/adminpanel", AdminGuiService.NODE_OPEN, "open the admin panel, a vanilla chest menu", "core"),
-            d("(GUI) players page", "nexuscore.gui.admin.players", "browse players and act on one", "core"),
+            d("(GUI) players page", "nexuscore.gui.admin.players", "browse players and act on one",
+                    "player-utilities"),
             d("(GUI) moderation page", "nexuscore.gui.admin.moderation", "review and lift punishments", "moderation"),
             d("(GUI) permissions page", "nexuscore.gui.admin.permissions", "inspect groups and nodes", "core"));
 

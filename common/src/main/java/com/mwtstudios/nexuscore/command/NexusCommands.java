@@ -118,9 +118,11 @@ public final class NexusCommands {
                         .executes(context -> run(context, services, AdminGuiService.NODE_OPEN, "gui.admin.open",
                                 source -> openGui(services, source, gui)))));
 
-        if (services.settings().registerAliases) {
-            registerAliases(dispatcher, services, gui);
-        }
+        // Always called. The two settings inside are independent, and conflating them was a
+        // defect: the vanilla takeover and /adminpanel lived inside this branch, so
+        // overrideVanillaCommands=true did nothing at all when registerAliases=false — an operator
+        // who wanted NexusCore's /ban without the short aliases silently got neither.
+        registerAliases(dispatcher, services, gui);
     }
 
     /**
@@ -135,44 +137,62 @@ public final class NexusCommands {
      */
     private static void registerAliases(CommandDispatcher<CommandSourceStack> dispatcher, NexusServices services,
             AdminGuiService gui) {
+        // Aliases are registered ONLY for modules that started. This gating is load-bearing, not
+        // tidiness: without it, safe mode removed vanilla's /kick, /ban, /banlist, /pardon and
+        // /list from the dispatcher and installed NexusCore nodes that then refused, leaving an
+        // operator with neither NexusCore's moderation nor vanilla's — unable to kick a griefer in
+        // the one mode that exists for recovering a broken server. ModuleManager.disable's javadoc
+        // predicted exactly this and the 1.0.5 caller was written without it.
         Map<String, LiteralArgumentBuilder<CommandSourceStack>> aliases = new LinkedHashMap<>();
-        aliases.put("heal", healNode(services));
-        aliases.put("feed", feedNode(services));
-        aliases.put("fly", flyNode(services));
-        aliases.put("god", godNode(services));
-        aliases.put("speed", speedNode(services));
-        aliases.put("vanish", vanishNode(services));
-        aliases.put("playerinfo", infoNode(services));
-        aliases.put("seen", seenNode(services));
-        aliases.put("list", listNode(services));
-        aliases.put("near", nearNode(services));
-        aliases.put("tphere", tpHereNode(services));
-        aliases.put("home", homeNode(services));
-        aliases.put("sethome", setHomeNode(services));
-        aliases.put("delhome", delHomeNode(services));
-        aliases.put("homes", homesNode(services));
-        aliases.put("warp", warpNode(services));
-        aliases.put("setwarp", setWarpNode(services));
-        aliases.put("delwarp", delWarpNode(services));
-        aliases.put("warps", warpsNode(services));
-        aliases.put("spawn", spawnNode(services));
-        aliases.put("setspawn", setSpawnNode(services));
-        aliases.put("back", backNode(services));
-        aliases.put("tpa", tpaNode(services));
-        aliases.put("tpaccept", tpAcceptNode(services));
-        aliases.put("tpdeny", tpDenyNode(services));
-        aliases.put("kick", kickNode(services));
-        aliases.put("ban", banNode(services));
-        aliases.put("tempban", tempBanNode(services));
-        aliases.put("unban", unbanNode(services));
-        aliases.put("mute", muteNode(services));
-        aliases.put("unmute", unmuteNode(services));
-        aliases.put("warn", warnNode(services));
-        aliases.put("warnings", warningsNode(services));
-        aliases.put("banlist", banListNode(services));
-        aliases.put("pardon", unbanNode(services));
+        if (services.has("player-utilities")) {
+            aliases.put("heal", healNode(services));
+            aliases.put("feed", feedNode(services));
+            aliases.put("fly", flyNode(services));
+            aliases.put("god", godNode(services));
+            aliases.put("speed", speedNode(services));
+            aliases.put("vanish", vanishNode(services));
+            aliases.put("playerinfo", infoNode(services));
+            aliases.put("seen", seenNode(services));
+            aliases.put("list", listNode(services));
+            aliases.put("near", nearNode(services));
+        }
+        if (services.has("teleport")) {
+            aliases.put("tphere", tpHereNode(services));
+            aliases.put("home", homeNode(services));
+            aliases.put("sethome", setHomeNode(services));
+            aliases.put("delhome", delHomeNode(services));
+            aliases.put("homes", homesNode(services));
+            aliases.put("warp", warpNode(services));
+            aliases.put("setwarp", setWarpNode(services));
+            aliases.put("delwarp", delWarpNode(services));
+            aliases.put("warps", warpsNode(services));
+            aliases.put("spawn", spawnNode(services));
+            aliases.put("setspawn", setSpawnNode(services));
+            aliases.put("back", backNode(services));
+            aliases.put("tpa", tpaNode(services));
+            aliases.put("tpaccept", tpAcceptNode(services));
+            aliases.put("tpdeny", tpDenyNode(services));
+        }
+        if (services.has("moderation")) {
+            aliases.put("kick", kickNode(services));
+            aliases.put("ban", banNode(services));
+            aliases.put("tempban", tempBanNode(services));
+            aliases.put("unban", unbanNode(services));
+            aliases.put("mute", muteNode(services));
+            aliases.put("unmute", unmuteNode(services));
+            aliases.put("warn", warnNode(services));
+            aliases.put("warnings", warningsNode(services));
+            aliases.put("banlist", banListNode(services));
+            aliases.put("pardon", unbanNode(services));
+        }
 
         boolean takeOver = services.settings().overrideVanillaCommands;
+        if (!services.settings().registerAliases) {
+            // Short aliases are off, so nothing is registered under a bare name and no vanilla node
+            // is touched by the loop. The takeover below still runs, because it is a separate
+            // setting and an operator may want it without the aliases.
+            aliases.clear();
+        }
 
         for (Map.Entry<String, LiteralArgumentBuilder<CommandSourceStack>> entry : aliases.entrySet()) {
             String name = entry.getKey();
@@ -219,7 +239,14 @@ public final class NexusCommands {
         // never touched them.
         if (takeOver) {
             registerVanillaReplacement(dispatcher, "tp", VanillaCommands.teleport(services));
-            registerVanillaReplacement(dispatcher, "teleport", VanillaCommands.teleport(services));
+            // rename() is essential here and its absence was a real regression. The builder
+            // VanillaCommands.teleport() returns is named "tp", so registering it under the name
+            // "teleport" removed vanilla's /teleport and then handed Brigadier a node called "tp"
+            // again — addChild finds the existing "tp" child and MERGES into it rather than
+            // creating a "teleport" child, so /teleport ceased to exist while the log claimed a
+            // successful takeover. Shipped in 1.0.1 and 1.0.5.
+            registerVanillaReplacement(dispatcher, "teleport",
+                    rename("teleport", VanillaCommands.teleport(services)));
             registerVanillaReplacement(dispatcher, "gamemode", VanillaCommands.gamemode(services));
         }
 
@@ -247,6 +274,19 @@ public final class NexusCommands {
         } catch (RuntimeException e) {
             LOGGER.warn("NexusCore could not take over /{}; vanilla behaviour is unchanged", name, e);
         }
+    }
+
+    /**
+     * Test hook for {@link #rename}. Package-private so {@code VanillaCommandsTest} can pin down
+     * the {@code /teleport} regression without making the renamer part of the public surface.
+     *
+     * @param name the literal name to rebuild under
+     * @param source the builder to copy
+     * @return the renamed builder
+     */
+    static LiteralArgumentBuilder<CommandSourceStack> renameForTest(String name,
+            LiteralArgumentBuilder<CommandSourceStack> source) {
+        return rename(name, source);
     }
 
     /** Rebuilds a node under a different literal name, since a builder cannot be reused. */
@@ -364,7 +404,13 @@ public final class NexusCommands {
                 currentGroup = group;
                 lines.add("&8— &7" + group);
             }
-            String usage = descriptor.hasAlias() ? "/" + descriptor.alias() : descriptor.canonical();
+            // The canonical form is always shown, and the alias only as an extra. Showing the alias
+            // ALONE claimed `/ban`, `/kick`, `/list` and `/banlist` as NexusCore's — which is only
+            // true when overrideVanillaCommands is on AND the takeover succeeded AND registerAliases
+            // is on. With any of those off, help was naming vanilla's command as ours.
+            String usage = descriptor.canonical()
+                    + (descriptor.hasAlias() && services.settings().registerAliases
+                            ? " &8(/" + descriptor.alias() + ")" : "");
             lines.add("&f" + usage + " &7- " + descriptor.summary());
         }
 

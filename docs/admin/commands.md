@@ -36,8 +36,8 @@ therefore neither audited nor listed by NexusCore.
 Starting the server with `-Dnexuscore.safemode=true` leaves the optional modules out.
 Commands belonging to them refuse with an explanation rather than disappearing:
 
-- **teleport** — 14 command(s) unavailable
-- **player-utilities** — 10 command(s) unavailable
+- **teleport** — 16 command(s) unavailable
+- **player-utilities** — 11 command(s) unavailable
 - **moderation** — 10 command(s) unavailable
 
 ---
@@ -49,7 +49,7 @@ Commands belonging to them refuse with an explanation rather than disappearing:
 | `/nexus version` — show the running NexusCore version | — | `nexuscore.command.core.version` | core |
 | `/nexus help` — list the commands you may use | — | `nexuscore.command.core.help` | core |
 | `/nexus reload` — re-read config.json and report what changed, transactionally | — | `nexuscore.command.core.reload` | core |
-| `/nexus confirm` — complete a destructive action you were prompted about | — | `nexuscore.command.core.confirm` | core |
+| `/nexus confirm <token>` — complete a destructive action you were prompted about | — | `nexuscore.command.core.confirm` | core |
 
 ## System
 
@@ -89,7 +89,9 @@ Commands belonging to them refuse with an explanation rather than disappearing:
 | `/nexus teleport request <player>` — ask a player for permission to teleport to them | `/tpa` | `nexuscore.command.teleport.request` | teleport |
 | `/nexus teleport accept` — accept a pending teleport request | `/tpaccept` | `nexuscore.command.teleport.accept` | teleport |
 | `/nexus teleport deny` — refuse a pending teleport request | `/tpdeny` | `nexuscore.command.teleport.deny` | teleport |
-| `/nexus teleport tp <player> [destination]` — staff teleport, with no warmup, cooldown or safety search | `/tphere` | `nexuscore.command.teleport.tp` | teleport |
+| `/nexus teleport tp <player> [destination]` — staff teleport, with no warmup, cooldown or safety search | — | `nexuscore.command.teleport.tp` | teleport |
+| `/tphere <player>` — bring a player to you — same node as the staff teleport above | — | `nexuscore.command.teleport.tp` | teleport |
+| `/nexus teleport delwarp <name>` — delete a warp — shares the setwarp node, so creating implies deleting | `/delwarp` | `nexuscore.command.teleport.setwarp` | teleport |
 
 ## Player utilities
 
@@ -99,8 +101,8 @@ Commands belonging to them refuse with an explanation rather than disappearing:
 | `/nexus player feed [player]` — restore hunger | `/feed` | `nexuscore.command.player.feed` | player-utilities |
 | `/nexus player fly [player]` — toggle flight | `/fly` | `nexuscore.command.player.fly` | player-utilities |
 | `/nexus player god [player]` — toggle invulnerability | `/god` | `nexuscore.command.player.god` | player-utilities |
-| `/nexus player speed <value> [player]` — set walk and fly speed | `/speed` | `nexuscore.command.player.speed` | player-utilities |
-| `/nexus player vanish [player]` — hide from the player list and from sight | `/vanish` | `nexuscore.command.player.vanish` | player-utilities |
+| `/nexus player speed <value>` — set your own walk and fly speed | `/speed` | `nexuscore.command.player.speed` | player-utilities |
+| `/nexus player vanish` — hide yourself from the player list and from sight | `/vanish` | `nexuscore.command.player.vanish` | player-utilities |
 | `/nexus player info <player>` — show a player's state, groups and punishments | `/playerinfo` | `nexuscore.command.player.info` | player-utilities |
 | `/nexus player seen <player>` — show when a player was last online | `/seen` | `nexuscore.command.player.seen` | player-utilities |
 | `/nexus player list` — list online players, respecting vanish | `/list` | `nexuscore.command.player.list` | player-utilities |
@@ -131,7 +133,7 @@ Commands belonging to them refuse with an explanation rather than disappearing:
 | Command | Alias | Permission | Module |
 |---|---|---|---|
 | `/adminpanel` — open the admin panel, a vanilla chest menu | — | `nexuscore.gui.admin.open` | core |
-| `(GUI) players page` — browse players and act on one | — | `nexuscore.gui.admin.players` | core |
+| `(GUI) players page` — browse players and act on one | — | `nexuscore.gui.admin.players` | player-utilities |
 | `(GUI) moderation page` — review and lift punishments | — | `nexuscore.gui.admin.moderation` | moderation |
 | `(GUI) permissions page` — inspect groups and nodes | — | `nexuscore.gui.admin.permissions` | core |
 
@@ -141,5 +143,5 @@ Commands belonging to them refuse with an explanation rather than disappearing:
 
 | | |
 |---|---|
-| Commands described | 48 |
+| Commands described | 50 |
 | Permission nodes | 48 |

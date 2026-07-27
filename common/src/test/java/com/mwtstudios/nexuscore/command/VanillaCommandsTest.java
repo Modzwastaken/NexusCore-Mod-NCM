@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.tree.CommandNode;
 
 import net.minecraft.commands.CommandSourceStack;
@@ -92,5 +93,47 @@ class VanillaCommandsTest {
         CommandNode<CommandSourceStack> mode = child(gamemode, "gamemode");
         assertNotNull(mode.getCommand(), "/gamemode <mode> must be executable on its own");
         assertNotNull(child(mode, "targets").getCommand(), "/gamemode <mode> <targets> must be executable");
+    }
+
+    @Test
+    @DisplayName("renaming the teleport builder to 'teleport' keeps the whole vanilla grammar")
+    void renamedTeleportKeepsGrammar() {
+        // The regression this pins down: VanillaCommands.teleport() returns a builder named "tp".
+        // Registering it under the name "teleport" removed vanilla's /teleport and then gave
+        // Brigadier another node called "tp" — addChild merges into the existing "tp" child rather
+        // than creating a "teleport" one, so /teleport stopped existing while the log reported a
+        // successful takeover. Shipped in 1.0.1 and 1.0.5.
+        CommandNode<CommandSourceStack> asTp = VanillaCommands.teleport(null).build();
+        assertEquals("tp", asTp.getName(), "the builder is named tp; that is the whole trap");
+
+        CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
+        dispatcher.register(VanillaCommands.teleport(null));
+        dispatcher.register(NexusCommands.renameForTest("teleport", VanillaCommands.teleport(null)));
+
+        CommandNode<CommandSourceStack> tp = dispatcher.getRoot().getChild("tp");
+        CommandNode<CommandSourceStack> teleport = dispatcher.getRoot().getChild("teleport");
+        assertNotNull(tp, "/tp must exist; root children were " + childNames(dispatcher.getRoot()));
+        assertNotNull(teleport,
+                "/teleport must exist as its own node, not be swallowed by /tp; root children were "
+                        + childNames(dispatcher.getRoot()));
+
+        // Both names must reach the same grammar, or one of them is a trap for operators.
+        assertEquals(childNames(tp), childNames(teleport),
+                "/teleport must accept everything /tp accepts");
+        assertTrue(childNames(teleport).containsAll(Set.of("location", "destination", "targets")),
+                "/teleport lost a top-level branch; got " + childNames(teleport));
+    }
+
+    @Test
+    @DisplayName("registering the same builder name twice merges rather than adding a second node")
+    void brigadierMergesSameNamedNodes() {
+        // The mechanism behind the bug above, asserted directly so the reason is recorded in a test
+        // rather than only in a comment.
+        CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
+        dispatcher.register(VanillaCommands.teleport(null));
+        dispatcher.register(VanillaCommands.teleport(null));
+
+        assertEquals(1, dispatcher.getRoot().getChildren().size(),
+                "two registrations of a builder named 'tp' must merge into one node");
     }
 }

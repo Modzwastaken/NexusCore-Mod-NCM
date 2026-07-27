@@ -19,7 +19,7 @@ fails the build if they do.
 cited. A file that looks finished but has never been compiled is `in progress`, however
 complete it appears.
 
-**Last updated:** 2026-07-26 · **Build:** 1.0.5 (pre-release) ·
+**Last updated:** 2026-07-26 · **Version:** 1.1.0 ·
 **Last version:** 1.0.0 · **Milestones passed:** M0, M1, M2, M3, M4, M5 (partial)
 
 > **v1.0 does not mean feature complete.** The version scheme (ADR-0007) is the owner's
@@ -29,7 +29,8 @@ complete it appears.
 > **Versions and builds.** Per [ADR-0012](docs/architecture/ADR-0012.md), `x.y.0` is a
 > **version** and `x.y.1`–`x.y.5` are its **builds**, each a hotfix or a pre-release; after five
 > the minor moves up. `1.0.1` is the security **hotfix** for v1.0.0 — fixes only, branched from
-> the `v1.0.0` tag. `1.0.5` is this build, the last of the 1.0 line — the next is `1.1.0`. What each later build is planned to contain is in
+> the `v1.0.0` tag. **`1.1.0` is this version** — the 1.0 line filled at five builds, so the minor
+> moved up. Its builds are `1.1.1`–`1.1.5`. What each later build is planned to contain is in
 > [The road to v1.5.0](#the-road-to-v150) below and, per §2.4, only there.
 
 ---
@@ -42,7 +43,7 @@ utilities, moderation with confirmations, and a working admin GUI.
 
 **Two things are true at once, and both matter:**
 
-1. **203 automated tests pass (197 NeoForge + 3 Fabric + 3 Forge)**, and the whole feature set has been exercised end to end on a
+1. **209 automated tests pass (203 NeoForge + 3 Fabric + 3 Forge)**, and the whole feature set has been exercised end to end on a
    real NeoForge 21.1.235 dedicated server with zero errors, including a restart.
 2. **No human player has ever joined a NexusCore *server*.** Every dedicated-server check was
    driven through the console. At 1.0.1 a real `ServerPlayer` did enter the world for the first
@@ -165,35 +166,40 @@ container menu, so the panel is usable in the server-only release rather than wa
 
 ## Confirmed defects awaiting a fix
 
-Found by an adversarial sweep of the v1.0.0 sources on 2026-07-26: 45 candidates raised across
-six lenses, 13 refuted, 32 confirmed, which dedupe to the distinct defects below. Every one was
-confirmed against the real sources — several against Minecraft's own decompiled code — rather
-than accepted on assertion.
+**Updated at 1.1.0** by a whole-mod adversarial sweep across eight lenses: 41 candidates raised,
+17 refuted, 24 confirmed. **Seven were fixed in 1.1.0** and are recorded in `CHANGELOG.md` rather
+than here — the `/teleport` deletion, safe mode stripping vanilla moderation commands, the
+`/nexus reload` NPE, `/nexus help` claiming vanilla's names, the takeover gated on the wrong
+setting, four wrong descriptors, and the GUI's missing crash barrier.
 
-**Five were fixed in 1.0.1** and are not listed here: the `/execute as` root bypass, the
-`/teleport` takeover gap, the audit short write, the `/gamemode` wildcard escalation, and the
-missing `core.confirm` grant.
-
-The rest are **not** in 1.0.1, because fixing them is behaviour change rather than repair and a
-hotfix is fixes only. They are scheduled on the sequence below — 1.4.5 carries the backlog.
+The rest are below. The first three are the priorities for `1.1.1`.
 
 | Defect | Severity | Detail |
 |---|---|---|
-| Multiple active punishments of the same kind | **high** | A second ban or mute does not deactivate the first. `/unban` lifts one record and reports success while the player stays banned; `activeBans()` emits one row per active record, so `/banlist` and the GUI double-count; `activeRecord()` returns the last-issued match rather than the strictest, so the ban screen can misstate the duration. `ModerationService:108,150,205`. |
-| `audit.log` never rotates | **high** | The whole file is read into heap and SHA-256'd on the **server thread** at startup, at shutdown, and on every `/nexus audit verify` and `tail`. Unbounded growth plus a synchronous full read is a tick-time stall that gets worse forever. `AuditService:64,144`. |
-| `JsonStore.read()` quarantines on any `IOException` | medium | A transient read error — not just a parse failure — moves an intact `permissions.json` aside and the next boot silently starts from defaults. The quarantine is meant for corrupt data, not unreadable data. `JsonStore:91`. |
-| `config.json` silently loses operator keys | medium | `load()` rewrites the file from the typed object, so any key the schema does not know is deleted — while the reload reports `no problems found`. `ConfigurationService:107`. |
-| `players.json` rewritten in full on every login and logout | medium | Never pruned, and each write copies a full `.bak` and fsyncs twice. Cost scales with every player ever seen. `IdentityService:82`. |
-| Fabric death messages lose their cause | medium | Every styled death reads `<Player> died` on Fabric; NeoForge and Forge are correct. `NexusCoreFabric:151`. |
-| `/pardon` and `/banlist` takeover strands vanilla state | medium | Bans issued by vanilla before the takeover become un-liftable, and IP bans are invisible in-game because `ban-ip` / `pardon-ip` are separate commands NexusCore never took over. `NexusCommands:171`. |
-| `/nexus reload` silently ignores two settings | low | `commandsPerMinute` and `permissionCacheSize` keep their boot-time values while the reload reports success. `commandsPerMinute` is a rate limit, so this is a security control that does not apply. `NexusServices:244`. |
-| Admin GUI acts on a stale `ServerPlayer` | low | A handler captured before the target logged out performs a no-op and audits it as `allowed`. `AdminGuiService:191,419`. |
-| Death-message edge cases | low | Enabling `styleDeathMessages` via reload double-broadcasts until restart; the dying player's own death screen loses its cause line; team `deathMessageVisibility` is ignored, so hidden deaths leak. `DeathMessages:43,52,73`. |
-| `DurationParser.format()` returns empty below one second | low | `describeRemaining()` yields `""` rather than a time. `DurationParser:135`. |
-| `/nexus permission check` bypasses `authorise()` | low | It calls the evaluator directly, so it can never show the operator-bootstrap grant — the one command whose job is explaining a decision under-reports who can do what. `NexusCommands:442`. |
-| Gson I/O errors escape the write protocol | low | For documents larger than the writer buffer, Gson wraps the failure in `JsonIOException`, which bypasses `catch (IOException)` and leaves the `.tmp` behind. `JsonStore:116`. |
-| One non-UTF-8 byte in `audit.log` prevents startup | low | No recovery path inside the mod. `JsonStore:172`. |
-| Fabric login ban screen uses a startup snapshot | low | `/nexus reload` never changes it, unlike NeoForge and Forge. `NexusCoreFabric:122`. |
+| **`/execute as <player>` borrows that player's NexusCore permissions** | **high** | The 1.0.1 fix stopped a non-player entity being treated as root, but authorisation still reads `getEntity()`. So a vanilla level-2 operator can run `/execute as <admin> run nexus permission set …` and act with the admin's rights, **and the audit records the admin as the actor**. `operatorBootstrap=false` therefore still does not constrain an operator. **Not portably fixable today:** the real issuer lives in `CommandSourceStack.source`, which is private in vanilla and public only under NeoForge's access transformer, so shared code cannot read it. The route out is a Fabric access widener plus the existing NeoForge/Forge access, giving all three loaders the field — scheduled for `1.1.1`. |
+| **`permissions.json` is read once and never reloaded** | **high** | `PermissionService` loads the document in its constructor. `/nexus reload` only clears the decision cache, so an operator who hand-edits `permissions.json` sees no effect, and **the next permission mutation writes the in-memory document back, silently discarding their edits.** Data loss of exactly the file the documentation tells operators to hand-edit. |
+| **`IdentityService.resolve()` blocks the server thread on a Mojang HTTP lookup** | **high** | It falls back to `GameProfileCache.get(String)`, which performs a network call. Reachable by any ordinary player via `/seen <name>` with an unknown name, so a slow or unreachable Mojang API stalls the whole server for as long as the request takes. |
+| Vanish desynchronises the client's player list | medium | Removing the staff member's `PlayerInfo` makes their chat render as a red chat-validation error for everyone else; un-vanishing does not restore the entity for clients that received `AddEntity` while vanished; vanish is not re-applied to players who join later; and the vanished set survives death while the invisibility flag does not. Four related faults in one mechanism. Needs a real client to confirm each. |
+| Multiple active punishments of the same kind | medium | A second ban or mute does not deactivate the first. `/unban` lifts one and reports success while the player stays banned; `activeBans()` double-counts; `activeRecord()` returns the last-issued match rather than the strictest. `ModerationService:108,150,205`. |
+| `audit.log` never rotates | medium | Fully read into heap and SHA-256'd on the **server thread** at startup, at shutdown, and on every `verify` and `tail`. Unbounded growth plus a synchronous full read. |
+| `config.json` `defaultGroup` is ignored at startup | low | The permissions module reads only `permissionCacheSize` from settings, so a `defaultGroup` set in `config.json` takes effect only after some later mutation rewrites the permissions document. |
+| `/ban` in safe mode stages a confirmation that can never complete | low | The prompt is issued before the module check, and confirming spends the token with no audit record. |
+| `/nexus permission set` cannot express a wildcard | low | `StringArgumentType.word()` rejects `*`, so the one permission form operators most need to grant cannot be typed. |
+| Teleport warmup does not re-check permission at commit | low | The class documents a §19.1 step-5 permission re-check that does not exist; only destination safety is rechecked. |
+| `setHome` leaks an empty entry when refused | low | The per-owner map is inserted before the limit check, so refused `/sethome` calls leave permanent empty entries in `homes.json`. |
+| `JsonStore.read()` quarantines on any `IOException` | medium | A transient read error moves an intact `permissions.json` aside and the next boot starts from defaults. |
+| `config.json` silently loses operator keys | medium | `load()` rewrites the file from the typed object, deleting any key the schema does not know, while reporting `no problems found`. |
+| `players.json` rewritten in full on every login and logout | medium | Never pruned; each write copies a full `.bak` and fsyncs twice. |
+| Fabric death messages lose their cause | medium | Every styled death reads `<Player> died` on Fabric only. |
+| `/pardon` and `/banlist` strand vanilla ban state | medium | Pre-takeover vanilla bans become un-liftable, and `ban-ip`/`pardon-ip` are separate commands NexusCore never takes over, so IP bans are neither audited nor listed. |
+| `/nexus reload` silently ignores two settings | low | `commandsPerMinute` and `permissionCacheSize` keep boot-time values while the reload reports success. `commandsPerMinute` is a rate limit, so a security control does not apply. |
+| Admin GUI acts on a stale `ServerPlayer` | low | A handler captured before the target logged out performs a no-op and audits it as `allowed`. |
+| Death-message edge cases | low | Reload double-broadcasts until restart; the dying player's own screen loses its cause; team `deathMessageVisibility` is ignored. |
+| `DurationParser.format()` returns empty below one second | low | `describeRemaining()` yields `""` rather than a time. |
+| `/nexus permission check` bypasses `authorise()` | low | It calls the evaluator directly, so it can never show the operator-bootstrap grant — the command whose job is explaining a decision under-reports who can do what. |
+| Gson I/O errors escape the write protocol | low | For documents larger than the writer buffer, Gson wraps the failure in `JsonIOException`, bypassing `catch (IOException)` and leaving the `.tmp`. |
+| One non-UTF-8 byte in `audit.log` prevents startup | low | No recovery path inside the mod. |
+| Fabric login ban screen uses a startup snapshot | low | `/nexus reload` never changes it, unlike the other two loaders. |
 
 ---
 
@@ -274,10 +280,10 @@ sequence is open-ended, so nothing has to be crushed to fit.
 
 | Build | Contents | Exit condition |
 |---|---|---|
-| **1.1.0** · *version* | The M4-complete milestone, rolled up from the 1.0 builds. | All of 1.0.1–1.0.5 verified together on all three loaders. |
-| **1.1.1** | GameTests: teleport safety, home/warp persistence, punishment enforcement, permission gating. Plus the missing `AdminMenu` read-only container test. | The four GameTests named in M5 exist and pass, and a test proves items cannot enter or leave the admin menu. |
-| **1.1.2** | Sustained multi-player runtime verification — GUI rendering, vanish, chat muting, ban-at-login, teleport safety in practice. | Every item in the "never observed" column of this document has been observed with at least two real players, or is recorded as still unobserved with the reason. |
-| **1.1.3** | Whatever 1.1.2 finds. Reserved rather than assumed empty — the last two runtime rounds each produced defects no test had caught. | Every defect found is fixed with a regression test, or recorded as accepted with a reason. |
+| **1.1.0** · *version* | The M4-complete milestone, rolled up from the 1.0 builds, plus seven fixes from the stability sweep. | **Met.** 209 tests; three loaders build reproducibly; **six runtime runs** — normal and safe mode on each loader — with zero errors. A whole-mod sweep raised 41 candidates, refuted 17, confirmed 24; seven fixed here, the rest recorded above. |
+| **1.1.1** | The three high-severity defects the 1.1.0 sweep confirmed: the `/execute as` permission borrow (needs a Fabric access widener so all three loaders can read the real command source), `permissions.json` never reloading and silently discarding hand edits, and `IdentityService.resolve()` blocking the server thread on a Mojang lookup. | Each has a named regression test; the access widener is verified on all three loaders, not just the two with an access transformer. |
+| **1.1.2** | GameTests: teleport safety, home/warp persistence, punishment enforcement, permission gating. Plus the missing `AdminMenu` read-only container test. | The four GameTests named in M5 exist and pass, and a test proves items cannot enter or leave the admin menu. |
+| **1.1.3** | Sustained multi-player runtime verification — GUI rendering, vanish (four confirmed faults), chat muting, ban-at-login, teleport safety in practice. | Every item in the "never observed" column has been observed with at least two real players, or is recorded as still unobserved with the reason. |
 | **1.1.4** | Write-ahead journal for multi-file transactions (§11.1). The M2 gap, and M6's prerequisite. | Journal replay verified by a simulated crash mid-transaction. |
 | **1.1.5** | Migration fixtures and the schema-bump machinery. The week-long real-player run that is M5's actual exit criterion. | A 1.0.0 data directory loads through the migration path with exact expected results; a week of real-player use with no unrecorded defect. **M5 complete.** |
 

@@ -161,6 +161,29 @@ them here is that money and item custody were going to ride on this.
   loader, plus Fabric's and Forge's own 3. No test needed changing — the three that locate source
   roots already walk up to find `common/src/main/java`, which 1.0.4 fixed for a different reason.
 
+- **Vanish now applies to players who join later, and survives death.** Two of the four faults
+  in that row. Vanilla sends a new client the entire player list, so a staff member who vanished
+  before that client connected appeared in their list anyway — vanish held only for whoever was
+  already online when it was switched on, which read as it randomly failing. And respawning
+  replaces the `ServerPlayer`, so the invisibility flag was lost while the vanished set still held
+  the UUID: NexusCore filtered the staff member out of `/list` and `/near` while every client could
+  see them standing there. The two halves of the state disagreed and the visible half was wrong.
+
+  `hideVanishedFrom` runs on join and `reapplyVanish` on respawn, on **all three loaders**. Both
+  are behind the `player-utilities` module check, because these run inside login handlers where an
+  exception stops players joining at all.
+
+  **The other two faults are not fixed and are not claimed to be.** The player-list desync that
+  renders staff chat as a red chat-validation error, and un-vanish not restoring the entity for
+  clients that received `AddEntity` while vanished, are both client-rendering behaviour. The first
+  can only be fixed by changing how staff chat is delivered, which is a product decision rather
+  than a defect fix. Both are scheduled for the 1.1.3 two-real-players sweep.
+
+  **Proven to fail, not merely to pass:** `VanishParityTest` checks all three entry points, since
+  they are the one file the builds do not share — exactly where a fix lands on one loader and
+  misses the others, as the Fabric death-message row in the defect table already shows. Removing
+  both hooks from Fabric alone failed two of its three tests; restoring them went green.
+
 - **A second ban or mute no longer stacks on the first.** Three faults shared one cause:
   `/unban` lifted one record, reported success, and left the player banned; `activeBans()` counted
   a player once per active row, inflating `/banlist` and the admin panel; and `activeRecord()`

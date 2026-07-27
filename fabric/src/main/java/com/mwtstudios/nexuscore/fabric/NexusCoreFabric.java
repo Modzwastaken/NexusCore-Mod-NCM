@@ -21,6 +21,7 @@ import com.mwtstudios.nexuscore.teleport.TeleportService;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
+import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.message.v1.ServerMessageEvents;
@@ -89,6 +90,10 @@ public final class NexusCoreFabric implements ModInitializer {
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             ServerPlayer player = handler.player;
             services.identity().observe(player);
+            if (services.has("player-utilities")) {
+                // Guarded like the handlers around it: throwing here would stop players joining.
+                services.players().hideVanishedFrom(server, player);
+            }
             // Guarded: throwing here would stop players joining entirely.
             if (!services.has("moderation")) {
                 return;
@@ -100,6 +105,13 @@ public final class NexusCoreFabric implements ModInitializer {
                 services.audit().record(null, "SYSTEM", "moderation.ban.enforced", "player", player.getUUID().toString(),
                         "denied", ban.reason(), Map.of("remaining", remaining), UUID.randomUUID().toString());
             });
+        });
+
+        // Respawning rebuilds the entity, so vanish has to be put back on it.
+        ServerPlayerEvents.AFTER_RESPAWN.register((oldPlayer, newPlayer, alive) -> {
+            if (services.has("player-utilities")) {
+                services.players().reapplyVanish(newPlayer.server, newPlayer);
+            }
         });
 
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {

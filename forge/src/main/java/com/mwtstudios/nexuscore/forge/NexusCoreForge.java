@@ -78,6 +78,7 @@ public final class NexusCoreForge {
         MinecraftForge.EVENT_BUS.addListener(this::onServerStopping);
         MinecraftForge.EVENT_BUS.addListener(this::onServerTick);
         MinecraftForge.EVENT_BUS.addListener(this::onPlayerLogin);
+        MinecraftForge.EVENT_BUS.addListener(this::onPlayerRespawn);
         MinecraftForge.EVENT_BUS.addListener(this::onPlayerLogout);
         MinecraftForge.EVENT_BUS.addListener(this::onServerChat);
         MinecraftForge.EVENT_BUS.addListener(this::onPlayerDeath);
@@ -118,6 +119,10 @@ public final class NexusCoreForge {
             return;
         }
         services.identity().observe(player);
+        if (services.has("player-utilities")) {
+            // Guarded like the handlers around it: throwing here would stop players joining.
+            services.players().hideVanishedFrom(player.server, player);
+        }
         // Guarded: throwing here would stop players joining entirely.
         if (!services.has("moderation")) {
             return;
@@ -130,6 +135,13 @@ public final class NexusCoreForge {
                     player.getUUID().toString(), "denied", ban.reason(),
                     Map.of("remaining", remaining), UUID.randomUUID().toString());
         });
+    }
+
+    /** Respawning rebuilds the entity, so vanish has to be put back on it. */
+    private void onPlayerRespawn(PlayerEvent.PlayerRespawnEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player && services.has("player-utilities")) {
+            services.players().reapplyVanish(player.server, player);
+        }
     }
 
     private void onPlayerLogout(PlayerEvent.PlayerLoggedOutEvent event) {

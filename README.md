@@ -25,7 +25,7 @@
 
 <p align="center">
   <a href="https://github.com/Modzwastaken/NexusCore-Mod-NCM-">Source</a> ·
-  <a href="https://github.com/Modzwastaken/NexusCore-Mod-NCM-/releases">Downloads</a> ·
+  <a href="https://modrinth.com/mod/nexuscore-mod-ncm/versions">Downloads</a> ·
   <a href="https://github.com/Modzwastaken/NexusCore-Mod-NCM-/issues/new/choose">Report a bug</a> ·
   <a href="https://github.com/Modzwastaken/NexusCore-Mod-NCM-/blob/main/SECURITY.md">Security</a> ·
   <a href="https://github.com/Modzwastaken/NexusCore-Mod-NCM-/blob/main/IMPLEMENTATION_STATUS.md"><strong>What actually works</strong></a>

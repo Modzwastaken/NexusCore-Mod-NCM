@@ -2,121 +2,137 @@
   <img src="docs/nexuscore-logo.png" alt="NexusCore" width="320">
 </p>
 
-# NexusCore Administration Framework
+<h1 align="center">NexusCore Administration Framework</h1>
 
-Native server administration for Minecraft Java Edition — permissions, moderation,
-teleportation, player utilities, staff tools, configuration, storage, and audit logging in
-one mod. No Bukkit/Spigot plugin, no other administration mod, no external database service
-required.
+<p align="center">
+  <strong>Server administration for Minecraft Java Edition 1.21.1 — permissions, moderation,
+  teleportation, player tools and a tamper-evident audit log, in one mod.</strong>
+</p>
 
-| | |
-|---|---|
-| **Minecraft** | 1.21.1 |
-| **NeoForge** | 21.1.235 or newer 21.1.x (compiled against 21.1.235 — see [ADR-0001](docs/architecture/ADR-0001.md)) |
-| **Java** | 21 |
-| **Mod id** | `nexuscore` |
-| **Licence** | All Rights Reserved — see [LICENSE](LICENSE) |
-| **Author** | MWT Studios |
+<p align="center">
+  No plugin loader. No other administration mod. No database. No client mod.
+</p>
+
+<p align="center">
+  <img alt="Minecraft 1.21.1" src="https://img.shields.io/badge/Minecraft-1.21.1-brightgreen">
+  <img alt="Loaders" src="https://img.shields.io/badge/loaders-NeoForge%20%7C%20Fabric%20%7C%20Forge-blue">
+  <img alt="Java 21" src="https://img.shields.io/badge/Java-21-orange">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-209%20passing-success">
+  <img alt="Version 1.1.0" src="https://img.shields.io/badge/version-1.1.0-informational">
+  <img alt="All Rights Reserved" src="https://img.shields.io/badge/licence-All%20Rights%20Reserved-lightgrey">
+</p>
 
 ---
 
-## Current state
+## What it does
 
-**Latest version: 1.0.0.** ([release notes](release-notes.md))
-**Security hotfix available: 1.0.1** — everyone on v1.0.0 should take it; see
-[CHANGELOG.md](CHANGELOG.md).
+Everything below works **today**, on a server-only install, with players joining on an
+unmodified vanilla client.
 
-**In development: 1.0.2.** Per [ADR-0012](docs/architecture/ADR-0012.md), `x.y.0` is a version
-and `x.y.1`–`x.y.5` are its builds. What each build is planned to contain is in
-[IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md#the-road-to-v150).
-
-Working today, on a server-only install with vanilla clients:
-
-- **Permissions** — native engine, groups with inheritance and cycle rejection, wildcards,
-  explicit denies, a decision cache, and a `check` command that *explains* its answer
-- **Storage** — atomic JSON writes, corrupt-file quarantine, path-traversal containment
-- **Audit** — append-only, SHA-256 hash-chained, tamper-evident, with write-time redaction
-- **Commands** — a nine-step pipeline every command routes through: permission, validation,
-  rate limit, confirmation, service call, feedback, audit
-- **Teleport** — homes, warps, spawn, `/back` (including back-to-death), `/tpa`, staff `/tp`,
-  with real destination-safety checks
-- **Player tools** — heal, feed, fly, god, speed, vanish, playerinfo, seen, list, near
-- **Moderation** — kick, ban, tempban, unban, mute, unmute, warn, with durable expiry and
-  history that cannot be erased
-- **Admin GUI** — a chest-menu panel that works on **unmodified vanilla clients**
-
-Verified by 178 passing tests across the three loader builds and an end-to-end run on a real NeoForge 21.1.235 dedicated
-server, including a restart, with zero errors.
-
-**Not yet:** GameTests, economy, chat channels, scheduler, backups, the custom-screen client
-GUI, and the benchmark harness. And no real player has ever joined this server — every
-runtime check so far was driven from the console. Everything in that list except the client
-GUI is scheduled on [the road to v1.5.0](IMPLEMENTATION_STATUS.md#the-road-to-v150).
-
-[`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md) is the authoritative record, and it
-distinguishes `implemented` from `tested` deliberately. Read it before trusting any feature
-list, including this one.
-
-## Release ladder
-
-Releases advance `v1.0` → `v1.5` → `v2.0` ([ADR-0007](docs/architecture/ADR-0007.md)).
-**The version number is not a completeness claim** — `IMPLEMENTATION_STATUS.md` is.
-
-| Release | Contents |
+| | |
 |---|---|
-| **v1.0** *(current)* | Permissions, storage, audit, command pipeline, teleport, player tools, moderation, admin GUI. Server-only. |
-| **v1.5** *(in progress)* | Economy and shops · chat channels, private messages, anti-spam · jail and reports · durable scheduler · backups with verified restore. |
-| **v2.0** *(planned)* | Client mod, custom GUI screens, themes and accessibility, public API, integration adapters. |
+| **Permissions** | Native engine. Groups with multiple inheritance and cycle rejection, wildcards, explicit denies, a bounded decision cache, and a `check` command that **explains** its answer rather than returning a boolean. |
+| **Moderation** | Kick, ban, tempban, unban, mute, unmute, warn. Durable expiry re-evaluated at login, full-screen styled ban pages with a live countdown, and history that cannot be erased. |
+| **Teleportation** | Homes, warps, spawn, `/back` (including back-to-death), `/tpa`, staff `/tp`. Real destination-safety checks: border, build height, collision shapes, fluids, harmful blocks, solid support. |
+| **Player tools** | Heal, feed, fly, god, speed, vanish, playerinfo, seen, list, near. |
+| **Audit log** | Append-only, SHA-256 hash-chained, tamper-evident, with write-time redaction of IPs, passwords and tokens. `/nexus audit verify` re-hashes the chain and reports any edit, deletion or forged append. |
+| **Storage** | Atomic writes (`.tmp` → fsync → `ATOMIC_MOVE`), corrupt-file quarantine rather than silent replacement, and path-traversal containment. Human-readable JSON throughout. |
+| **Admin panel** | A **vanilla chest menu**, so it works on unmodified clients. Permission is re-checked on every click, and every panel has a command equivalent. |
+| **Safe mode** | Start with `-Dnexuscore.safemode=true` to run with only the core modules. For recovering a server you cannot otherwise start. |
 
-Between versions sit numbered builds ([ADR-0012](docs/architecture/ADR-0012.md)):
+Every command checks its permission **on the server**, is rate limited, and writes an audit
+record with a correlation id. Nothing is enforced by hiding a button.
 
-| Version shape | What it is |
-|---|---|
-| `x.y.0` | **A version.** `1.0.0`, `1.1.0`, `1.2.0` … |
-| `x.y.1` – `x.y.5` | **A build** of that version: a hotfix or a pre-release. |
-| `x.y.6` | Does not exist. Five builds fill a version, then the minor moves up. |
+## Quick start
 
-So the route to `1.5.0` is `1.0.1`…`1.0.5` → `1.1.0` → `1.1.1`…`1.1.5` → `1.2.0` → … → `1.4.5`
-→ `1.5.0`. **If the third component is not `0`, it is a build, not a version** — whatever
-semantic versioning would otherwise imply.
-
-**Server-only mode is supported forever.** It is not a degraded path, and every GUI action
-has a command equivalent.
-
-## Installing
-
-Pick the jar for your loader — they are **not** interchangeable:
+```bash
+# 1. Install NeoForge, Fabric or Forge for Minecraft 1.21.1
+# 2. Drop the jar for YOUR loader into mods/  — they are not interchangeable
+# 3. Start the server, then:
+/nexus version          # confirm it loaded
+/nexus system status    # data directory, counts, audit chain state
+/adminpanel             # the admin panel (as a player)
+/nexus help             # only the commands you may actually use
+```
 
 | Loader | Jar | Requires |
 |---|---|---|
-| NeoForge | `NexusCore-neoforge-<version>-1.21.1.jar` | NeoForge 21.1.235+ |
-| Fabric | `NexusCore-fabric-<version>-1.21.1.jar` | Fabric Loader 0.19.3+ **and Fabric API** |
-| Forge | `NexusCore-forge-<version>-1.21.1.jar` | MinecraftForge 52.1.16+ |
+| NeoForge | `NexusCore-neoforge-1.1.0-1.21.1.jar` | NeoForge 21.1.235+ |
+| Fabric | `NexusCore-fabric-1.1.0-1.21.1.jar` | Fabric Loader 0.19.3+ **and Fabric API** |
+| Forge | `NexusCore-forge-1.1.0-1.21.1.jar` | MinecraftForge 52.1.16+ |
 
-1. Install your loader for Minecraft 1.21.1.
-2. Drop the matching jar into `mods/`.
-3. Start the server.
-4. Run `/nexus version` to confirm it loaded.
-5. Join and run `/adminpanel`.
+On first start NexusCore creates `<gameDir>/nexuscore/` with `config.json`, `permissions.json`,
+`audit.log` and its data files. All human-readable JSON.
 
-**Players join with an unmodified vanilla client** — no modpack, no version-matched client,
-no handshake. That includes the admin GUI, which is a vanilla chest menu.
+Works in **singleplayer and on LAN** too, on all three loaders — it initialises against the
+integrated server exactly as against a dedicated one.
 
-NexusCore also works in **singleplayer and on LAN worlds** on all three loaders; it
-initialises against the integrated server exactly as it does against a dedicated one.
+### NexusCore takes over the vanilla commands it replaces
 
-On first start NexusCore creates `<gameDir>/nexuscore/` containing `config.json`,
-`permissions.json`, `audit.log`, and the data files. Everything is human-readable JSON.
+`/ban` `/kick` `/banlist` `/pardon` `/list` `/tp` `/teleport` `/gamemode` are **NexusCore's** by
+default. Typing `/ban` gets you NexusCore's ban — with a duration, a reason, history, an audit
+record and a styled screen — not vanilla's.
 
-**Note on `/ban` and `/kick`:** those are vanilla Minecraft commands, and NexusCore does not
-override them. Use `/nexus moderation ban` or the `/nban` alias to get NexusCore's version
-with durations, reasons, history, and audit. See
-[docs/admin/commands.md](docs/admin/commands.md).
+`/tp`, `/teleport` and `/gamemode` are rebuilt from vanilla's own argument types, so selectors,
+absolute and relative coordinates, rotation and `facing` all still work.
+
+Set `overrideVanillaCommands=false` to leave vanilla in charge; NexusCore's versions then stay on
+the `n`-prefixed names (`/nban`, `/nkick`, …), which is also the automatic fallback if another mod
+owns the name. **`/ban-ip` and `/pardon-ip` are not taken over**, so an IP ban is neither audited
+nor listed by NexusCore.
+
+Full reference: **[docs/admin/commands.md](docs/admin/commands.md)** — 50 commands, generated from
+the code so it cannot drift.
+
+## Honest state of the project
+
+This section is the point of the README, not a footnote.
+
+**Version 1.1.0.** 209 automated tests pass. All three loaders build reproducibly and have been
+run as packaged jars on real dedicated servers, in both normal and safe mode, with zero errors.
+
+**What has never happened:** no human player has ever joined a NexusCore *dedicated* server. Every
+server check was driven from the console. A real player entity has entered a world only on the
+development clients, in singleplayer. So the admin panel rendering to a real client, vanish, chat
+muting, ban enforcement at login and teleport safety in practice are `implemented`, **not**
+`tested`.
+
+**Known unfixed defects are published, not hidden.**
+[IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) lists every confirmed defect awaiting a fix,
+including security-relevant ones, so you can decide for yourself whether a gap matters to you. The
+most significant at 1.1.0: a vanilla level-2 operator can use `/execute as <player>` to act with
+that player's NexusCore permissions.
+
+**Not built yet:** economy, chat channels, jail and reports, scheduler, backups, the benchmark
+harness, and the custom-screen client GUI. Everything but the client GUI is scheduled on
+[the road to v1.5.0](IMPLEMENTATION_STATUS.md#the-road-to-v150).
+
+**The version number carries no completeness promise.**
+[IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) is the authoritative record, and it
+distinguishes `implemented` from `tested` deliberately. Read it before trusting any feature list,
+including the one above.
+
+## Versioning
+
+`x.y.0` is a **version**. `x.y.1`–`x.y.5` are its **builds** — each a hotfix or a pre-release.
+There is no `x.y.6`: five builds fill a version and the minor moves up
+([ADR-0012](docs/architecture/ADR-0012.md)).
+
+```
+1.0.0 → 1.0.1 … 1.0.5 → 1.1.0 → 1.1.1 … 1.1.5 → 1.2.0 → … → 1.4.5 → 1.5.0
+```
+
+**If the third component is not `0`, it is a build, not a version** — whatever semantic
+versioning would otherwise imply. The feature releases remain `v1.0` → `v1.5` → `v2.0`
+([ADR-0007](docs/architecture/ADR-0007.md)); `1.1.0`–`1.4.0` are intermediate versions on the way.
+
+**Server-only mode is supported forever.** It is not a degraded path.
 
 ## Building from source
 
-Requires JDK 21. Each loader is an **independent Gradle build** in its own directory, with its
-own wrapper — see [ADR-0008](docs/architecture/ADR-0008.md) for why.
+Requires JDK 21. Each loader is an **independent Gradle build** with its own wrapper — Forge is
+pinned to Gradle 8.x because ForgeGradle refuses to apply on Gradle 9, and that alone is why the
+three are separate builds ([ADR-0008](docs/architecture/ADR-0008.md)).
 
 ```bash
 cd neoforge && ./gradlew clean build
@@ -124,65 +140,73 @@ cd ../fabric && ./gradlew clean build
 cd ../forge  && ./gradlew clean build
 ```
 
-The shared sources live in `neoforge/src/main/java`; the Fabric and Forge builds compile those
-same files rather than a copy, so a fix lands on all three at once. Only the entry point and
-the flight controller differ per loader.
+The shared sources live in **`common/src/main/java`** and all three loaders compile those same
+files rather than a copy, so a fix lands on all three at once. Only the entry point and the flight
+controller differ per loader. There is no `common` subproject and no root `gradlew`: a compiled
+`common` is impossible because Fabric remaps to intermediary, so the same source yields different
+bytecode per loader.
 
-The first build for each loader downloads and decompiles Minecraft. Allow a while and do not
-interrupt it — it happens once per loader. Artifacts land in each project's `build/libs/` as
-`NexusCore-<loader>-<version>-1.21.1.jar`.
-
-Other useful targets:
+The first build for each loader downloads and decompiles Minecraft. Allow time and do not
+interrupt it; it happens once per loader.
 
 ```bash
-./gradlew compileJava   # fast syntax and API check
-./gradlew test          # unit tests
-./gradlew check         # tests + Checkstyle + the stub-marker gate
-./gradlew runServer     # dedicated server in the development environment
+./gradlew check                # tests + Checkstyle + stub-marker gate + version gate
+./gradlew generateCommandDocs  # regenerate docs/admin/commands.md from the code
+./gradlew runServer            # dev server (works on all three loaders)
+./gradlew runClient -PquickPlay=NexusTest   # dev client, straight into a world
 ```
 
 ## Repository layout
 
 | Path | Contents |
 |---|---|
-| `neoforge/` | NeoGradle build **and the shared sources** every loader compiles (`src/main/java`). |
-| `fabric/` | Fabric Loom build: entry point, `fabric.mod.json`, tests. |
-| `forge/` | ForgeGradle build: entry point, `mods.toml`, tests. Pinned to Gradle 8.x. |
-| `docs/` | Cross-loader documentation: ADRs, admin and user guides, the logo. |
-| `config/checkstyle/` | Formatting and static-analysis ruleset shared by all three builds. |
-| `archived/` | Every published release, exactly as shipped. See [archived/README.md](archived/README.md). |
+| `common/` | **The shared sources** every loader compiles, and the shared tests. No build of its own. |
+| `neoforge/` | NeoGradle build, the `@Mod` entry point, the `creative_flight` controller, and `gradle.properties` — the single source of truth for every version. |
+| `fabric/` | Fabric Loom build: `ModInitializer` entry point, `fabric.mod.json`. |
+| `forge/` | ForgeGradle build: `@Mod` entry point, `mods.toml`. Pinned to Gradle 8.x. |
+| `docs/` | ADRs and admin guides. `docs/admin/commands.md` is generated. |
+| `config/checkstyle/` | The one ruleset all three builds share. |
+| `archived/` | Published versions, exactly as shipped — [archived/README.md](archived/README.md). |
+| `.github/workflows/` | CI: builds and verifies all three loaders on every push. |
 | `<loader>server/` | Local test servers, one per loader. Not tracked. |
-| `CHANGELOG.md` | Shared-code changes; each loader has its own alongside its build. |
-| `release-notes.md` | User-facing summary of major releases across all loaders. |
-| `IMPLEMENTATION_STATUS.md` | The authoritative record of what exists. |
 
 ## Engineering rules this project is held to
 
-- **Server-authoritative.** The server validates every state-changing request. A client GUI
-  is a view, never a source of truth.
-- **Secure by default.** Administrative features default to denied. UI visibility is not
-  security.
-- **No stubs.** No `TODO`, `FIXME`, "coming soon", or `UnsupportedOperationException` in
-  production sources — enforced by the `stubMarkerCheck` build gate.
-- **No green-by-deletion.** A build is never made to pass by removing a permission check, a
-  bounds check, a validation, or an assertion.
-- **Data integrity first.** Atomic writes, schema versions, forward migrations, and an
-  append-only audit chain.
-- **Honest limitations.** Performance targets are labelled as targets until the M8 benchmark
-  harness measures them. No player-count claim is made without evidence.
+- **Server-authoritative.** The server validates every state-changing request. A client is a
+  view, never a source of truth.
+- **Secure by default.** Administrative features default to denied. UI visibility is not security.
+- **No stubs.** No `TODO`, `FIXME`, "coming soon" or `UnsupportedOperationException` in production
+  sources — enforced by the `stubMarkerCheck` gate.
+- **No green-by-deletion.** A build is never made to pass by removing a permission check, a bounds
+  check, a validation or an assertion.
+- **A gate must be proven to fail.** Every build gate is demonstrated rejecting a deliberate
+  violation, not merely observed passing.
+- **Data integrity first.** Atomic writes, schema versions on every document, and an append-only
+  audit chain.
+- **Honest limitations.** No performance number is claimed until the benchmark harness measures
+  it. No player-count claim is made without evidence.
 
 ## Documentation
 
-- [Command reference](docs/admin/commands.md)
-- [Permissions](docs/admin/permissions.md) — how a decision is reached, and the one rule that surprises people
-- [Admin panel](docs/admin/admin-gui.md)
-- [Release notes](release-notes.md)
-- [Architecture decisions](docs/architecture/) — ADR-0001 through ADR-0012
-- [Implementation status](IMPLEMENTATION_STATUS.md)
-- [Release checklist](RELEASE_CHECKLIST.md)
-- Changelogs — [shared](CHANGELOG.md) · [NeoForge](neoforge/CHANGELOG.md) · [Fabric](fabric/CHANGELOG.md) · [Forge](forge/CHANGELOG.md)
-- [Release archive](archived/README.md)
-- [Third-party notices](THIRD_PARTY_NOTICES.md)
+| | |
+|---|---|
+| [Command reference](docs/admin/commands.md) | All 50 commands, generated from the code |
+| [Permissions](docs/admin/permissions.md) | How a decision is reached, and the rule that surprises people |
+| [Admin panel](docs/admin/admin-gui.md) | The chest-menu panel |
+| [Implementation status](IMPLEMENTATION_STATUS.md) | **The authoritative record of what exists** |
+| [Changelog](CHANGELOG.md) | Shared-code changes · [NeoForge](neoforge/CHANGELOG.md) · [Fabric](fabric/CHANGELOG.md) · [Forge](forge/CHANGELOG.md) |
+| [Release notes](release-notes.md) | User-facing summary of releases |
+| [Architecture decisions](docs/architecture/) | ADR-0001 through ADR-0012 |
+| [Release checklist](RELEASE_CHECKLIST.md) | What a build or version must pass |
+| [Security policy](SECURITY.md) | How to report a vulnerability |
+| [Release archive](archived/README.md) | The exact bytes of each published version |
+| [Third-party notices](THIRD_PARTY_NOTICES.md) | Nothing is embedded in any jar |
 
-`docs/user`, `docs/api`, and `docs/migration` are populated as the milestones that produce
-their subject matter land.
+`docs/user`, `docs/api` and `docs/migration` are created as the milestones that produce their
+subject matter land.
+
+---
+
+<p align="center">
+  <sub>NexusCore Administration Framework · Copyright © 2026 MWT Studios · All Rights Reserved</sub>
+</p>

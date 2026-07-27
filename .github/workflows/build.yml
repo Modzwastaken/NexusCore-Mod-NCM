@@ -1,0 +1,73 @@
+name: Build
+
+# Every loader is an independent Gradle build with its own wrapper (ADR-0008), so there is no
+# root ./gradlew to call. The matrix below is why: Forge pins Gradle 8.10.2 because ForgeGradle
+# refuses to apply on Gradle 9, while the other two are on 9.2.1.
+#
+# This file lived at neoforge/.github/workflows/build.yml until 1.1.0, where GitHub never looks
+# — only the repository root is read — and it called ./gradlew from the root, which does not
+# exist. It had therefore never run, for two reasons rather than the one recorded.
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.loader }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    strategy:
+      # Every loader is reported, rather than stopping at the first failure: a shared-source
+      # change that compiles on two loaders and not the third is the defect class ADR-0008 exists
+      # to catch, and cancelling the others would hide which ones were fine.
+      fail-fast: false
+      matrix:
+        loader: [neoforge, fabric, forge]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # `build` runs test, checkstyleMain, checkstyleTest, and via `check` both the §2.4
+      # stub-marker gate and the ADR-0012 version gate.
+      - name: Build and verify
+        working-directory: ${{ matrix.loader }}
+        run: ./gradlew clean build --stacktrace
+
+      - name: Upload the jar
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NexusCore-${{ matrix.loader }}
+          path: ${{ matrix.loader }}/build/libs/*.jar
+          if-no-files-found: error
+
+      - name: Upload test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-${{ matrix.loader }}
+          path: ${{ matrix.loader }}/build/reports/

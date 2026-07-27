@@ -129,6 +129,40 @@ Found while verifying the line together, all in code 1.0.5 introduced or exposed
   reference understated what that permission grants. All corrected; `/tphere` and `/delwarp` now
   have their own entries, taking the reference to 50 commands.
 
+### Presentation and repository hygiene
+
+The project is now shaped for someone arriving at it cold rather than for the person who wrote it.
+
+- **CI had never run, for two reasons rather than the one recorded.** The workflow sat at
+  `neoforge/.github/workflows/build.yml` — GitHub only reads `.github/` at the **repository root**
+  — and it invoked `./gradlew` from the root, where no wrapper exists, because each loader is an
+  independent build (ADR-0008). It is now at the root, builds all three loaders as a matrix with
+  `fail-fast: false` (a change compiling on two loaders and not the third is the exact defect
+  ADR-0008 exists to catch, so cancelling the others would hide which were fine), and uploads each
+  jar plus the test reports on failure.
+
+- **`README.md` rewritten.** It repeated the same falsehood the command reference had: *"`/ban`
+  and `/kick` … NexusCore does not override them"*, untrue since v1.0. It also still said the
+  shared sources live in `neoforge/src/main/java`, moved to `common/` at 1.0.4, and reported
+  1.0.0 / 178 tests. Now leads with what the mod does, a runnable quick start, the takeover
+  explained accurately, safe mode, and an **honest-state section that names what has never been
+  tested** — with the known unfixed defects linked rather than omitted.
+
+- **`release-notes.md` restructured** to be newest-first across versions rather than a single v1.0
+  page, with a v1.1.0 entry. It carried the same `/ban` falsehood in its *Known limitations* list,
+  which is the worst place for it — corrected to the one that is actually true: `/ban-ip` and
+  `/pardon-ip` are not covered.
+
+- **`SECURITY.md` added** — private reporting route, supported versions (v1.0.0 explicitly
+  **not** supported), what is in and out of scope, and a pointer to the published list of known
+  defects. A mod that gates permissions and writes an audit log needs one.
+
+- **`IMPLEMENTATION_STATUS.md`**: the M4 alias row still described the pre-takeover behaviour
+  as `tested`.
+
+- **`git gc`** — the repository's history was 167 MB of unpacked objects for 125 tracked files and
+  a largest blob of 0.2 MB. Now **1.3 MB**.
+
 ### Verified
 
 Everything below is stated for **all three loaders** unless said otherwise.

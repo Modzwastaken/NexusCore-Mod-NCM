@@ -1,7 +1,71 @@
-# NexusCore v1.0 — Release Notes
+# NexusCore — Release Notes
 
-**NexusCore Administration Framework** · MWT Studios
-Minecraft 1.21.1 · NeoForge 21.1.235+ · Java 21 · Released 2026-07-26
+**NexusCore Administration Framework** · MWT Studios · Minecraft 1.21.1 · Java 21
+
+Newest first. Per [ADR-0012](docs/architecture/ADR-0012.md) this page covers **versions**
+(`x.y.0`); the builds between them are in [CHANGELOG.md](CHANGELOG.md).
+
+---
+
+## v1.1.0 — M4 complete
+
+Rolls up the five builds of the 1.0 line. **If you are on v1.0.0, upgrade** — it has two
+confirmed critical defects, both fixed in `1.0.1` and included here.
+
+### Security fixes carried from 1.0.1
+
+- **`/teleport` bypassed NexusCore completely.** Vanilla registers `teleport` as the real command
+  and `tp` as a redirect to it; only `tp` was taken over, so `/teleport` ran as pure vanilla with
+  no permission check, no rate limit and **no audit record**.
+- **Any non-player command source was granted root.** `/execute as @e[…] run nexus …` ran with
+  full privileges, and `operatorBootstrap=false` constrained nobody.
+- **Every moderator could give themselves creative mode**, because `/gamemode`'s permission node
+  sat under the `nexuscore.command.player.*` wildcard the shipped `moderator` group holds.
+- **A short write could silently truncate an audit record** and still report success.
+- **Nobody below `admin` could confirm a destructive action**, so a moderator could open a
+  permanent ban and never complete it. *Existing servers need one operator action:*
+  `/nexus permission group add default nexuscore.command.core.confirm`
+
+### New in this version
+
+- **NexusCore now owns the vanilla commands it replaces** — `/ban` `/kick` `/banlist` `/pardon`
+  `/list` `/tp` `/teleport` `/gamemode`. Typing `/ban` gets you a duration, a reason, history, an
+  audit record and a styled screen. Set `overrideVanillaCommands=false` to opt out.
+- **Safe mode.** Start with `-Dnexuscore.safemode=true` to run with only the core modules, for
+  recovering a server you cannot otherwise start. Vanilla's own moderation commands are left
+  intact in this mode, so you can still remove a griefer.
+- **The command reference is generated from the code** and cannot drift —
+  [docs/admin/commands.md](docs/admin/commands.md), 50 commands.
+- **A module system** underneath: services are registered, dependency-ordered and started by a
+  registry rather than wired by hand in each loader's entry point.
+
+### Known limitations, stated plainly
+
+- **A level-2 operator can use `/execute as <player>` to act with that player's NexusCore
+  permissions**, and the audit records the impersonated player as the actor.
+  `operatorBootstrap=false` does not prevent it. Scheduled as the first item of `1.1.1`.
+- **Hand edits to `permissions.json` are ignored** and will be overwritten by the next permission
+  change. Use the commands, not the file, until `1.1.1`.
+- **`/seen <unknown name>` can stall the server** on a Mojang lookup.
+- **No human player has ever joined a NexusCore dedicated server.** Every server check was
+  console-driven. The admin panel rendering to a real client, vanish, chat muting and
+  ban-at-login are implemented but unobserved.
+- Every other confirmed defect is listed in
+  [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) rather than withheld.
+
+### Verified
+
+209 tests. All three loaders build reproducibly and were run as packaged jars on real NeoForge
+21.1.235, Fabric and MinecraftForge 52.1.16 dedicated servers, in **both** normal and safe mode,
+with zero errors.
+
+---
+
+## v1.0.0 — first public release
+
+Released 2026-07-26. NeoForge 21.1.235+ · Java 21.
+
+> **Superseded.** This version has two confirmed critical defects. Use `1.1.0`.
 
 Native server administration for Minecraft Java Edition. Permissions, moderation,
 teleportation, player tools, audit logging, and an admin GUI — in one mod, with no plugin
@@ -176,9 +240,9 @@ feature work planned for v1.5, not part of this release.
 - **Bans are NexusCore records, not vanilla ban-list entries.** That is what gives them
   durations, actor UUIDs, reasons, and audit linkage — but if you remove the mod, NexusCore
   bans stop applying.
-- **`/ban`, `/kick`, and `/banlist` are vanilla commands and NexusCore does not override
-  them.** Use `/nexus moderation ban` or the `/nban` alias. NexusCore logs which aliases it
-  could not take at startup.
+- **`/ban-ip` and `/pardon-ip` are not taken over.** They are separate vanilla commands, so an
+  IP ban is neither audited nor shown by `/banlist`. (`/ban`, `/kick`, `/banlist`, `/pardon`,
+  `/list`, `/tp`, `/teleport` and `/gamemode` *are* NexusCore's — see the v1.1.0 notes above.)
 - **Vanish is not a cloaking device.** A vanished player is invisible and off the player
   list, but still occupies space and still blocks a doorway.
 - **`/back` and vanish do not survive a restart.** Both are session state by design.

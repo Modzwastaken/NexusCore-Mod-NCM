@@ -90,6 +90,24 @@ public final class ModerationService {
         record.expiresAtEpochMillis = expiresAtEpochMillis;
         record.active = type != Type.KICK && type != Type.WARNING;
 
+        if (record.active) {
+            // At most one punishment of a kind is in force at a time. Without this a second ban
+            // left the first active too: /unban lifted one, reported success, and the player
+            // stayed banned. The superseded record is kept — punishments are never deleted —
+            // and stamped so the history shows what replaced it.
+            for (Record existing : document.records) {
+                if (existing.active && existing != record
+                        && record.type.equals(existing.type)
+                        && record.targetUuid.equals(existing.targetUuid)) {
+                    existing.active = false;
+                    existing.liftedByUuid = record.actorUuid;
+                    existing.liftedByName = actorName;
+                    existing.liftedAtEpochMillis = record.issuedAtEpochMillis;
+                    existing.supersededByRecordId = record.id;
+                }
+            }
+        }
+
         document.records.add(record);
         save();
         return record;
@@ -106,13 +124,17 @@ public final class ModerationService {
      */
     public Optional<Record> lift(Type type, UUID target, UUID actor, String actorName) {
         Optional<Record> active = activeRecord(type, target);
-        active.ifPresent(record -> {
-            record.active = false;
-            record.liftedByUuid = actor == null ? null : actor.toString();
-            record.liftedByName = actorName;
-            record.liftedAtEpochMillis = clock.getAsLong();
-            save();
-        });
+        if (active.isEmpty()) {
+            return active;
+        }
+        // reconcile() has already left exactly one record of this kind in force, so retiring it
+        // genuinely unbans. The original defect was lifting one of several and reporting success.
+        Record inForce = active.get();
+        inForce.active = false;
+        inForce.liftedByUuid = actor == null ? null : actor.toString();
+        inForce.liftedByName = actorName;
+        inForce.liftedAtEpochMillis = clock.getAsLong();
+        save();
         return active;
     }
 
@@ -130,11 +152,36 @@ public final class ModerationService {
      * @return the active record, if any
      */
     public Optional<Record> activeRecord(Type type, UUID target) {
+        return reconcile(type, target);
+    }
+
+    /**
+     * Brings a player's records of one kind into a single consistent state and returns whatever
+     * is left in force.
+     *
+     * <p>Does three things, in order: retires anything whose expiry has passed, picks the
+     * strictest of whatever remains, and retires the rest. It is named and called explicitly
+     * rather than left as a side effect of a query, because {@link #lift} depends on it having
+     * run — a query that quietly mutates is the kind of thing a later refactor removes without
+     * noticing what depended on it.</p>
+     *
+     * <p>Deliberate re-bans never reach the strictest rule: {@link #issue} already retires the
+     * previous record, so an operator typing a new {@code /ban} gets the new terms whether they
+     * are shorter or longer. What arrives here with several rows in force is data written before
+     * {@code issue()} superseded, where there is no ordering intent to honour and the safe
+     * reading is the strictest — permanent over any expiry, otherwise the later expiry.</p>
+     *
+     * @param type which kind
+     * @param target whose records
+     * @return the single record left in force, if any
+     */
+    private Optional<Record> reconcile(Type type, UUID target) {
         String id = target.toString();
         String kind = type.name();
         long now = clock.getAsLong();
-        boolean expiredSomething = false;
-        Record found = null;
+        boolean changed = false;
+        Record strictest = null;
+        List<Record> inForce = new ArrayList<>();
 
         for (Record record : document.records) {
             if (!record.active || !kind.equals(record.type) || !id.equals(record.targetUuid)) {
@@ -144,15 +191,43 @@ public final class ModerationService {
                 record.active = false;
                 record.liftedByName = "expiry";
                 record.liftedAtEpochMillis = now;
-                expiredSomething = true;
+                changed = true;
                 continue;
             }
-            found = record;
+            if (strictest == null || isStricter(record, strictest)) {
+                strictest = record;
+            }
+            inForce.add(record);
         }
-        if (expiredSomething) {
+
+        for (Record loser : inForce) {
+            if (loser != strictest) {
+                loser.active = false;
+                loser.liftedByName = "superseded";
+                loser.liftedAtEpochMillis = now;
+                loser.supersededByRecordId = strictest == null ? null : strictest.id;
+                changed = true;
+            }
+        }
+        if (changed) {
             save();
         }
-        return Optional.ofNullable(found);
+        return Optional.ofNullable(strictest);
+    }
+
+    /**
+     * @param candidate a punishment in force
+     * @param incumbent the strictest found so far
+     * @return true when {@code candidate} keeps the player punished for longer
+     */
+    private static boolean isStricter(Record candidate, Record incumbent) {
+        if (candidate.expiresAtEpochMillis == Long.MAX_VALUE) {
+            return incumbent.expiresAtEpochMillis != Long.MAX_VALUE;
+        }
+        if (incumbent.expiresAtEpochMillis == Long.MAX_VALUE) {
+            return false;
+        }
+        return candidate.expiresAtEpochMillis > incumbent.expiresAtEpochMillis;
     }
 
     /**
@@ -198,6 +273,8 @@ public final class ModerationService {
     /** @return every currently active ban */
     public List<Record> activeBans() {
         List<Record> found = new ArrayList<>();
+        // Resolving each active row reconciles that player's records, retiring the duplicates, so
+        // the rows behind a doubly-banned player are already inactive by the time they are reached.
         for (Record record : new ArrayList<>(document.records)) {
             if (record.active && Type.BAN.name().equals(record.type)) {
                 UUID target = parseUuid(record.targetUuid);
@@ -268,6 +345,7 @@ public final class ModerationService {
         String liftedByUuid;
         String liftedByName;
         long liftedAtEpochMillis;
+        String supersededByRecordId;
 
         /** @return the record's stable id */
         public String id() {

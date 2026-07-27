@@ -161,6 +161,29 @@ them here is that money and item custody were going to ride on this.
   loader, plus Fabric's and Forge's own 3. No test needed changing — the three that locate source
   roots already walk up to find `common/src/main/java`, which 1.0.4 fixed for a different reason.
 
+- **A second ban or mute no longer stacks on the first.** Three faults shared one cause:
+  `/unban` lifted one record, reported success, and left the player banned; `activeBans()` counted
+  a player once per active row, inflating `/banlist` and the admin panel; and `activeRecord()`
+  returned the last-issued match, so an arbitrary position in the file decided how long somebody
+  stayed banned. `ModerationService:108,150,205`.
+
+  `issue()` now retires any punishment of the same kind already in force, stamping the old record
+  with `supersededByRecordId` — punishments are still never deleted, so the history shows what
+  replaced what. A named `reconcile()` retires lapsed records, keeps the **strictest** of whatever
+  remains, and retires the rest; `lift()` calls it explicitly rather than relying on a query to
+  mutate state as a side effect, because that dependency is exactly what a later refactor removes
+  without noticing.
+
+  The two rules answer different questions and both are needed. A deliberate re-ban is the
+  operator's decision and takes the new terms, shorter or longer. Several records in force at once
+  carry no such intent — they are what builds before this wrote — so there the strictest holds.
+
+  **Proven to fail, not merely to pass:** each mechanism was reverted separately and the suite
+  re-run. Removing the reconciliation failed three tests; removing strictest-selection failed two;
+  removing supersede-on-issue failed two. An earlier revision also carried a lift-all sweep and a
+  de-duplicated `activeBans()`; **neither could be made to fail any test**, because reconciliation
+  already covered them, so both were removed rather than shipped as paths nothing exercises.
+
 - **Identity lookup no longer stalls the server thread on a Mojang request.**
   `IdentityService.resolve()` fell through to `GameProfileCache.get(String)`, which performs a
   synchronous HTTP lookup whenever the name is not already cached. It runs on the server thread

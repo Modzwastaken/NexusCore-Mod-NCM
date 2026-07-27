@@ -20,12 +20,16 @@ guaranteed response time — that is stated plainly rather than promised and mis
 
 | Version | Supported |
 |---|---|
-| `1.1.x` | Yes |
-| `1.0.1` | Yes — the security patch for v1.0.0 |
-| `1.0.0` | **No.** It has two confirmed critical defects. Upgrade to `1.0.1` or later. |
+| `1.1.0` | Yes — the current release |
+| `1.0.0` | **No.** It has two confirmed critical defects. Upgrade to `1.1.0`. |
 
 Only `x.y.0` versions and `x.y.1`–`x.y.5` builds exist; see
 [ADR-0012](docs/architecture/ADR-0012.md).
+
+This table lists only versions that can actually be obtained. `1.0.1` through `1.0.5` are real
+builds on the ladder and their fixes are in `1.1.0`, but no `1.0.x` build was ever published as a
+download — there is no tag, no GitHub Release and no `archived/v1.0.x/`. A security policy that
+tells you to install something you cannot install is worse than one that omits it.
 
 ## What counts
 

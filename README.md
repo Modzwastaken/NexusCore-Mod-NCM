@@ -31,6 +31,12 @@
   <a href="https://github.com/Modzwastaken/NexusCore-Mod-NCM/blob/main/IMPLEMENTATION_STATUS.md"><strong>What actually works</strong></a>
 </p>
 
+<p align="center">
+  <a href="https://mwtstudios.net/nexuscore/">mwtstudios.net</a> ·
+  <a href="https://modrinth.com/mod/nexuscore-mod-ncm">Modrinth</a> ·
+  <a href="https://discord.gg/yPS6383Xax">Discord</a>
+</p>
+
 ---
 
 ## What it does

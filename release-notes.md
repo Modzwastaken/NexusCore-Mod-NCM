@@ -107,9 +107,9 @@ Three jars, one per loader. They are **not** interchangeable.
 
 | Loader | Jar | Requires |
 |---|---|---|
-| NeoForge | `NexusCore-neoforge-1.0.0-1.21.1.jar` | NeoForge 21.1.235+ |
-| Fabric | `NexusCore-fabric-1.0.0-1.21.1.jar` | Fabric Loader 0.19.3+ **and Fabric API** |
-| Forge | `NexusCore-forge-1.0.0-1.21.1.jar` | MinecraftForge 52.1.16+ |
+| NeoForge | `NexusCore-neoforge-1.1.0-1.21.1.jar` | NeoForge 21.1.235+ |
+| Fabric | `NexusCore-fabric-1.1.0-1.21.1.jar` | Fabric Loader 0.19.3+ **and Fabric API** |
+| Forge | `NexusCore-forge-1.1.0-1.21.1.jar` | MinecraftForge 52.1.16+ |
 
 1. Install your loader for Minecraft 1.21.1.
 2. Drop the matching jar into `mods/`.
@@ -336,8 +336,8 @@ installable and testable ([ADR-0012](docs/architecture/ADR-0012.md)): `1.0.1` �
 **`x.y.0` is a version; `x.y.1`–`x.y.5` are its builds** — each a hotfix or a pre-release. This
 page covers versions only.
 
-**If you are running v1.0.0, take the `1.0.1` hotfix**: it closes a permission bypass. Otherwise
-v1.0.0 remains the production version until v1.5.0 arrives.
+**If you are running v1.0.0, upgrade to v1.1.0.** It closes the permission bypass and three other
+security defects, and it is the production version.
 
 What each build is planned to contain is in
 [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md#the-road-to-v150).

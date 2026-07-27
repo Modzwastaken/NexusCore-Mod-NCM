@@ -45,14 +45,17 @@ archived/
 
 | Version | Type | Date | Minecraft | Loaders | Notes |
 |---|---|---|---|---|---|
-| [v1.1.0](v1.1.0/) | Version | 2026-07-26 | 1.21.1 | NeoForge, Fabric, Forge | M4 complete, human-tested. **Archived at tag, before publication** — see below |
-| [v1.0.0](v1.0.0/) | Release | 2026-07-26 | 1.21.1 | NeoForge, Fabric, Forge | First public release. **Superseded** — two confirmed critical defects, fixed in `1.0.1` |
+| [v1.1.0](v1.1.0/) | Version | 2026-07-26 | 1.21.1 | NeoForge, Fabric, Forge | M4 complete, human-tested. Published 2026-07-27 — see below |
+| [v1.0.0](v1.0.0/) | Version | 2026-07-26 | 1.21.1 | NeoForge, Fabric, Forge | First public release. **Superseded** — two confirmed critical defects, fixed in `1.1.0` |
 
-**v1.1.0 was archived at tag time, ahead of publication**, at the owner's direction. That is a
-deliberate exception to the rule above, recorded rather than left to be inferred: until a GitHub
-Release exists, `archived/v1.1.0/` holds bytes nobody has downloaded. They are the bytes the
-`v1.1.0` tag produces — verified reproducible across two clean builds on each loader — so when the
-Release is cut it must be cut from **these exact files**, not from a rebuild.
+**v1.1.0 was archived at tag time, ahead of publication**, at the owner's direction — a deliberate
+exception to the rule above, recorded rather than left to be inferred. The condition that exception
+described has since been met: the GitHub Release was published 2026-07-27 **from these exact
+files**, not from a rebuild, and every published asset has been confirmed byte-identical to this
+folder by SHA-256 against the bytes GitHub serves.
+
+The `Type` column uses the two words defined at the top of this file. v1.0.0 previously read
+`Release`, which is not one of them.
 
 `1.0.1` is the security hotfix for v1.0.0 and will be archived once it is published. `1.0.2`–`1.0.5`
 produced no separately published artifact and are not archived.

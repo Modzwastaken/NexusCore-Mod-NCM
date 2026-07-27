@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/nexuscore-logo-banner.png" alt="NexusCore" width="1025">
+  <img src="docs/nexuscore-logo-banner.png" alt="NexusCore" width="1080">
 </p>
 
 <h1 align="center">NexusCore Administration Framework</h1>

@@ -224,6 +224,14 @@ Everything below is stated for **all three loaders** unless said otherwise.
 - `/execute as` against a summoned armor stand is refused, and the vanilla takeover reports all
   eight names truthfully in normal mode and only the three module-free ones in safe mode.
 - Every markdown link in the repository resolves.
+- **CI is green on all three loaders from a bare checkout** — the first time a genuine cold build
+  of this project has been demonstrated anywhere. It took two runs: the first failed on NeoForge at
+  `neoFormTransformSource` because the workflow ran `clean build` in one invocation while
+  `org.gradle.parallel=true`, and NeoGradle's expanded-zip cache lives under `build/tmp`, so a
+  parallel `clean` deleted it mid-read. Locally this had always passed only because NeoGradle
+  restores those outputs from a cache outside `build/`, so the decompile step had never actually
+  executed cold on any machine. Release-checklist item 1 is now satisfied by evidence rather than
+  by assumption.
 
 **Not verified, and not claimed:** no human player has joined a dedicated server, so the admin panel
 rendering, vanish, chat muting and ban-at-login remain `implemented` rather than `tested`. A player

@@ -43,7 +43,10 @@ utilities, moderation with confirmations, and a working admin GUI.
 
 **Two things are true at once, and both matter:**
 
-1. **214 automated tests pass (208 NeoForge + 3 Fabric + 3 Forge)**, and the whole feature set has been exercised end to end on a
+1. **214 automated tests pass (208 NeoForge + 3 Fabric + 3 Forge)**, and **CI now proves a cold
+   build works** — all three loaders build from a bare checkout on a clean runner, which no local
+   run had ever actually demonstrated (NeoGradle restores neoForm outputs from a cache outside
+   `build/`, so the decompile step had never run cold here)., and the whole feature set has been exercised end to end on a
    real NeoForge 21.1.235 dedicated server with zero errors, including a restart.
 2. **No human player has ever joined a NexusCore *server*.** Every dedicated-server check was
    driven through the console. At 1.0.1 a real `ServerPlayer` did enter the world for the first
@@ -66,7 +69,7 @@ utilities, moderation with confirmations, and a working admin GUI.
 | Checkstyle formatting + static analysis | `tested` | 0 violations across main and test, **and proven to fail** on an injected violation. |
 | Reproducible archives | `tested` | Identical SHA-256 across two independent clean builds, **on all three loaders**. Until 1.0.4 the enforcing `AbstractArchiveTask` block was in `neoforge/build.gradle` only, and two clean Forge builds genuinely produced different jars — so this row was true for one artifact of three. Found by 1.0.4's byte-identity check. |
 | Version gate (ADR-0012) | `tested` | `versionLadderCheck`. Passes on every legal shape and **proven to fail nine ways** — see the 1.0.2 evidence table below. |
-| CI workflow | `in progress` | `.github/workflows/build.yml`, now at the repository root and building all three loaders as a matrix. **First execution: Fabric and Forge passed, NeoForge failed** on `neoFormTransformSource` — `NoSuchFileException` for `ats/accesstransformer.cfg` inside NeoGradle's expanded-zip cache under `build/tmp`. The workflow ran `clean build` in one invocation with `org.gradle.parallel=true`, so a parallel `clean` can delete that cache mid-read. `clean` is removed (a checkout is already clean). **Awaiting the next run to confirm.** |
+| CI workflow | `tested` | `.github/workflows/build.yml` at the repository root, building all three loaders as a matrix. **Green on all three** (run 30228708083: fabric 1m17s, forge 1m0s, neoforge 3m5s), with each jar uploaded as an artifact. The first run failed on NeoForge only, at `neoFormTransformSource`, with a `NoSuchFileException` for `ats/accesstransformer.cfg` inside NeoGradle's expanded-zip cache: the workflow ran `clean build` in one invocation while `org.gradle.parallel=true`, so a parallel `clean` deleted that cache — which lives under `build/tmp` — mid-read. Removing `clean` fixed it. |
 
 ## M1 — Configuration, messages, lifecycle · **PASSED**
 

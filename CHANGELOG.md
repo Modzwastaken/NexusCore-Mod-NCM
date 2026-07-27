@@ -72,6 +72,26 @@ Work toward the next build.
   applied — removing the write-ahead property while leaving every other line intact — fails 9 of
   the 28. Dropping the already-applied skip that makes replay idempotent fails 4.
 
+### Fixed
+
+- **The shared test suite ran on one loader of three.** `sourceSets.test.java.srcDirs +=
+  '../common/src/test/java'` existed in `neoforge/build.gradle` only; Fabric and Forge added the
+  shared *main* sources and never the tests. So every common test — storage, permissions, audit,
+  the module manager — executed on NeoForge, while all three loaders compiled the code under test
+  and reported "green". "214 tests, three loaders green" was 208 tests on one loader and 3 on each
+  of the others, which reads like three-way coverage and is not. The same shape as 1.0.4's
+  reproducibility finding, where the enforcing block sat in one build file and §18.5 held for one
+  jar of three.
+
+  Found reviewing the journal, whose crash-recovery proofs made it impossible to ignore: the
+  substrate every future money and item transfer will stand on was exercised on one loader. The
+  shared sources are identical bytes, so the *code* cannot diverge — but each loader supplies its
+  own Gson and its own logging binding, and the storage layer is built on exactly those.
+
+  Now wired into all three. **714 test executions** where there were 214: 236 shared tests on each
+  loader, plus Fabric's and Forge's own 3. No test needed changing — the three that locate source
+  roots already walk up to find `common/src/main/java`, which 1.0.4 fixed for a different reason.
+
 `JsonStore`'s `move`, `force` and `forceDirectory` became package-private so the journal reuses
 them instead of carrying a second copy of the atomic-move protocol — including the
 `AtomicMoveNotSupported` fallback and its warning, which is exactly the kind of detail that gets

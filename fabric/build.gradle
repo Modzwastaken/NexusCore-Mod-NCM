@@ -52,6 +52,11 @@ sourceSets.main.java.srcDirs += sharedSrc
 // server, which reported "0 message(s)".
 sourceSets.main.resources.srcDirs += sharedRes
 
+// The shared TESTS run here too, not only on NeoForge. See the matching note in
+// ../forge/build.gradle: until 1.1.1 every common test executed on one loader of three, while
+// all three compiled the code under test.
+sourceSets.test.java.srcDirs += file('../common/src/test/java')
+
 // No excludes since 1.0.4: ../common holds only shared code. Previously this reached into
 // ../neoforge/src and named the two NeoForge-only files by path string, here and in
 // forge/build.gradle — so a new NeoForge-only class meant editing both, or shipping it into a

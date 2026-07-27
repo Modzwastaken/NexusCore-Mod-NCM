@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/nexuscore-logo.png" alt="NexusCore" width="320">
+  <img src="docs/nexuscore-logo-banner.png" alt="NexusCore" width="1080">
 </p>
 
 <h1 align="center">NexusCore Administration Framework</h1>
@@ -25,7 +25,7 @@
 
 <p align="center">
   <a href="https://github.com/Modzwastaken/NexusCore-Mod-NCM">Source</a> ·
-  <a href="https://github.com/Modzwastaken/NexusCore-Mod-NCM/releases">Downloads</a> ·
+  <a href="https://modrinth.com/mod/nexuscore-mod-ncm/versions">Downloads</a> ·
   <a href="https://github.com/Modzwastaken/NexusCore-Mod-NCM/issues/new/choose">Report a bug</a> ·
   <a href="https://github.com/Modzwastaken/NexusCore-Mod-NCM/blob/main/SECURITY.md">Security</a> ·
   <a href="https://github.com/Modzwastaken/NexusCore-Mod-NCM/blob/main/IMPLEMENTATION_STATUS.md"><strong>What actually works</strong></a>

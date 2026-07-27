@@ -7,7 +7,7 @@ meant to be tamper-evident. A defect in any of those is a security defect, not a
 
 **Do not open a public issue.** Use GitHub's
 [private vulnerability reporting](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability)
-on this repository, or email **ynmodz@gmail.com**.
+on this repository, or email **modzwastaken@proton.me**.
 
 Please include the loader and version, what the attacker starts with (an ordinary player? a
 level-2 operator? a command block?), and the steps. A concrete command sequence is worth more

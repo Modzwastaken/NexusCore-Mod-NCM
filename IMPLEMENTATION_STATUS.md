@@ -12,6 +12,7 @@ fails the build if they do.
 | `in progress` | Code exists. **Not yet compiled**, or compiled but incomplete. |
 | `implemented` | Code exists **and compiles**. No passing test cited yet. |
 | `tested` | A passing test exists and **its name is cited here**. |
+| `tested (manual)` | Observed working by a person, with who observed it and when recorded here. **Weaker than `tested`**: nothing re-checks it on the next build, so it can silently stop being true. Introduced at 1.1.0 for the human testing, because calling an observation `tested` would blur exactly the line §20.4 exists to draw. |
 | `blocked` | Cannot proceed. The specific obstacle is named here. |
 | `intentionally excluded` | Out of scope, with the reason recorded. |
 
@@ -19,8 +20,8 @@ fails the build if they do.
 cited. A file that looks finished but has never been compiled is `in progress`, however
 complete it appears.
 
-**Last updated:** 2026-07-26 · **Version:** 1.1.0 ·
-**Last version:** 1.0.0 · **Milestones passed:** M0, M1, M2, M3, M4, M5 (partial)
+**Last updated:** 2026-07-26 · **Version:** 1.1.0 (released) ·
+**Previous version:** 1.0.0 · **Milestones passed:** M0, M1, M2, M3, M4, M5 (partial)
 
 > **v1.0 does not mean feature complete.** The version scheme (ADR-0007) is the owner's
 > release numbering, not the specification's M11 gate. This document, not the version
@@ -46,16 +47,22 @@ utilities, moderation with confirmations, and a working admin GUI.
 1. **214 automated tests pass (208 NeoForge + 3 Fabric + 3 Forge)**, and **CI now proves a cold
    build works** — all three loaders build from a bare checkout on a clean runner, which no local
    run had ever actually demonstrated (NeoGradle restores neoForm outputs from a cache outside
-   `build/`, so the decompile step had never run cold here)., and the whole feature set has been exercised end to end on a
-   real NeoForge 21.1.235 dedicated server with zero errors, including a restart.
-2. **No human player has ever joined a NexusCore *server*.** Every dedicated-server check was
-   driven through the console. At 1.0.1 a real `ServerPlayer` did enter the world for the first
-   time — on the Fabric and Forge **dev clients**, in singleplayer quick-play — which proves the
-   integrated-server path and that `PlayerLoggedInEvent` fires with a real player. It proves
-   nothing more: **no command was driven in-game and no second player has ever existed.** The
-   admin GUI actually rendering, vanish, chat muting, ban enforcement at login and teleport
-   safety in practice are still `implemented`, not `tested`. That distinction is the whole point
-   of §20.4 and it is not being blurred here.
+   `build/`, so the decompile step had never run cold here). The whole feature set has also been
+   exercised end to end on real dedicated servers for all three loaders, with zero errors.
+2. **The mod has now been human-tested on a real dedicated server, by one player.** Reported by
+   the project owner at the 1.1.0 release: a real player joined a real dedicated server and
+   exercised most of the feature set, including the admin panel rendering to an unmodified vanilla
+   client. That closes the largest gap this document has carried since v1.0.
+
+   **It is owner-attested rather than instrumented**, so it is recorded as `tested (manual)` on the
+   rows it covers rather than as an automated test with a cited name — the distinction §20.4 draws
+   between a passing test and an observation still applies, and this is an observation.
+
+   **A second player has still never existed.** Everything that only manifests on another client is
+   therefore untouched: vanish hiding you from someone else's list, a muted player's message not
+   reaching others, and multi-player behaviour generally. The 1.1.0 sweep confirmed **four specific
+   vanish faults that only appear on another player's client**, none of which single-player testing
+   could have surfaced. Those rows stay `implemented`.
 
 ---
 
@@ -137,17 +144,17 @@ utilities, moderation with confirmations, and a working admin GUI.
 
 | Requirement | Status | Evidence |
 |---|---|---|
-| §19.1 safe-destination algorithm | `implemented` | Border, build height, bounded single-chunk load, collision-shape passability, fluid, harmful blocks, solid support. **No GameTest yet.** |
+| §19.1 safe-destination algorithm | `tested (manual)` | Border, build height, bounded single-chunk load, collision-shape passability, fluid, harmful blocks, solid support. **No GameTest yet.** |
 | Warmup with movement cancellation, recheck at commit | `implemented` | Rechecks safety at commit; `/back` recorded only after commit. |
 | Teleport cooldown | `implemented` | `cooldownRemainingMillis`, honouring `teleportCooldownSeconds`. |
 | Homes, warps, spawn, `/back`, `/tpa` | `implemented` | Durable; limits enforced. No GameTest. |
-| Player utilities: heal, feed, fly, god, speed, vanish, info | `implemented` | Flight uses NeoForge's `creative_flight` attribute, not the deprecated ability field. |
+| Player utilities: heal, feed, fly, god, speed, vanish, info | `tested (manual)` | Exercised by a real player on a dedicated server at 1.1.0, owner-attested. Flight uses NeoForge's `creative_flight` attribute, not the deprecated ability field. **Vanish is the exception**: only its effect on the vanishing player was observable with one player, and the 1.1.0 sweep confirmed four faults that appear only on *another* player's client. |
 | Moderation: kick, ban, tempban, unban, mute, unmute, warn, warnings | `tested` | `ModerationServiceTest` — 14 tests including `temporaryBanExpiresAtBoundary` and `liftingKeepsHistory`. Exercised at runtime. |
-| Punishment expiry re-evaluated at login | `implemented` | Wired to `PlayerLoggedInEvent`. **Never observed with a real player.** |
-| Chat muting | `implemented` | Wired to `ServerChatEvent`. **Never observed with a real player.** |
+| Punishment expiry re-evaluated at login | `tested (manual)` | Wired to `PlayerLoggedInEvent`. **Observed with a real player** on a dedicated server at the 1.1.0 release, owner-attested. No automated test. |
+| Chat muting | `implemented` | Wired to `ServerChatEvent`. The muted player seeing the notice was observed at 1.1.0; **that a muted message fails to reach *others* has not been**, because it needs a second player. |
 | Restart persistence | `tested` | Runtime: second boot loaded 27 audit records, warnings, groups, and punishments intact; chain continued to 31. |
 | **GameTests** | `planned` | **M5's exit condition is not met.** GameTests for teleport safety, home/warp persistence, punishment enforcement, and permission gating do not exist. |
-| **Manual test: run for real players for a week** | `planned` | **Not done.** This is M5's actual exit criterion. |
+| **Manual test: run for real players for a week** | `planned` | **Partially done.** A real player exercised most of the feature set on a dedicated server at 1.1.0. The criterion as written asks for *players*, plural, over a week — neither the second player nor the duration has happened, and the four confirmed vanish faults are precisely what a second player would surface. |
 
 ## Admin GUI — ahead of schedule
 
@@ -157,7 +164,7 @@ container menu, so the panel is usable in the server-only release rather than wa
 
 | Requirement | Status | Evidence |
 |---|---|---|
-| Dashboard, player list, per-player actions, moderation, permissions, server pages | `implemented` | `AdminGuiService`. **Never rendered to a real client.** |
+| Dashboard, player list, per-player actions, moderation, permissions, server pages | `tested (manual)` | `AdminGuiService`. **Rendered to a real vanilla client** on a dedicated server at 1.1.0, owner-attested. |
 | Permission re-checked on every click | `implemented` | `AdminGuiService.guard`, called by every handler. |
 | Read-only container — items cannot enter or leave | `implemented` | `AdminMenu.clicked` never calls `super`; `quickMoveStack` returns empty. **No test.** |
 | Destructive action behind a confirmation naming the target | `implemented` | Kick confirmation, token bound to that player. |
@@ -397,4 +404,4 @@ deliverable and does not exist.
 | Idle tick cost under 0.10 ms | **target, not measured** |
 | Active tick cost under 1.0 ms mean / 2.0 ms p95 | **target, not measured** |
 | Supported player count | **not claimed anywhere**, and must not be until measured |
-| Behaviour with more than one player online | **never observed** — every runtime test was single-session, console-driven |
+| Behaviour with more than one player online | **never observed** — the 1.1.0 human testing was a single player on a dedicated server. Everything that only manifests on a second client is unverified, including the four confirmed vanish faults |

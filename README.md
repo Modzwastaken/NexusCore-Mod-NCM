@@ -97,14 +97,18 @@ the code so it cannot drift.
 
 This section is the point of the README, not a footnote.
 
-**Version 1.1.0.** 209 automated tests pass. All three loaders build reproducibly and have been
-run as packaged jars on real dedicated servers, in both normal and safe mode, with zero errors.
+**Version 1.1.0.** 214 automated tests pass. All three loaders build reproducibly, CI builds them
+from a bare checkout, and the packaged jars have been run on real dedicated servers in both normal
+and safe mode with zero errors.
 
-**What has never happened:** no human player has ever joined a NexusCore *dedicated* server. Every
-server check was driven from the console. A real player entity has entered a world only on the
-development clients, in singleplayer. So the admin panel rendering to a real client, vanish, chat
-muting, ban enforcement at login and teleport safety in practice are `implemented`, **not**
-`tested`.
+**Human-tested.** A real player has now joined a real dedicated server and exercised most of the
+feature set — the admin panel rendering to an unmodified vanilla client, teleporting, player tools,
+moderation, and the commands generally.
+
+**What that still does not cover:** everything that needs a *second* player. Vanish hiding you from
+someone else's player list, a muted player's message failing to reach others, and multi-player
+behaviour generally remain unobserved — and the sweep found four specific vanish faults that only
+manifest on another player's client. Those rows stay `implemented`, not `tested`.
 
 **Known unfixed defects are published, not hidden.**
 [IMPLEMENTATION_STATUS.md](https://github.com/Modzwastaken/NexusCore-Mod-NCM-/blob/main/IMPLEMENTATION_STATUS.md) lists every confirmed defect awaiting a fix,

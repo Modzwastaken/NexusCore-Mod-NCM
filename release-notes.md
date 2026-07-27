@@ -47,17 +47,24 @@ confirmed critical defects, both fixed in `1.0.1` and included here.
 - **Hand edits to `permissions.json` are ignored** and will be overwritten by the next permission
   change. Use the commands, not the file, until `1.1.1`.
 - **`/seen <unknown name>` can stall the server** on a Mojang lookup.
-- **No human player has ever joined a NexusCore dedicated server.** Every server check was
-  console-driven. The admin panel rendering to a real client, vanish, chat muting and
-  ban-at-login are implemented but unobserved.
+- **Only one player has ever been online at a time.** v1.1.0 has been human-tested on a real
+  dedicated server — the admin panel renders to an unmodified vanilla client, teleporting, player
+  tools and moderation all work — but everything that needs a *second* player is unverified:
+  vanish hiding you from someone else's list, a muted message failing to reach others, and
+  multi-player behaviour generally. **Four confirmed vanish faults appear only on another player's
+  client.** If you run a populated server, expect vanish to misbehave for onlookers.
 - Every other confirmed defect is listed in
   [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) rather than withheld.
 
 ### Verified
 
-209 tests. All three loaders build reproducibly and were run as packaged jars on real NeoForge
-21.1.235, Fabric and MinecraftForge 52.1.16 dedicated servers, in **both** normal and safe mode,
-with zero errors.
+214 automated tests. All three loaders build reproducibly, and **CI builds all three from a bare
+checkout** — the first time a genuine cold build of this project has been demonstrated anywhere.
+Packaged jars were run on real NeoForge 21.1.235, Fabric and MinecraftForge 52.1.16 dedicated
+servers in **both** normal and safe mode, with zero errors.
+
+**Human-tested**: a real player joined a real dedicated server and exercised most of the feature
+set, including the admin panel on an unmodified vanilla client.
 
 ---
 

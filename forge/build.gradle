@@ -123,6 +123,18 @@ tasks.withType(JavaCompile).configureEach {
 tasks.withType(AbstractArchiveTask).configureEach {
     preserveFileTimestamps = false
     reproducibleFileOrder = true
+    // Fixed permissions, or the builder's umask ends up inside the archive. Confirmed by comparing
+    // the v1.1.0 Forge jar built here against the one GitHub's runner built from the same tag: 112
+    // bytes differed, every one of them the ZIP central directory's external-attributes field —
+    // 0x81b4 (0664, this machine's umask 0002) against 0x81a4 (0644, the runner's). Same size, same
+    // entries, byte-identical contents. Only Forge was affected, because it merges resources into
+    // the classes directory and that copy preserves the source file's mode.
+    //
+    // So §18.5 held only WITHIN a machine: two clean builds here matched, and anyone else's did not.
+    // For an archive whose stated purpose is that a bug report can be reproduced against the same
+    // bytes, same-machine reproducibility is not the property that matters.
+    filePermissions { unix(0644) }
+    dirPermissions { unix(0755) }
 }
 
 // Same ruleset as the other two loaders, so a contribution cannot pass one build and fail

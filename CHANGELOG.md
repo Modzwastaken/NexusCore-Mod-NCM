@@ -237,6 +237,20 @@ Everything below is stated for **all three loaders** unless said otherwise.
 - `/execute as` against a summoned armor stand is refused, and the vanilla takeover reports all
   eight names truthfully in normal mode and only the three module-free ones in safe mode.
 - Every markdown link in the repository resolves.
+- **The archives are reproducible across machines, not just across runs.** All three jars built here
+  are byte-identical to the ones GitHub's runner built from the `v1.1.0` tag. Getting there took a
+  fix: the first comparison showed the Forge jar differing in **112 bytes, every one of them the ZIP
+  central directory's external-attributes field** — `0x81b4` (0664, this machine's `umask 0002`)
+  against `0x81a4` (0644, the runner's). Same size, same entries, byte-identical contents; the
+  builder's umask was inside the archive. Only Forge was affected, because it merges resources into
+  the classes directory and that copy preserves the source file's mode.
+
+  §18.5 therefore held only *within* a machine, which is not the property that matters for an archive
+  whose stated purpose is that a bug report can be reproduced against the same bytes. All three
+  builds now pin `filePermissions`/`dirPermissions`, and **v1.1.0 was re-cut** — it had not been
+  published, which is precisely the situation `archived/README.md`'s "archive only after publication"
+  rule exists to protect.
+
 - **CI is green on all three loaders from a bare checkout** — the first time a genuine cold build
   of this project has been demonstrated anywhere. It took two runs: the first failed on NeoForge at
   `neoFormTransformSource` because the workflow ran `clean build` in one invocation while

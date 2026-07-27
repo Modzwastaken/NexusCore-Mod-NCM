@@ -177,12 +177,25 @@ container menu, so the panel is usable in the server-only release rather than wa
 ## Confirmed defects awaiting a fix
 
 **Updated at 1.1.0** by two adversarial sweeps — eight lenses then six. Together they raised 120
-candidates, refuted 34, and confirmed the rest; **twelve were fixed in 1.1.0** and are recorded in
+candidates, refuted 34, and confirmed the rest. What was fixed in 1.1.0 is recorded in
 `CHANGELOG.md` rather than here: the `/teleport` deletion, safe mode stripping vanilla moderation
 commands, the `/nexus reload` NPE, `/nexus help` claiming vanilla's names, the takeover gated on the
 wrong setting, four wrong descriptors, the GUI's missing crash barrier, the `/execute as` permission
 borrow (**with the sign and lectern confused-deputy paths it also closed**), fail-open permission
 values, and `permissions.json` never reloading.
+
+**Two counts here were reconciled on 2026-07-27, and one gap is recorded rather than closed.**
+This paragraph previously asserted that **twelve** were fixed. Its own enumeration does not
+reproduce that number under either reading — nine items if "four wrong descriptors" is one entry,
+thirteen if it is four — and the `[1.1.0]` changelog entry does not resolve it either, because
+several fixes are grouped under one bullet and two sit under the wrong heading. The count has been
+removed rather than replaced with a different unverifiable one; `CHANGELOG.md` is the record.
+
+The `120 candidates / 34 refuted` above is the **aggregate of both sweeps**. The 1.1.0 row in "The
+road to v1.5.0" reports `41 / 17 / 24` for the stability sweep alone, which is consistent with this
+total but only if the split is known — and **the per-sweep breakdown of the other sweep was not
+kept**. It cannot be recovered from the repository. Neither figure is published on any external
+surface, and neither should be until somebody who ran the sweeps reconstructs it.
 
 Two of the three items previously listed here as the `1.1.1` priorities are now fixed. The
 remaining one heads the list below.
@@ -291,7 +304,7 @@ sequence is open-ended, so nothing has to be crushed to fit.
 
 | Build | Contents | Exit condition |
 |---|---|---|
-| **1.1.0** · *version* | The M4-complete milestone, rolled up from the 1.0 builds, plus seven fixes from the stability sweep. | **Met.** 209 tests; three loaders build reproducibly; **six runtime runs** — normal and safe mode on each loader — with zero errors. A whole-mod sweep raised 41 candidates, refuted 17, confirmed 24; seven fixed here, the rest recorded above. |
+| **1.1.0** · *version* | The M4-complete milestone, rolled up from the 1.0 builds, plus seven fixes from the stability sweep. | **Met.** **214 tests** (208 NeoForge + 3 Fabric + 3 Forge), 0 failures, 0 errors, 0 skipped — counted from the JUnit XML of a `--rerun-tasks` run on 2026-07-27, not carried forward; three loaders build reproducibly; **six runtime runs** — normal and safe mode on each loader — with zero errors, which with the two targeted runs (the substituted-source refusal and the permissions reload) are the **eight** `CHANGELOG.md` counts. A whole-mod sweep raised 41 candidates, refuted 17, confirmed 24; seven fixed here, the rest recorded above. Those four figures describe **the stability sweep only** — the aggregate across both 1.1.0 sweeps is in "Confirmed defects awaiting a fix". |
 | **1.1.1** | `IdentityService.resolve()` blocking the server thread on a Mojang lookup (`getAsync` exists), the four vanish faults, and the multiple-active-punishments group — the highest-severity items left after 1.1.0's twelve fixes. | Each has a named regression test. The vanish faults need a real client, so any that cannot be reproduced headlessly are recorded as such rather than ticked. |
 | **1.1.2** | GameTests: teleport safety, home/warp persistence, punishment enforcement, permission gating. Plus the missing `AdminMenu` read-only container test. | The four GameTests named in M5 exist and pass, and a test proves items cannot enter or leave the admin menu. |
 | **1.1.3** | Sustained multi-player runtime verification — GUI rendering, vanish (four confirmed faults), chat muting, ban-at-login, teleport safety in practice. | Every item in the "never observed" column has been observed with at least two real players, or is recorded as still unobserved with the reason. |

@@ -1431,9 +1431,22 @@ public final class NexusCommands {
         }
     }
 
+    /**
+     * Resolves an operator-typed name without blocking the server thread.
+     *
+     * <p>The local sources answer instantly. When they miss, the vanilla profile cache is
+     * consulted <em>asynchronously</em> and the command is refused with an invitation to retry,
+     * rather than the server thread being parked on a Mojang HTTP request that any player could
+     * trigger with {@code /seen <unknown-name>}. The async lookup files its result into the
+     * identity index, so the retry resolves locally.</p>
+     */
     private static UUID resolve(CommandSourceStack source, NexusServices services, String name) throws Refused {
         Optional<UUID> found = services.identity().resolve(source.getServer(), name);
-        return found.orElseThrow(() -> new Refused(services.messages().raw("error.unknown-player", "name", name)));
+        if (found.isPresent()) {
+            return found.get();
+        }
+        services.identity().resolveAsync(source.getServer(), name);
+        throw new Refused(services.messages().raw("error.unknown-player.looking-up", "name", name));
     }
 
     static ServerPlayer requirePlayer(NexusServices services, CommandSourceStack source) throws Refused {

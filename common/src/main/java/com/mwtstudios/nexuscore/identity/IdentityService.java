@@ -7,6 +7,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 import com.mwtstudios.nexuscore.storage.JsonStore;
 
@@ -111,24 +112,72 @@ public final class IdentityService {
     }
 
     /**
-     * Resolves a name typed by an operator into a UUID.
+     * Resolves a name typed by an operator into a UUID, <b>without ever blocking</b>.
      *
-     * @param server the running server, used for the online list and the profile cache
+     * <p>Only sources that answer instantly are consulted: the online player list and
+     * NexusCore's own record of everyone who has joined this server. The vanilla profile cache
+     * is deliberately <em>not</em> queried here — {@code GameProfileCache.get(String)} performs
+     * a synchronous Mojang HTTP lookup whenever the name is not already cached, and this method
+     * runs on the server thread. Any player could stall the entire server for the length of that
+     * request by typing {@code /seen <unknown-name>}.</p>
+     *
+     * <p>When this returns empty the caller should start {@link #resolveAsync}, which performs
+     * the same lookup off-thread and files the result here, so a second attempt succeeds
+     * locally.</p>
+     *
+     * @param server the running server, used for the online player list
      * @param name the name as typed
-     * @return the resolved UUID, or empty when nobody by that name is known
+     * @return the resolved UUID, or empty when nobody by that name is known <em>locally</em>
      */
     public Optional<UUID> resolve(MinecraftServer server, String name) {
         ServerPlayer online = server.getPlayerList().getPlayerByName(name);
         if (online != null) {
             return Optional.of(online.getUUID());
         }
-        UUID known = nameIndex.get(name.toLowerCase(Locale.ROOT));
-        if (known != null) {
-            return Optional.of(known);
+        return resolveLocally(name);
+    }
+
+    /**
+     * The offline half of {@link #resolve}, with no server dependency so it can be tested
+     * directly.
+     *
+     * @param name the name as typed
+     * @return the UUID NexusCore has recorded for that name, if any
+     */
+    public Optional<UUID> resolveLocally(String name) {
+        return Optional.ofNullable(nameIndex.get(name.toLowerCase(Locale.ROOT)));
+    }
+
+    /**
+     * Resolves a name off the server thread, consulting the vanilla profile cache.
+     *
+     * <p>Uses {@code GameProfileCache.getAsync}, which runs the lookup on the background
+     * executor and de-duplicates concurrent requests for the same name. The result is filed
+     * into NexusCore's own index <em>on the server thread</em> — the identity document and its
+     * name index are not thread-safe, and this completion arrives on a background thread.</p>
+     *
+     * @param server the running server
+     * @param name the name as typed
+     * @return a future completing with the UUID, or empty when the name does not exist
+     */
+    public CompletableFuture<Optional<UUID>> resolveAsync(MinecraftServer server, String name) {
+        Optional<UUID> local = resolve(server, name);
+        if (local.isPresent()) {
+            return CompletableFuture.completedFuture(local);
         }
-        return server.getProfileCache() == null
-                ? Optional.empty()
-                : server.getProfileCache().get(name).map(profile -> profile.getId());
+        if (server.getProfileCache() == null) {
+            return CompletableFuture.completedFuture(Optional.empty());
+        }
+        return server.getProfileCache().getAsync(name).thenApply(profile -> {
+            if (profile.isEmpty()) {
+                return Optional.<UUID>empty();
+            }
+            UUID uuid = profile.get().getId();
+            String resolved = profile.get().getName();
+            // Back to the server thread before touching the document or the index.
+            server.execute(() -> observe(uuid, resolved));
+            return Optional.of(uuid);
+        });
     }
 
     /**

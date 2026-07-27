@@ -161,6 +161,31 @@ them here is that money and item custody were going to ride on this.
   loader, plus Fabric's and Forge's own 3. No test needed changing — the three that locate source
   roots already walk up to find `common/src/main/java`, which 1.0.4 fixed for a different reason.
 
+- **Identity lookup no longer stalls the server thread on a Mojang request.**
+  `IdentityService.resolve()` fell through to `GameProfileCache.get(String)`, which performs a
+  synchronous HTTP lookup whenever the name is not already cached. It runs on the server thread
+  and any ordinary player could reach it by typing `/seen <unknown-name>`, so one slow or
+  unreachable Mojang response parked the whole server for the length of the request. Eleven
+  command sites resolved names through that path.
+
+  `resolve()` is now local only — the online player list and NexusCore's own record of everyone
+  who has joined. A new `resolveAsync()` performs the profile-cache lookup through
+  `getAsync(String)`, which runs on the background executor and de-duplicates concurrent requests
+  for the same name, then files the result through `observe()` **on the server thread**, because
+  the identity document and its name index are not thread-safe and that completion arrives on a
+  background thread. A name nobody here has played under is now refused with
+  `error.unknown-player.looking-up`, which says a lookup has started and to try again — the retry
+  resolves locally.
+
+  This is a deliberate behaviour change: pre-banning a player who has never joined now takes two
+  attempts instead of one. It buys the removal of a server-wide stall that any player could
+  trigger at will.
+
+  **Proven to fail, not merely to pass:** the blocking call was reinstated and
+  `IdentityServiceTest.identityLookupNeverBlocksOnTheProfileCache` rejected it; the file was
+  restored and the suite re-run clean. Five behavioural tests cover local resolution,
+  case-insensitivity, renames, unknown names, and survival across a restart.
+
 - **Both custom gates now run on all three loaders.** `stubMarkerCheck` and `versionLadderCheck`
   were registered only in `neoforge/build.gradle`. A `./gradlew build` in `fabric/` or `forge/`
   therefore passed with stub markers present in loader-specific sources, and at a `mod_version`

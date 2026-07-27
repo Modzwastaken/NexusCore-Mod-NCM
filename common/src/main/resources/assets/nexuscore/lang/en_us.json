@@ -93,5 +93,6 @@
   "help.footer": "&8Only commands you have permission for are listed.",
   "permission.check.result": "&9&lPERMS &9» &f{target} &8→ &f{node}\n&8→ &7Result: &6{result}\n&8→ &7{explanation}\n&8→ &7Groups: &f{groups}",
   "gui.admin.opening": "&a&lNEXUS &a» &7Opening the admin panel…",
-  "error.module.disabled": "&c&lNEXUS &c» &7That feature is disabled: the server is running in &fsafe mode&7."
+  "error.module.disabled": "&c&lNEXUS &c» &7That feature is disabled: the server is running in &fsafe mode&7.",
+  "error.unknown-player.looking-up": "&e&lNEXUS &e» &7&f{name}&7 has not played here. A profile lookup has been started — run the command again in a moment."
 }

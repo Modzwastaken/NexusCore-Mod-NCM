@@ -53,9 +53,18 @@ jobs:
 
       # `build` runs test, checkstyleMain, checkstyleTest, and via `check` both the §2.4
       # stub-marker gate and the ADR-0012 version gate.
+      #
+      # NOT `clean build`. A checkout is already clean, so `clean` buys nothing here — and it is
+      # actively harmful: `org.gradle.parallel=true` is set, NeoGradle expands the NeoForge userdev
+      # jar into `build/tmp/.cache/expanded/`, and a parallel `clean` can delete that while
+      # `neoFormTransformSource` is reading it. The first CI run failed exactly there:
+      #   Failed to parse access transformer file .../expanded/zip_<hash>/ats/accesstransformer.cfg
+      #   java.nio.file.NoSuchFileException
+      # It passed locally only because NeoGradle restores those outputs from a cache outside
+      # `build/`, so the step had never actually run cold on any machine.
       - name: Build and verify
         working-directory: ${{ matrix.loader }}
-        run: ./gradlew clean build --stacktrace
+        run: ./gradlew build --stacktrace
 
       - name: Upload the jar
         if: always()

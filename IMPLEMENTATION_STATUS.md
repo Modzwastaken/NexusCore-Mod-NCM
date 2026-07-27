@@ -66,7 +66,7 @@ utilities, moderation with confirmations, and a working admin GUI.
 | Checkstyle formatting + static analysis | `tested` | 0 violations across main and test, **and proven to fail** on an injected violation. |
 | Reproducible archives | `tested` | Identical SHA-256 across two independent clean builds, **on all three loaders**. Until 1.0.4 the enforcing `AbstractArchiveTask` block was in `neoforge/build.gradle` only, and two clean Forge builds genuinely produced different jars — so this row was true for one artifact of three. Found by 1.0.4's byte-identity check. |
 | Version gate (ADR-0012) | `tested` | `versionLadderCheck`. Passes on every legal shape and **proven to fail nine ways** — see the 1.0.2 evidence table below. |
-| CI workflow | `implemented` | `.github/workflows/build.yml`. **Never executed** — no git remote configured. |
+| CI workflow | `in progress` | `.github/workflows/build.yml`, now at the repository root and building all three loaders as a matrix. **First execution: Fabric and Forge passed, NeoForge failed** on `neoFormTransformSource` — `NoSuchFileException` for `ats/accesstransformer.cfg` inside NeoGradle's expanded-zip cache under `build/tmp`. The workflow ran `clean build` in one invocation with `org.gradle.parallel=true`, so a parallel `clean` can delete that cache mid-read. `clean` is removed (a checkout is already clean). **Awaiting the next run to confirm.** |
 
 ## M1 — Configuration, messages, lifecycle · **PASSED**
 

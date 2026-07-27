@@ -19,3 +19,5 @@ The complete NexusCore vision includes:
 * Consistent functionality across NeoForge, Forge, and Fabric
 
 NexusCore’s mission is to provide permissions, economy, moderation, teleportation, utilities, staff tools, configuration, storage, audit logging, and an extension API without requiring another administration mod or Bukkit-style plugin.
+
+![NCM Logo](https://cdn.modrinth.com/data/cached_images/b19a1790319a01f181372267473d2714980ae3b7.png)

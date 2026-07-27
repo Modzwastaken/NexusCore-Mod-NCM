@@ -25,7 +25,57 @@ Five builds fill a version, then the minor moves up: `1.0.5` is followed by `1.1
 
 ## [1.1.1] — unreleased — pre-release
 
-Work toward the next build. No shipped change yet.
+Work toward the next build.
+
+### Added
+
+- **A write-ahead journal for updates that span more than one file (§11.1)** — the gap M2 left
+  open, and the one this document has listed as "the first thing M6's economy will need" since
+  v1.0.0. `JsonStore.write` makes *one* document's replacement atomic and says nothing about two:
+  writing `accounts.json` and then `ledger.json` is two atomic writes with a window between them,
+  and a crash in that window leaves books that do not balance — money debited and never credited,
+  or credited twice. Nothing in the mod could detect that state afterwards, because both files are
+  individually well-formed.
+
+  `JournalService` closes the window. A transaction stages every document beside its target,
+  writes one record naming each target and its staged file's SHA-256, forces that record to disk —
+  **the commit point** — and only then moves the staged files into place. A record that still
+  exists at startup means the process died mid-transaction, so `replayPending()` finishes it before
+  any module reads data. Replay is idempotent by construction: a staged file that is gone was
+  already moved, so the progress marker and the work it records are the same filesystem operation
+  and cannot disagree.
+
+  Two deliberate refusals. A staged file whose bytes do not match the hash its record committed to
+  is **not** applied — replay throws, naming the file, and leaves the record in place so nothing is
+  lost and the next start retries. And a document name containing the staging marker is rejected,
+  because recovery deletes leftover files by that marker and a target carrying it would be real
+  data caught in the sweep.
+
+  It has **no caller yet.** M6's economy is the intended one and 1.2.2 builds atomic transfer on
+  it; single-document writes should keep using `JsonStore.write`, which is already atomic. Built
+  ahead of its 1.1.4 slot at the owner's direction, because it is a prerequisite under every
+  candidate v1.2.0 design — recorded in
+  [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md#the-road-to-v150) rather than by renumbering
+  the ladder. See [ADR-0013](docs/architecture/ADR-0013.md) for why the design is a journal of
+  intent rather than a lock or a single combined document.
+
+- **`JournalTest` — 28 tests, built around crashing on purpose.** The exit condition for this work
+  is "journal replay verified by a simulated crash mid-transaction", so the tests inject a failure
+  point *inside* the apply loop rather than testing only the happy path.
+  `crashMidTransactionIsRepairedByReplay` updates three files, dies after the first lands, and
+  **asserts the state is genuinely torn** before recovering it — a test that skipped that assertion
+  would still pass if the crash never happened. `crashAtEveryPointIsRecoverable` covers all four
+  crash points, including the one past the last entry where the work is done but the record has not
+  been cleared. `crashDuringReplayIsRecoverable` crashes recovery itself.
+
+  **Proven to fail two ways.** Swapping the commit so the record is written *after* the files are
+  applied — removing the write-ahead property while leaving every other line intact — fails 9 of
+  the 28. Dropping the already-applied skip that makes replay idempotent fails 4.
+
+`JsonStore`'s `move`, `force` and `forceDirectory` became package-private so the journal reuses
+them instead of carrying a second copy of the atomic-move protocol — including the
+`AtomicMoveNotSupported` fallback and its warning, which is exactly the kind of detail that gets
+fixed in one copy and not the other.
 
 ### Fixed
 

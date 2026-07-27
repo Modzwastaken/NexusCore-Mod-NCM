@@ -20,7 +20,7 @@ fails the build if they do.
 cited. A file that looks finished but has never been compiled is `in progress`, however
 complete it appears.
 
-**Last updated:** 2026-07-26 · **Version:** 1.1.0 (released) ·
+**Last updated:** 2026-07-27 · **Version:** 1.1.1 (in progress) ·
 **Previous version:** 1.0.0 · **Milestones passed:** M0, M1, M2, M3, M4, M5 (partial)
 
 > **v1.0 does not mean feature complete.** The version scheme (ADR-0007) is the owner's
@@ -44,11 +44,16 @@ utilities, moderation with confirmations, and a working admin GUI.
 
 **Two things are true at once, and both matter:**
 
-1. **214 automated tests pass (208 NeoForge + 3 Fabric + 3 Forge)**, and **CI now proves a cold
+1. **242 automated tests pass (236 NeoForge + 3 Fabric + 3 Forge)**, and **CI now proves a cold
    build works** — all three loaders build from a bare checkout on a clean runner, which no local
    run had ever actually demonstrated (NeoGradle restores neoForm outputs from a cache outside
    `build/`, so the decompile step had never run cold here). The whole feature set has also been
    exercised end to end on real dedicated servers for all three loaders, with zero errors.
+
+   **28 of those 242 are the write-ahead journal's and postdate the v1.1.0 release**: they have
+   passed locally on all three loaders and have **not** yet run in CI, because the branch carrying
+   them is not merged. The journal also has no production caller and so has never run on a real
+   server — unlike everything else in this list, it is proven by tests alone.
 2. **The mod has now been human-tested on a real dedicated server, by one player.** Reported by
    the project owner at the 1.1.0 release: a real player joined a real dedicated server and
    exercised most of the feature set, including the admin panel rendering to an unmodified vanilla
@@ -101,7 +106,7 @@ utilities, moderation with confirmations, and a working admin GUI.
 | `AuditService` with §15.2 fields and hash chaining | `tested` | `AuditServiceTest` — 11 tests including `editedRecordDetected`, `deletedRecordDetected`, `forgedAppendDetected`, `chainContinuesAcrossRestart`. |
 | Write-time redaction | `tested` | `sensitiveParametersRedactedAtWriteTime` — IPs, passwords, tokens never reach the file. |
 | Schema versions on every document | `implemented` | All six documents carry `schemaVersion`. |
-| Write-ahead journal for multi-file transactions | `planned` | Single-document atomic replace is implemented and tested. No operation yet spans two files atomically, so the journal has no caller. **This is a real gap against §11.1** and is the first thing M6's economy will need. |
+| Write-ahead journal for multi-file transactions | `tested` | `JournalTest` — 28 tests, including `crashMidTransactionIsRepairedByReplay` (three files, killed after the first is applied: the assertion checks the state really is torn before recovering it) and `crashAtEveryPointIsRecoverable` (all four crash points, including the one past the last entry where the work is done but still owed). **Proven to fail two ways**: applying before writing the record instead of after — the write-ahead property itself — fails 9 tests; dropping the already-applied skip that makes replay idempotent fails 4. **This closes the M2 gap.** It has no production caller yet: M6's economy is the intended one, and 1.2.2 builds atomic transfer on it. |
 | Migration fixtures from a prior version | `blocked` | There is no prior schema version to migrate from — every document is at v1. Fixtures become meaningful at the first bump. |
 | `/nexus doctor storage` | `planned` | M8. `/nexus system status` and `/nexus audit verify` cover part of the ground. |
 
@@ -273,7 +278,8 @@ Each build is built and tested on all three loaders before the next begins. A bu
 "done" because its code exists, but because it meets the exit condition named here.
 
 **The ordering is deliberate.** M6's economy needs the write-ahead journal (§11.1) that M2 left
-`planned` — this document already calls that "the first thing M6's economy will need". Generated
+`planned` — this document already called that "the first thing M6's economy will need", and it is
+now `tested`, built ahead of its slot for the reason recorded under 1.1.4. Generated
 command documentation needs the `ModuleManager` that M4 left `planned`. Those are two separate
 dependencies on two different deliverables, so the sequence closes the M4 and M5 gaps first, then
 adds features.
@@ -308,8 +314,16 @@ sequence is open-ended, so nothing has to be crushed to fit.
 | **1.1.1** | `IdentityService.resolve()` blocking the server thread on a Mojang lookup (`getAsync` exists), the four vanish faults, and the multiple-active-punishments group — the highest-severity items left after 1.1.0's twelve fixes. | Each has a named regression test. The vanish faults need a real client, so any that cannot be reproduced headlessly are recorded as such rather than ticked. |
 | **1.1.2** | GameTests: teleport safety, home/warp persistence, punishment enforcement, permission gating. Plus the missing `AdminMenu` read-only container test. | The four GameTests named in M5 exist and pass, and a test proves items cannot enter or leave the admin menu. |
 | **1.1.3** | Sustained multi-player runtime verification — GUI rendering, vanish (four confirmed faults), chat muting, ban-at-login, teleport safety in practice. | Every item in the "never observed" column has been observed with at least two real players, or is recorded as still unobserved with the reason. |
-| **1.1.4** | Write-ahead journal for multi-file transactions (§11.1). The M2 gap, and M6's prerequisite. | Journal replay verified by a simulated crash mid-transaction. |
+| **1.1.4** | Write-ahead journal for multi-file transactions (§11.1). The M2 gap, and M6's prerequisite. | **Met, ahead of its slot.** `JournalTest` crashes a three-file transaction after the first file lands, asserts the on-disk state is genuinely torn, and proves replay repairs it; all four crash points are covered, and the write-ahead property is proven to fail. Three loaders build. **The code landed during 1.1.1, not 1.1.4** — see below. |
 | **1.1.5** | Migration fixtures and the schema-bump machinery. The week-long real-player run that is M5's actual exit criterion. | A 1.0.0 data directory loads through the migration path with exact expected results; a week of real-player use with no unrecorded defect. **M5 complete.** |
+
+> **1.1.4's deliverable was built during 1.1.1, out of order.** The owner directed it: v1.2.0's
+> shape was still being decided, and the journal is a prerequisite under every candidate design,
+> so starting it could not be wasted work whichever way that decision went. It is recorded here
+> rather than by quietly renumbering the table, because the table's value is that it says what
+> actually happened — and because "1.1.4 is done" and "the journal is done" are not the same claim.
+> **No 1.1.4 build has been cut.** The journal ships in whichever build is cut next, and what
+> 1.1.4's slot now holds is the owner's call, not this document's.
 
 ### Version 1.2 — M6 economy
 

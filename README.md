@@ -256,7 +256,7 @@ interrupt it; it happens once per loader.
 | [Implementation status](https://github.com/Modzwastaken/NexusCore-Mod-NCM/blob/main/IMPLEMENTATION_STATUS.md) | **The authoritative record of what exists** |
 | [Changelog](https://github.com/Modzwastaken/NexusCore-Mod-NCM/blob/main/CHANGELOG.md) | Shared-code changes · [NeoForge](https://github.com/Modzwastaken/NexusCore-Mod-NCM/blob/main/neoforge/CHANGELOG.md) · [Fabric](https://github.com/Modzwastaken/NexusCore-Mod-NCM/blob/main/fabric/CHANGELOG.md) · [Forge](https://github.com/Modzwastaken/NexusCore-Mod-NCM/blob/main/forge/CHANGELOG.md) |
 | [Release notes](https://github.com/Modzwastaken/NexusCore-Mod-NCM/blob/main/release-notes.md) | User-facing summary of releases |
-| [Architecture decisions](https://github.com/Modzwastaken/NexusCore-Mod-NCM/blob/main/docs/architecture/) | ADR-0001 through ADR-0012 |
+| [Architecture decisions](https://github.com/Modzwastaken/NexusCore-Mod-NCM/blob/main/docs/architecture/) | ADR-0001 through ADR-0013 |
 | [Release checklist](https://github.com/Modzwastaken/NexusCore-Mod-NCM/blob/main/RELEASE_CHECKLIST.md) | What a build or version must pass |
 | [Security policy](https://github.com/Modzwastaken/NexusCore-Mod-NCM/blob/main/SECURITY.md) | How to report a vulnerability |
 | [Release archive](https://github.com/Modzwastaken/NexusCore-Mod-NCM/blob/main/archived/README.md) | The exact bytes of each published version |

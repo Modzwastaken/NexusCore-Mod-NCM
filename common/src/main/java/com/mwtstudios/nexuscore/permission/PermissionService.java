@@ -12,6 +12,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
 
+import com.mojang.logging.LogUtils;
 import com.mwtstudios.nexuscore.config.NexusSettings;
 import com.mwtstudios.nexuscore.storage.JsonStore;
 
@@ -27,7 +28,11 @@ import com.mwtstudios.nexuscore.storage.JsonStore;
  * The last step exists purely to make the order <em>total</em>, so repeated evaluation of an
  * unchanged data set always produces the same answer.</p>
  */
+import org.slf4j.Logger;
+
 public final class PermissionService {
+
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     /** File name under the NexusCore data directory. */
     public static final String FILE = "permissions.json";
@@ -39,7 +44,7 @@ public final class PermissionService {
     public static final String BOOTSTRAP_NODE = "nexuscore.bootstrap";
 
     private final JsonStore store;
-    private final Document document;
+    private Document document;
 
     /** Bounded LRU of evaluated decisions, cleared whenever the data changes. */
     private final Map<String, PermissionDecision> cache;
@@ -150,12 +155,41 @@ public final class PermissionService {
             .thenComparing(c -> c.node().pattern())
             .thenComparing(Candidate::source);
 
+    /**
+     * Turns a stored node map into candidates, refusing anything it does not understand.
+     *
+     * <p><b>This used to fail open, in both directions.</b> The decision was
+     * {@code !"DENY".equalsIgnoreCase(value)}, so every value that was not exactly {@code DENY} —
+     * {@code null}, {@code "denied"}, {@code "DENY "} with a trailing space, {@code "no"}, a JSON
+     * {@code false} — became an <em>allow</em>. And an unparseable pattern was skipped silently.
+     * Both directions favoured access, and neither was logged.</p>
+     *
+     * <p>That mattered because {@code docs/admin/permissions.md} tells operators to edit
+     * {@code permissions.json} by hand: a typo in a value granted the node it was meant to deny,
+     * and a typo in a pattern removed a deny entirely. The command path always writes literal
+     * {@code ALLOW}/{@code DENY}, which is why no test caught it.</p>
+     *
+     * <p>Now only {@code ALLOW} and {@code DENY} are accepted. Anything else is skipped — never
+     * granted — and logged once with the group or subject it came from, matching how
+     * {@code NexusSettings.validate} reports a bad value in {@code config.json} rather than guessing
+     * at it.</p>
+     */
     private static void collect(List<Candidate> into, Map<String, String> nodes, boolean direct, String source, int weight) {
         for (Map.Entry<String, String> entry : nodes.entrySet()) {
             if (!PermissionNode.isValid(entry.getKey())) {
+                LOGGER.warn("NexusCore ignoring permission node '{}' on {}: not a valid node pattern. "
+                        + "Mid-pattern wildcards are refused; a wildcard may only be the last segment.",
+                        entry.getKey(), source);
                 continue;
             }
-            boolean allow = !"DENY".equalsIgnoreCase(entry.getValue());
+            String value = entry.getValue() == null ? "" : entry.getValue().trim();
+            boolean allow = "ALLOW".equalsIgnoreCase(value);
+            if (!allow && !"DENY".equalsIgnoreCase(value)) {
+                LOGGER.warn("NexusCore ignoring permission node '{}' on {}: value was '{}', expected "
+                        + "ALLOW or DENY. Skipped rather than treated as a grant.",
+                        entry.getKey(), source, entry.getValue());
+                continue;
+            }
             into.add(new Candidate(PermissionNode.of(entry.getKey()), allow, direct, source, weight));
         }
     }
@@ -424,6 +458,29 @@ public final class PermissionService {
     }
 
     /** Clears the decision cache. Called whenever anything that feeds a decision changes. */
+    /**
+     * Re-reads {@code permissions.json} from disk and drops the decision cache.
+     *
+     * <p>Without this, the document was read once in the constructor and never again: an operator
+     * who hand-edited the file saw no effect, and **the next permission change wrote the stale
+     * in-memory document back, silently discarding their edits.** That is data loss on the one file
+     * `docs/admin/permissions.md` tells operators to edit, and `/nexus reload` reported success
+     * while doing nothing about it.</p>
+     *
+     * <p>Values that are not {@code ALLOW} or {@code DENY} and patterns that do not parse are
+     * skipped with a logged warning rather than guessed at — see {@code collect}.</p>
+     *
+     * @return the number of groups loaded, for the reload report
+     */
+    public synchronized int reload() {
+        this.document = store.read(FILE, Document.class, PermissionService::defaults);
+        normalise();
+        cache.clear();
+        LOGGER.info("NexusCore reloaded permissions.json: {} group(s), default '{}'",
+                document.groups.size(), document.defaultGroup);
+        return document.groups.size();
+    }
+
     public synchronized void invalidate() {
         cache.clear();
     }

@@ -19,7 +19,9 @@ import com.mwtstudios.nexuscore.storage.JsonStore;
 import com.mwtstudios.nexuscore.teleport.TeleportService;
 
 import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.Entity;
 
 /**
  * The explicit service registry (§7.1).
@@ -213,6 +215,17 @@ public final class NexusServices {
      * @return the decision, with an explanation
      */
     public PermissionDecision authorise(CommandSourceStack source, String node) {
+        if (isSubstituted(source)) {
+            // The command is running "as" an entity that did not issue it — /execute as, a command
+            // sign, or a lectern book. Refused outright rather than authorised against the
+            // impersonated entity, because authorising the impersonation IS the escalation: a
+            // vanilla level-2 operator could otherwise run `/execute as <admin> run nexus …` and
+            // act with the admin's NexusCore rights, which is exactly what operatorBootstrap=false
+            // is supposed to prevent.
+            return new PermissionDecision(node, PermissionDecision.Result.DENY, null, "substituted-source",
+                    "refused because this command was run as an entity that did not issue it "
+                            + "(/execute as, a command sign, or a lectern book). Run it directly.");
+        }
         ServerPlayer actor = actorOf(source);
         if (actor != null) {
             return authorise(actor, node);
@@ -249,6 +262,71 @@ public final class NexusServices {
     }
 
     /**
+     * Whether this source's entity is <em>not</em> the thing that issued the command.
+     *
+     * <p>{@code CommandSourceStack.source} holds the real issuer and is private in vanilla, so it
+     * looked unreadable from shared code. It is not: vanilla ships a public method whose contract
+     * leaks the field <em>by identity</em>.</p>
+     *
+     * <pre>
+     * public CommandSourceStack withSource(CommandSource source) {
+     *     return this.source == source ? this : new CommandSourceStack(...);
+     * }
+     * </pre>
+     *
+     * <p>So {@code stack.withSource(x) == stack} is true exactly when {@code stack.source == x}.
+     * {@link Entity} implements {@code CommandSource} and {@code Entity.createCommandSourceStack()}
+     * passes {@code this} as <b>both</b> the source and the entity, so for a player typing a command
+     * the two are the same object and the test returns the stack unchanged. {@code withEntity},
+     * which is what {@code /execute as} uses, replaces the entity and <b>preserves the source</b> —
+     * so the identities diverge and the substitution is detectable.</p>
+     *
+     * <p>No access widener, access transformer, mixin or reflection, and no allocation on the
+     * ordinary path: {@code withSource} returns {@code this} when the identities match.</p>
+     *
+     * <p><b>This closes two paths besides {@code /execute}</b>, both confirmed in vanilla source.
+     * {@code SignBlockEntity} and {@code LecternBlockEntity} build a stack with
+     * {@code CommandSource.NULL} as the source and the <em>clicking player</em> as the entity, at
+     * permission level 2. So a {@code run_command} click event on a sign, or in a written book on a
+     * lectern, previously authorised and audited as whoever clicked it — an operator could craft one
+     * and have a privileged player unwittingly run an administrative command in their own name.</p>
+     *
+     * @param source the command source
+     * @return true when the entity did not issue the command
+     */
+    private static boolean isSubstituted(CommandSourceStack source) {
+        Entity entity = source.getEntity();
+        return entity != null && source.withSource(entity) != source;
+    }
+
+    /**
+     * The player who actually typed the command, seeing through {@code /execute as}.
+     *
+     * <p>Used for the audit actor and the rate-limit subject, so a refused impersonation is
+     * attributed to whoever attempted it rather than to the player they impersonated. The scan of
+     * the online player list runs <em>only</em> when a substitution has been detected, which is
+     * rare; the ordinary path is the O(1) identity test in {@link #isSubstituted}.</p>
+     *
+     * @param source the command source
+     * @return the issuing player, or null when no online player is the issuer
+     */
+    private static ServerPlayer issuerOf(CommandSourceStack source) {
+        ServerPlayer entityPlayer = actorOf(source);
+        if (entityPlayer != null && !isSubstituted(source)) {
+            return entityPlayer;
+        }
+        if (source.getServer() == null) {
+            return null;
+        }
+        for (ServerPlayer candidate : source.getServer().getPlayerList().getPlayers()) {
+            if (source.withSource(candidate) == source) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    /**
      * Whether a source with no player entity is the console rather than a command block.
      *
      * <p>The obvious implementation reads {@code CommandSourceStack.source}, which holds the
@@ -265,6 +343,15 @@ public final class NexusServices {
      * @return true when this is the server console or RCON
      */
     private static boolean isConsole(CommandSourceStack source) {
+        // Exact rather than heuristic: MinecraftServer implements CommandSource and is its own
+        // source, so the withSource identity trick from isSubstituted identifies the console
+        // precisely. hasPermission stays as the fallback for RCON, whose RconConsoleSource instance
+        // is not reachable from shared code — it authenticates with the server's own password and
+        // runs at level 4, so treating it as the console is correct.
+        MinecraftServer server = source.getServer();
+        if (server != null && source.withSource(server) == source) {
+            return true;
+        }
         return source.hasPermission(OPERATOR_LEVEL);
     }
 
@@ -322,7 +409,7 @@ public final class NexusServices {
         // Attribution follows the same rule as authorisation: the player who issued the command,
         // not whatever /execute as last impersonated. Reading getEntity() here recorded an
         // /execute'd action as CONSOLE, which made it unattributable.
-        ServerPlayer actor = actorOf(source);
+        ServerPlayer actor = issuerOf(source);
         UUID actorUuid = actor == null ? null : actor.getUUID();
         String actorName = actor != null ? actor.getGameProfile().getName()
                 : (isConsole(source) ? "CONSOLE" : source.getTextName());
@@ -337,7 +424,7 @@ public final class NexusServices {
         // Same rule as authorisation and attribution, for the same reason: keying the rate limit
         // on getEntity() let a player shed their own bucket by wrapping the command in
         // /execute as, since every impersonated entity resolved to the shared CONSOLE_SUBJECT.
-        ServerPlayer actor = actorOf(source);
+        ServerPlayer actor = issuerOf(source);
         return actor != null ? actor.getUUID() : CONSOLE_SUBJECT;
     }
 
@@ -345,7 +432,11 @@ public final class NexusServices {
     public void applySettings() {
         NexusSettings settings = settings();
         permissions.applySettings(settings);
-        permissions.invalidate();
+        // Re-reads permissions.json, not just the cache. Before 1.1.0 this only called
+        // invalidate(), so a hand edit to that file was ignored and then overwritten by the next
+        // permission change — silent data loss on the file the documentation tells operators to
+        // edit, while /nexus reload reported success.
+        permissions.reload();
         // Guarded, and via has() rather than the accessor: this read the raw field, so in safe mode
         // `/nexus reload` threw a plain NullPointerException rather than the ModuleException the
         // pipeline knows how to report. A core command crashed because an optional module was off.

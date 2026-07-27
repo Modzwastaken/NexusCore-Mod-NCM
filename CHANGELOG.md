@@ -163,9 +163,72 @@ The project is now shaped for someone arriving at it cold rather than for the pe
 - **`git gc`** — the repository's history was 167 MB of unpacked objects for 125 tracked files and
   a largest blob of 0.2 MB. Now **1.3 MB**.
 
+### Security — closed after the second sweep
+
+- **`/execute as <player>` no longer borrows that player's permissions**, and this turned out to be
+  portably fixable after all. I had recorded it as impossible without a per-loader access widener,
+  because the real issuer lives in `CommandSourceStack.source`, which is private in vanilla. That
+  was true of the *field* and wrong about the *information*: vanilla ships a public method whose
+  contract leaks it by identity.
+
+  ```java
+  public CommandSourceStack withSource(CommandSource source) {
+      return this.source == source ? this : new CommandSourceStack(...);
+  }
+  ```
+
+  So `stack.withSource(x) == stack` is true exactly when `stack.source == x`. `Entity` implements
+  `CommandSource` and `Entity.createCommandSourceStack()` passes `this` as **both** the source and
+  the entity — while `withEntity`, which `/execute as` uses, replaces the entity and preserves the
+  source. The identities therefore diverge precisely when the source has been substituted. No access
+  widener, no access transformer, no mixin, no reflection, and no allocation on the ordinary path.
+
+  A substituted source is now **refused**, and the audit actor and rate-limit subject resolve to the
+  real issuer rather than the impersonated player.
+
+- **The same fix closes two paths nobody had looked at.** `SignBlockEntity` and `LecternBlockEntity`
+  build a command source with `CommandSource.NULL` as the issuer and the **clicking player** as the
+  entity, at permission level 2 (verified in vanilla source). So a `run_command` click event on a
+  sign, or in a written book on a lectern, authorised and audited as whoever clicked it — an
+  operator could craft one and have a privileged player unwittingly run an administrative command in
+  their own name, with the audit naming that player. A confused-deputy hole, closed by the same
+  check.
+
+- **Console detection is now exact, not a heuristic.** It tested `hasPermission(4)`;
+  `MinecraftServer` implements `CommandSource` and is its own source, so the same identity trick
+  identifies the console precisely. `hasPermission` remains only as the RCON fallback.
+
+- **Hand-edited permission values failed OPEN.** The loader decided
+  `allow = !"DENY".equalsIgnoreCase(value)`, so every value that was not exactly `DENY` became a
+  **grant**: `null`, `"denied"`, `"DENY "` with a trailing space, `"no"`, a JSON `false`. An
+  unparseable pattern was skipped silently, removing a deny. **Both directions favoured access**, on
+  the file `docs/admin/permissions.md` tells operators to edit. Only `ALLOW` and `DENY` are accepted
+  now; anything else is skipped and logged. `PermissionValueTest` covers eleven typo values and is
+  **proven to fail** on the old logic — `value 'denied' must not grant nexuscore.command.moderation.ban`.
+
+- **`permissions.json` is re-read on `/nexus reload`.** It was read once at construction, so a hand
+  edit was ignored and then **overwritten by the next permission change** — silent data loss, while
+  the reload reported success. Verified on a real server: an injected group appears as
+  `reloaded permissions.json: 4 group(s)` and survives shutdown.
+
 ### Verified
 
 Everything below is stated for **all three loaders** unless said otherwise.
+
+- **214 tests, 0 failures.** All three loaders build clean and reproducibly.
+- **Eight runtime runs** across the version: normal and safe mode on each of NeoForge 21.1.235,
+  Fabric and MinecraftForge 52.1.16, plus targeted runs for the substituted-source refusal and the
+  permissions reload. Correct module counts (11 normal, 8 with 3 disabled), `/nexus reload` working
+  in safe mode, `/nexus system status` degrading, help correctly filtered, audit chain intact after
+  every run, clean shutdown, and **zero NexusCore errors anywhere**.
+- `/execute as` against a summoned armor stand is refused, and the vanilla takeover reports all
+  eight names truthfully in normal mode and only the three module-free ones in safe mode.
+- Every markdown link in the repository resolves.
+
+**Not verified, and not claimed:** no human player has joined a dedicated server, so the admin panel
+rendering, vanish, chat muting and ban-at-login remain `implemented` rather than `tested`. A player
+impersonating *another player* via `/execute as` is closed by the same code path that the
+armor-stand case exercises, but has not been reproduced with two real players.
 
 ## [1.0.5] — 2026-07-26 — pre-release — safe mode, and a generated command reference
 

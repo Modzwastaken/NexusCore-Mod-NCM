@@ -4,8 +4,18 @@ NexusCore has its own permission engine. It does not require LuckPerms or any ot
 permission mod, and it does not use vanilla's operator levels except for the bootstrap
 described below.
 
-Everything is stored in `<server>/nexuscore/permissions.json`. Edits made through commands
-are written immediately; edits made by hand take effect on the next `/nexus reload`.
+Everything is stored in `<server>/nexuscore/permissions.json`. Edits made through commands are
+written immediately; edits made by hand take effect on the next `/nexus reload`.
+
+> **Before 1.1.0 that second half was untrue.** The file was read once at startup and `/nexus
+> reload` only cleared the decision cache, so a hand edit had no effect and was then **overwritten**
+> by the next permission change. If you are on an earlier build, use the commands, not the file.
+
+**A node value must be exactly `ALLOW` or `DENY`** (case and surrounding spaces are ignored).
+Anything else — `denied`, `no`, `false`, an empty string, a JSON `null` — is **skipped and logged**,
+never treated as a grant. Before 1.1.0 every unrecognised value was read as an *allow*, so a typo
+granted the node it was meant to deny. A node pattern that does not parse is likewise skipped and
+logged rather than silently dropped.
 
 ---
 

@@ -43,7 +43,7 @@ utilities, moderation with confirmations, and a working admin GUI.
 
 **Two things are true at once, and both matter:**
 
-1. **209 automated tests pass (203 NeoForge + 3 Fabric + 3 Forge)**, and the whole feature set has been exercised end to end on a
+1. **214 automated tests pass (208 NeoForge + 3 Fabric + 3 Forge)**, and the whole feature set has been exercised end to end on a
    real NeoForge 21.1.235 dedicated server with zero errors, including a restart.
 2. **No human player has ever joined a NexusCore *server*.** Every dedicated-server check was
    driven through the console. At 1.0.1 a real `ServerPlayer` did enter the world for the first
@@ -166,19 +166,20 @@ container menu, so the panel is usable in the server-only release rather than wa
 
 ## Confirmed defects awaiting a fix
 
-**Updated at 1.1.0** by a whole-mod adversarial sweep across eight lenses: 41 candidates raised,
-17 refuted, 24 confirmed. **Seven were fixed in 1.1.0** and are recorded in `CHANGELOG.md` rather
-than here — the `/teleport` deletion, safe mode stripping vanilla moderation commands, the
-`/nexus reload` NPE, `/nexus help` claiming vanilla's names, the takeover gated on the wrong
-setting, four wrong descriptors, and the GUI's missing crash barrier.
+**Updated at 1.1.0** by two adversarial sweeps — eight lenses then six. Together they raised 120
+candidates, refuted 34, and confirmed the rest; **twelve were fixed in 1.1.0** and are recorded in
+`CHANGELOG.md` rather than here: the `/teleport` deletion, safe mode stripping vanilla moderation
+commands, the `/nexus reload` NPE, `/nexus help` claiming vanilla's names, the takeover gated on the
+wrong setting, four wrong descriptors, the GUI's missing crash barrier, the `/execute as` permission
+borrow (**with the sign and lectern confused-deputy paths it also closed**), fail-open permission
+values, and `permissions.json` never reloading.
 
-The rest are below. The first three are the priorities for `1.1.1`.
+Two of the three items previously listed here as the `1.1.1` priorities are now fixed. The
+remaining one heads the list below.
 
 | Defect | Severity | Detail |
 |---|---|---|
-| **`/execute as <player>` borrows that player's NexusCore permissions** | **high** | The 1.0.1 fix stopped a non-player entity being treated as root, but authorisation still reads `getEntity()`. So a vanilla level-2 operator can run `/execute as <admin> run nexus permission set …` and act with the admin's rights, **and the audit records the admin as the actor**. `operatorBootstrap=false` therefore still does not constrain an operator. **Not portably fixable today:** the real issuer lives in `CommandSourceStack.source`, which is private in vanilla and public only under NeoForge's access transformer, so shared code cannot read it. The route out is a Fabric access widener plus the existing NeoForge/Forge access, giving all three loaders the field — scheduled for `1.1.1`. |
-| **`permissions.json` is read once and never reloaded** | **high** | `PermissionService` loads the document in its constructor. `/nexus reload` only clears the decision cache, so an operator who hand-edits `permissions.json` sees no effect, and **the next permission mutation writes the in-memory document back, silently discarding their edits.** Data loss of exactly the file the documentation tells operators to hand-edit. |
-| **`IdentityService.resolve()` blocks the server thread on a Mojang HTTP lookup** | **high** | It falls back to `GameProfileCache.get(String)`, which performs a network call. Reachable by any ordinary player via `/seen <name>` with an unknown name, so a slow or unreachable Mojang API stalls the whole server for as long as the request takes. |
+| **`IdentityService.resolve()` blocks the server thread on a Mojang HTTP lookup** | **high** | It falls back to `GameProfileCache.get(String)`, which performs a network call. Reachable by any ordinary player via `/seen <name>` with an unknown name, so a slow or unreachable Mojang API stalls the whole server for as long as the request takes. A non-blocking `getAsync` exists and its executor lives for the whole server lifetime — the first item for `1.1.1`. |
 | Vanish desynchronises the client's player list | medium | Removing the staff member's `PlayerInfo` makes their chat render as a red chat-validation error for everyone else; un-vanishing does not restore the entity for clients that received `AddEntity` while vanished; vanish is not re-applied to players who join later; and the vanished set survives death while the invisibility flag does not. Four related faults in one mechanism. Needs a real client to confirm each. |
 | Multiple active punishments of the same kind | medium | A second ban or mute does not deactivate the first. `/unban` lifts one and reports success while the player stays banned; `activeBans()` double-counts; `activeRecord()` returns the last-issued match rather than the strictest. `ModerationService:108,150,205`. |
 | `audit.log` never rotates | medium | Fully read into heap and SHA-256'd on the **server thread** at startup, at shutdown, and on every `verify` and `tail`. Unbounded growth plus a synchronous full read. |
@@ -281,7 +282,7 @@ sequence is open-ended, so nothing has to be crushed to fit.
 | Build | Contents | Exit condition |
 |---|---|---|
 | **1.1.0** · *version* | The M4-complete milestone, rolled up from the 1.0 builds, plus seven fixes from the stability sweep. | **Met.** 209 tests; three loaders build reproducibly; **six runtime runs** — normal and safe mode on each loader — with zero errors. A whole-mod sweep raised 41 candidates, refuted 17, confirmed 24; seven fixed here, the rest recorded above. |
-| **1.1.1** | The three high-severity defects the 1.1.0 sweep confirmed: the `/execute as` permission borrow (needs a Fabric access widener so all three loaders can read the real command source), `permissions.json` never reloading and silently discarding hand edits, and `IdentityService.resolve()` blocking the server thread on a Mojang lookup. | Each has a named regression test; the access widener is verified on all three loaders, not just the two with an access transformer. |
+| **1.1.1** | `IdentityService.resolve()` blocking the server thread on a Mojang lookup (`getAsync` exists), the four vanish faults, and the multiple-active-punishments group — the highest-severity items left after 1.1.0's twelve fixes. | Each has a named regression test. The vanish faults need a real client, so any that cannot be reproduced headlessly are recorded as such rather than ticked. |
 | **1.1.2** | GameTests: teleport safety, home/warp persistence, punishment enforcement, permission gating. Plus the missing `AdminMenu` read-only container test. | The four GameTests named in M5 exist and pass, and a test proves items cannot enter or leave the admin menu. |
 | **1.1.3** | Sustained multi-player runtime verification — GUI rendering, vanish (four confirmed faults), chat muting, ban-at-login, teleport safety in practice. | Every item in the "never observed" column has been observed with at least two real players, or is recorded as still unobserved with the reason. |
 | **1.1.4** | Write-ahead journal for multi-file transactions (§11.1). The M2 gap, and M6's prerequisite. | Journal replay verified by a simulated crash mid-transaction. |

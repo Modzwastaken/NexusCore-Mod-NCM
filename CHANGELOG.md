@@ -23,6 +23,19 @@ Per [ADR-0012](docs/architecture/ADR-0012.md): **`x.y.0` is a version** — `1.0
 Five builds fill a version, then the minor moves up: `1.0.5` is followed by `1.1.0`, never by
 `1.0.6`. Every heading below says which kind it is.
 
+## [1.1.1] — unreleased — pre-release
+
+Work toward the next build. Nothing here yet.
+
+`mod_version` moved to `1.1.1` the moment `v1.1.0` was archived, because
+`versionLadderCheck` refuses to build at a version already sitting in `archived/` — archived bytes
+are immutable, so a tree that could still rebuild them would be a way to make the archive lie. The
+bump is the intended response, not a workaround.
+
+Planned, per [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md#the-road-to-v150): the blocking
+Mojang lookup in `IdentityService.resolve()`, the four vanish faults, and the
+multiple-active-punishments group.
+
 ## [1.1.0] — 2026-07-26 — the M4-complete version
 
 **A version, not a build** ([ADR-0012](docs/architecture/ADR-0012.md)): the 1.0 line is full at

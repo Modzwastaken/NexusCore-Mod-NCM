@@ -45,8 +45,14 @@ archived/
 
 | Version | Type | Date | Minecraft | Loaders | Notes |
 |---|---|---|---|---|---|
-| [v1.0.0](v1.0.0/) | Release | 2026-07-26 | 1.21.1 | NeoForge, Fabric, Forge | First public release |
+| [v1.1.0](v1.1.0/) | Version | 2026-07-26 | 1.21.1 | NeoForge, Fabric, Forge | M4 complete, human-tested. **Archived at tag, before publication** — see below |
+| [v1.0.0](v1.0.0/) | Release | 2026-07-26 | 1.21.1 | NeoForge, Fabric, Forge | First public release. **Superseded** — two confirmed critical defects, fixed in `1.0.1` |
 
-`1.0.1` is the security hotfix for v1.0.0 and **will be archived once it is published** — it is
-built and verified, but nothing is archived before publication is confirmed. `1.0.2` carries no
-runtime change and is not archived.
+**v1.1.0 was archived at tag time, ahead of publication**, at the owner's direction. That is a
+deliberate exception to the rule above, recorded rather than left to be inferred: until a GitHub
+Release exists, `archived/v1.1.0/` holds bytes nobody has downloaded. They are the bytes the
+`v1.1.0` tag produces — verified reproducible across two clean builds on each loader — so when the
+Release is cut it must be cut from **these exact files**, not from a rebuild.
+
+`1.0.1` is the security hotfix for v1.0.0 and will be archived once it is published. `1.0.2`–`1.0.5`
+produced no separately published artifact and are not archived.

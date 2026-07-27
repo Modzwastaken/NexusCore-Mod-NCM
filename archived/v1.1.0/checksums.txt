@@ -1,0 +1,3 @@
+a64e845769e8e9bdd8971f0346ed7fd8c070ba426a65d41a7c2f7ba51b9bf212  NexusCore-fabric-1.1.0-1.21.1.jar
+1faaa4abc2ec03adc692659798047efabf0c3d43292aab65c1f5f45c4093a8cf  NexusCore-forge-1.1.0-1.21.1.jar
+0b8a5fccc5b0f57b62a342a17ae9d1a7ceeb4dfa7e74e00d9b887bb434cd94dc  NexusCore-neoforge-1.1.0-1.21.1.jar

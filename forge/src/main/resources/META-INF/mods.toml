@@ -16,12 +16,14 @@
 modLoader = "javafml"
 loaderVersion = "${forge_loader_range}"
 license = "${mod_license}"
+issueTrackerURL = "https://github.com/Modzwastaken/NexusCore-Mod-NCM/issues"
 
 [[mods]]
 modId = "${mod_id}"
 version = "${mod_version}"
 displayName = "${mod_display_name}"
 authors = "${mod_authors}"
+displayURL = "https://mwtstudios.net"
 logoFile = "nexuscore.png"
 description = '''
 NexusCore is a native server administration framework for Minecraft Java Edition:

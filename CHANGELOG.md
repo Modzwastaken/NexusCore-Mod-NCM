@@ -25,7 +25,28 @@ Five builds fill a version, then the minor moves up: `1.0.5` is followed by `1.1
 
 ## [1.1.1] — unreleased — pre-release
 
-Work toward the next build. Nothing here yet.
+Work toward the next build. No shipped change yet.
+
+### Verified
+
+- **The v1.1.0 release bytes are now runtime-verified on all three loaders, not just NeoForge.**
+  An audit on 2026-07-27 found that the jars sitting in `fabricserver/mods/` and
+  `forgeserver/mods/` were **2h41m older than the archived release** and, on disassembly, did not
+  declare `NexusServices.isSubstituted` at all — so the substituted-source refusal had only ever
+  been demonstrated on NeoForge, whose installed jar did match the archive byte-for-byte. This was
+  an evidence gap rather than a defect: the fix was present in all three *published* jars
+  throughout.
+
+  Closed by installing the archived bytes and re-running each loader. `verify-release-jar.sh`
+  automates it: it confirms the installed jar's SHA-256 equals `archived/v<version>/`, boots the
+  server, and drives `nexus version` → `summon armor_stand` →
+  `execute as @e[type=armor_stand,limit=1] run nexus version` → `nexus audit verify` through the
+  console. All three loaders now pass all five checks, including the refusal. The superseded jars
+  were moved to `<loader>server/_superseded-jars/` rather than deleted.
+
+  Note for future runs: Fabric's console keeps the raw `§` colour codes, so a matcher for
+  `NEXUS » You do not have permission` fails there while the refusal has in fact occurred. Match
+  the uncoloured span only.
 
 `mod_version` moved to `1.1.1` the moment `v1.1.0` was archived, because
 `versionLadderCheck` refuses to build at a version already sitting in `archived/` — archived bytes

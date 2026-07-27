@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Modzwastaken/NexusCore-Mod-NCM-">Source</a> ·
+  <a href="https://github.com/Modzwastaken/NexusCore-Mod-NCM">Source</a> ·
   <a href="https://github.com/Modzwastaken/NexusCore-Mod-NCM/releases">Downloads</a> ·
   <a href="https://github.com/Modzwastaken/NexusCore-Mod-NCM/issues/new/choose">Report a bug</a> ·
   <a href="https://github.com/Modzwastaken/NexusCore-Mod-NCM/blob/main/SECURITY.md">Security</a> ·
@@ -113,8 +113,9 @@ manifest on another player's client. Those rows stay `implemented`, not `tested`
 **Known unfixed defects are published, not hidden.**
 [IMPLEMENTATION_STATUS.md](https://github.com/Modzwastaken/NexusCore-Mod-NCM/blob/main/IMPLEMENTATION_STATUS.md) lists every confirmed defect awaiting a fix,
 including security-relevant ones, so you can decide for yourself whether a gap matters to you. The
-most significant at 1.1.0: a vanilla level-2 operator can use `/execute as <player>` to act with
-that player's NexusCore permissions.
+most significant at 1.1.0: `IdentityService.resolve()` blocks the server thread on a Mojang HTTP
+lookup, so `/seen <unknown name>` can stall the whole server for as long as that request takes.
+It is the first item scheduled for `1.1.1`.
 
 **Not built yet:** economy, chat channels, jail and reports, scheduler, backups, the benchmark
 harness, and the custom-screen client GUI. Everything but the client GUI is scheduled on
@@ -185,8 +186,8 @@ pinned to Gradle 8.x because ForgeGradle refuses to apply on Gradle 9, and that 
 three are separate builds ([ADR-0008](https://github.com/Modzwastaken/NexusCore-Mod-NCM/blob/main/docs/architecture/ADR-0008.md)).
 
 ```bash
-git clone https://github.com/Modzwastaken/NexusCore-Mod-NCM-.git
-cd NexusCore-Mod-NCM-
+git clone https://github.com/Modzwastaken/NexusCore-Mod-NCM.git
+cd NexusCore-Mod-NCM
 
 cd neoforge && ./gradlew clean build
 cd ../fabric && ./gradlew clean build

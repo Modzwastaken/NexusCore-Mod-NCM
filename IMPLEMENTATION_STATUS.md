@@ -226,14 +226,16 @@ total but only if the split is known — and **the per-sweep breakdown of the ot
 kept**. It cannot be recovered from the repository. Neither figure is published on any external
 surface, and neither should be until somebody who ran the sweeps reconstructs it.
 
-Two of the three items previously listed here as the `1.1.1` priorities are now fixed. The
-remaining one heads the list below.
+**Two of the three `1.1.1` priorities are fixed and have been removed from this table**, per the
+convention that a row leaves only when its fix carries a named test: `IdentityService.resolve()`
+blocking the server thread (`IdentityServiceTest`, seven tests, two of them regression guards) and
+the multiple-active-punishments group (`ModerationServiceTest`, six new tests). Both are recorded
+in `CHANGELOG.md` under `[1.1.1]`, which is the record. The third — the four vanish faults — heads
+the list below and is not yet fixed.
 
 | Defect | Severity | Detail |
 |---|---|---|
-| **`IdentityService.resolve()` blocks the server thread on a Mojang HTTP lookup** | **high** | It falls back to `GameProfileCache.get(String)`, which performs a network call. Reachable by any ordinary player via `/seen <name>` with an unknown name, so a slow or unreachable Mojang API stalls the whole server for as long as the request takes. A non-blocking `getAsync` exists and its executor lives for the whole server lifetime — the first item for `1.1.1`. |
 | Vanish desynchronises the client's player list | medium | Removing the staff member's `PlayerInfo` makes their chat render as a red chat-validation error for everyone else; un-vanishing does not restore the entity for clients that received `AddEntity` while vanished; vanish is not re-applied to players who join later; and the vanished set survives death while the invisibility flag does not. Four related faults in one mechanism. Needs a real client to confirm each. |
-| Multiple active punishments of the same kind | medium | A second ban or mute does not deactivate the first. `/unban` lifts one and reports success while the player stays banned; `activeBans()` double-counts; `activeRecord()` returns the last-issued match rather than the strictest. `ModerationService:108,150,205`. |
 | `audit.log` never rotates | medium | Fully read into heap and SHA-256'd on the **server thread** at startup, at shutdown, and on every `verify` and `tail`. Unbounded growth plus a synchronous full read. |
 | `config.json` `defaultGroup` is ignored at startup | low | The permissions module reads only `permissionCacheSize` from settings, so a `defaultGroup` set in `config.json` takes effect only after some later mutation rewrites the permissions document. |
 | `/ban` in safe mode stages a confirmation that can never complete | low | The prompt is issued before the module check, and confirming spends the token with no audit record. |

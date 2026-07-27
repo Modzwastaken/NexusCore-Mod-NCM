@@ -26,6 +26,21 @@ confirmed critical defects, both fixed in `1.0.1` and included here.
   permanent ban and never complete it. *Existing servers need one operator action:*
   `/nexus permission group add default nexuscore.command.core.confirm`
 
+### Security fixes new in this version
+
+- **`/execute as <player>` no longer borrows that player's NexusCore permissions.** A vanilla
+  level-2 operator could previously act with another player's permissions, with the audit naming
+  the impersonated player as the actor. A substituted command source is now refused, and both the
+  audit actor and the rate-limit subject resolve to the real issuer.
+- **The same fix closed two confused-deputy paths nobody had looked at.** A `run_command` click
+  event on a sign, or in a written book on a lectern, built a command source at permission level 2
+  with the *clicking* player as the entity — so a crafted sign could have a privileged player
+  unwittingly run an administrative command in their own name.
+- **Two permission values failed open.** They now fail closed.
+- **`permissions.json` never reloaded.** Hand edits were ignored and silently overwritten by the
+  next permission change, while `/nexus reload` reported success. The file is now genuinely
+  re-read, and the reload reports the group count it loaded.
+
 ### New in this version
 
 - **NexusCore now owns the vanilla commands it replaces** — `/ban` `/kick` `/banlist` `/pardon`
@@ -41,12 +56,10 @@ confirmed critical defects, both fixed in `1.0.1` and included here.
 
 ### Known limitations, stated plainly
 
-- **A level-2 operator can use `/execute as <player>` to act with that player's NexusCore
-  permissions**, and the audit records the impersonated player as the actor.
-  `operatorBootstrap=false` does not prevent it. Scheduled as the first item of `1.1.1`.
-- **Hand edits to `permissions.json` are ignored** and will be overwritten by the next permission
-  change. Use the commands, not the file, until `1.1.1`.
-- **`/seen <unknown name>` can stall the server** on a Mojang lookup.
+- **`/seen <unknown name>` can stall the server** on a blocking Mojang lookup.
+  `IdentityService.resolve()` falls back to a network call on the server thread, so a slow or
+  unreachable Mojang API stalls the whole server for as long as the request takes. Reachable by any
+  ordinary player. Scheduled as the first item of `1.1.1`.
 - **Only one player has ever been online at a time.** v1.1.0 has been human-tested on a real
   dedicated server — the admin panel renders to an unmodified vanilla client, teleporting, player
   tools and moderation all work — but everything that needs a *second* player is unverified:
@@ -62,6 +75,14 @@ confirmed critical defects, both fixed in `1.0.1` and included here.
 checkout** — the first time a genuine cold build of this project has been demonstrated anywhere.
 Packaged jars were run on real NeoForge 21.1.235, Fabric and MinecraftForge 52.1.16 dedicated
 servers in **both** normal and safe mode, with zero errors.
+
+**Re-verified 2026-07-27 against the archived release bytes on all three loaders.** The jar
+installed for each run was confirmed by SHA-256 to be byte-identical to `archived/v1.1.0/`, so this
+evidence is about the bytes actually published, not a similar build. On each of
+NeoForge, Fabric and Forge: `/nexus version` reported `1.1.0`; `/execute as` against a summoned
+armor stand was **refused**, proving the substituted-source fix is live in the shipped artifact;
+the audit chain verified intact; and no NexusCore error was logged. Reproduce with
+`./verify-release-jar.sh <loader> 1.1.0`.
 
 **Human-tested**: a real player joined a real dedicated server and exercised most of the feature
 set, including the admin panel on an unmodified vanilla client.
@@ -86,9 +107,9 @@ Three jars, one per loader. They are **not** interchangeable.
 
 | Loader | Jar | Requires |
 |---|---|---|
-| NeoForge | `NexusCore-neoforge-1.0.0-1.21.1.jar` | NeoForge 21.1.235+ |
-| Fabric | `NexusCore-fabric-1.0.0-1.21.1.jar` | Fabric Loader 0.19.3+ **and Fabric API** |
-| Forge | `NexusCore-forge-1.0.0-1.21.1.jar` | MinecraftForge 52.1.16+ |
+| NeoForge | `NexusCore-neoforge-1.1.0-1.21.1.jar` | NeoForge 21.1.235+ |
+| Fabric | `NexusCore-fabric-1.1.0-1.21.1.jar` | Fabric Loader 0.19.3+ **and Fabric API** |
+| Forge | `NexusCore-forge-1.1.0-1.21.1.jar` | MinecraftForge 52.1.16+ |
 
 1. Install your loader for Minecraft 1.21.1.
 2. Drop the matching jar into `mods/`.
@@ -315,8 +336,8 @@ installable and testable ([ADR-0012](docs/architecture/ADR-0012.md)): `1.0.1` �
 **`x.y.0` is a version; `x.y.1`–`x.y.5` are its builds** — each a hotfix or a pre-release. This
 page covers versions only.
 
-**If you are running v1.0.0, take the `1.0.1` hotfix**: it closes a permission bypass. Otherwise
-v1.0.0 remains the production version until v1.5.0 arrives.
+**If you are running v1.0.0, upgrade to v1.1.0.** It closes the permission bypass and three other
+security defects, and it is the production version.
 
 What each build is planned to contain is in
 [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md#the-road-to-v150).

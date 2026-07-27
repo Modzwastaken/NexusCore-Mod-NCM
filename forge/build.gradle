@@ -168,3 +168,8 @@ tasks.named('processResources', ProcessResources) {
 tasks.named('jar', Jar) {
     archiveClassifier = shared.minecraft_version.toString()
 }
+
+// §2.4 stub-marker gate and the ADR-0012 version gate. Shared by all three loader builds so a
+// green build means the same thing in each — see gradle/gates.gradle for why that was not true
+// before. Applied last so the gate sees sourceSets.main.java after the shared sources are added.
+apply from: file('../gradle/gates.gradle')

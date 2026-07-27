@@ -1,0 +1,294 @@
+// Shared verification gates — applied by all three loader builds.
+//
+// These two gates used to live in neoforge/build.gradle alone. `./gradlew build` was therefore
+// green in fabric/ and forge/ with stub markers present in loader-specific sources and at a
+// mod_version that was malformed, past .5, already archived, or had no changelog entry — while
+// "CI is green on three loaders" read as three independent confirmations. It was one.
+//
+// Each loader build is an independent Gradle build with its own wrapper (ADR-0008), and there is
+// no root build to hang a buildSrc off, so the gates are shared as a script plugin:
+//
+//     apply from: file('../gradle/gates.gradle')
+//
+// Paths below are relative to the applying project, which is always a loader directory, so
+// '../CHANGELOG.md' and '../archived' resolve to the repository root from all three.
+
+// mod_version is read from neoforge/gradle.properties rather than from the applying project's
+// properties, because fabric/ and forge/ have no gradle.properties of their own — they load that
+// same file. Reading it here keeps the gate looking at the one source of truth, and at the RAW
+// value: a trailing space produces NexusCore-neoforge-1.0.1 -1.21.1.jar and a fabric.mod.json
+// that Fabric's semantic-version parser rejects, so the gate must see what the build sees.
+def gateProperties = new Properties()
+file('../neoforge/gradle.properties').withInputStream { gateProperties.load(it) }
+
+// §2.4 — the stub-marker gate. Deliberate, and not to be disabled.
+tasks.register('stubMarkerCheck', StubMarkerCheck) {
+    group = 'verification'
+    description = 'Fails the build if stub markers appear in production sources (§2.4).'
+    sources.from(sourceSets.main.java)
+    report = layout.buildDirectory.file('reports/stub-markers/report.txt')
+}
+
+// ADR-0012 — the version gate. `mod_version` is the single source of truth for all
+// three loaders, and the failure this catches is the one that will otherwise happen every
+// time: the number is bumped and the changelog entry is not written. It also refuses to let a
+// development build ship without saying that it is one, which is the only real mitigation for
+// `1.0.1` looking like a patch release to anything reading it as semver.
+tasks.register('versionLadderCheck', VersionLadderCheck) {
+    group = 'verification'
+    description = 'Fails the build if mod_version is malformed, out of range, or undocumented (ADR-0012).'
+    modVersion = gateProperties.mod_version.toString()
+    changelog = file('../CHANGELOG.md')
+    // Directory names under archived/ are v<version>; the leading 'v' is stripped so the task
+    // compares like with like. Resolved at configuration time, which keeps the task action free
+    // of `project` access and so configuration-cache safe.
+    archivedVersions = (file('../archived').listFiles() ?: new File[0])
+            .findAll { it.isDirectory() && it.name.startsWith('v') }
+            .collect { it.name.substring(1) } as Set
+    report = layout.buildDirectory.file('reports/version-ladder/report.txt')
+}
+
+tasks.named('check') {
+    dependsOn 'stubMarkerCheck', 'versionLadderCheck'
+}
+
+/**
+ * Scans production Java sources for the markers forbidden by §2.4 of the master build
+ * prompt. Unfinished work is recorded in IMPLEMENTATION_STATUS.md, never in the source
+ * tree, so that "what is left to do" has exactly one location.
+ */
+abstract class StubMarkerCheck extends DefaultTask {
+
+    /** Case-sensitive markers. */
+    private static final List<String> EXACT_MARKERS = ['TODO', 'FIXME', 'UnsupportedOperationException']
+
+    /** Case-insensitive markers. */
+    private static final List<String> LOOSE_MARKERS = ['coming soon']
+
+    @InputFiles
+    @PathSensitive(PathSensitivity.RELATIVE)
+    abstract ConfigurableFileCollection getSources()
+
+    @OutputFile
+    abstract RegularFileProperty getReport()
+
+    @TaskAction
+    void scan() {
+        List<String> violations = []
+        int scanned = 0
+
+        for (File file : sources.files.sort { it.absolutePath }) {
+            if (!file.isFile() || !file.name.endsWith('.java')) {
+                continue
+            }
+            scanned++
+            int lineNumber = 0
+            for (String line : file.readLines('UTF-8')) {
+                lineNumber++
+                String lower = line.toLowerCase(Locale.ROOT)
+                for (String marker : EXACT_MARKERS) {
+                    if (line.contains(marker)) {
+                        violations.add("${file.absolutePath}:${lineNumber}: forbidden marker '${marker}' -> ${line.trim()}" as String)
+                    }
+                }
+                for (String marker : LOOSE_MARKERS) {
+                    if (lower.contains(marker)) {
+                        violations.add("${file.absolutePath}:${lineNumber}: forbidden marker '${marker}' -> ${line.trim()}" as String)
+                    }
+                }
+            }
+        }
+
+        File reportFile = report.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.setText(violations.isEmpty()
+                ? "stub-marker check: ${scanned} file(s) scanned, 0 violations\n"
+                : violations.join('\n') + '\n', 'UTF-8')
+
+        if (!violations.isEmpty()) {
+            throw new GradleException(
+                    "Stub-marker gate failed (§2.4): ${violations.size()} violation(s) in ${scanned} file(s).\n"
+                            + violations.join('\n')
+                            + "\nRecord unfinished work in IMPLEMENTATION_STATUS.md instead.")
+        }
+
+        logger.lifecycle("stub-marker gate: ${scanned} file(s) scanned, 0 violations")
+    }
+}
+
+/**
+ * Enforces the version scheme defined in docs/architecture/ADR-0012.md.
+ *
+ * <p>The scheme comes from ADR-0012: {@code x.y.0} is a version, {@code x.y.1}-{@code x.y.5}
+ * are its builds (a hotfix or a pre-release), and {@code x.y.6} does not exist — five builds fill
+ * a version and the minor moves up.
+ *
+ * <p>Each check corresponds to a mistake that has a real cost:
+ *
+ * <ul>
+ *   <li>{@code mod_version} is <em>exactly</em> {@code MAJOR.MINOR.PATCH}, with no surrounding
+ *       whitespace. The raw property value is validated, never a trimmed copy: the build ships
+ *       what {@code gradle.properties} literally contains, so a gate that tidies the value
+ *       first would approve a string the build never uses. A trailing space produces
+ *       {@code NexusCore-neoforge-1.0.1 -1.21.1.jar} and a {@code fabric.mod.json} that
+ *       Fabric's semantic-version parser rejects.
+ *   <li>The shared changelog has an entry for exactly this version. A bumped number with no
+ *       written entry is a build nobody can find out anything about after the fact.
+ *   <li>A build's heading says {@code hotfix} or {@code pre-release}; a version's heading says
+ *       neither. ADR-0012 accepts that {@code 1.0.1} reads as a semver patch and is not
+ *       necessarily one, and the label is the whole mitigation — so it is enforced in both
+ *       directions rather than left to memory.
+ *   <li>The third component never exceeds 5. A sixth build means the minor should have moved up.
+ *   <li>The version is not one already archived. {@code archived/} is immutable by rule — "the
+ *       fix is a new version, never an edit here" — so building at one means the bump was
+ *       forgotten.
+ *   <li>Headings inside fenced code blocks do not count. The changelog documents this scheme
+ *       and will grow examples of headings; a quoted sample is not an entry.
+ * </ul>
+ *
+ * <p>The report is written on every path, success or failure, so a report on disk always
+ * describes the run that produced it rather than the last run that happened to succeed.
+ */
+abstract class VersionLadderCheck extends DefaultTask {
+
+    private static final java.util.regex.Pattern VERSION = ~/^(\d+)\.(\d+)\.(\d+)$/
+
+    /** ADR-0012: five builds fill a version, then the minor moves up. */
+    private static final int BUILDS_PER_VERSION = 5
+
+    /** A build's changelog heading must carry exactly one of these. A version carries neither. */
+    private static final List<String> BUILD_LABELS = ['hotfix', 'pre-release']
+
+    @Input
+    abstract Property<String> getModVersion()
+
+    /**
+     * Versions already present in {@code archived/}, captured at configuration time. A
+     * directory listing rather than a file tree: the jars are large and their contents are
+     * irrelevant here — only the presence of {@code v<version>/} matters.
+     */
+    @Input
+    abstract SetProperty<String> getArchivedVersions()
+
+    @InputFile
+    @PathSensitive(PathSensitivity.RELATIVE)
+    abstract RegularFileProperty getChangelog()
+
+    @OutputFile
+    abstract RegularFileProperty getReport()
+
+    @TaskAction
+    void verify() {
+        // Deliberately NOT trimmed — see the class javadoc. This is the value the build ships.
+        String version = modVersion.get()
+
+        if (version != version.trim()) {
+            fail(version, "mod_version is padded with whitespace: '${version}' (ADR-0012).\n"
+                    + 'Gradle does not trim it, so this is the version the build actually uses: the jar becomes\n'
+                    + "  NexusCore-neoforge-${version}-1.21.1.jar\n"
+                    + "and Fabric's semantic-version parser rejects it. Remove the whitespace in gradle.properties.")
+        }
+
+        var matcher = VERSION.matcher(version)
+        if (!matcher.matches()) {
+            fail(version, "mod_version '${version}' is not MAJOR.MINOR.PATCH (ADR-0012). "
+                    + 'x.y.0 is a version; x.y.1 to x.y.5 are its builds.')
+        }
+
+        int minor = Integer.parseInt(matcher.group(2))
+        int patch = Integer.parseInt(matcher.group(3))
+
+        // ADR-0012. Every minor behaves the same way: .0 is the version, .1-.5 are its builds.
+        if (patch > BUILDS_PER_VERSION) {
+            fail(version, "${version} is past the end of its version (ADR-0012).\n"
+                    + "A version holds ${BUILDS_PER_VERSION} builds, .1 to .${BUILDS_PER_VERSION}.\n"
+                    + "Move up: the next version after ${matcher.group(1)}.${minor}.${BUILDS_PER_VERSION} "
+                    + "is ${matcher.group(1)}.${minor + 1}.0.")
+        }
+
+        boolean isVersion = patch == 0
+        String stage = isVersion ? 'version' : 'build'
+
+        if (archivedVersions.get().contains(version)) {
+            fail(version, "${version} is already archived, and archived builds are immutable (ADR-0012).\n"
+                    + 'Building at a version that has already been handed out means mod_version was not bumped.\n'
+                    + "It is bumped at the START of the work, so bump it and write the changelog entry.")
+        }
+
+        String heading = findHeading(changelog.get().asFile, version)
+
+        if (heading == null) {
+            fail(version, "No changelog entry for ${version} (ADR-0012).\n"
+                    + "Expected a line beginning '## [${version}]' in ${changelog.get().asFile}, "
+                    + 'outside any fenced code block.\n'
+                    + 'Bumping mod_version without writing the entry is exactly what this gate exists to stop.')
+        }
+
+        // A build says which kind it is; a version says neither. Checking only that a label is
+        // PRESENT would let a version call itself a hotfix, so absence is checked too.
+        String lower = heading.toLowerCase(Locale.ROOT)
+        List<String> present = BUILD_LABELS.findAll { lower.contains(it) }
+
+        if (isVersion && !present.isEmpty()) {
+            fail(version, "${version} is a version (x.y.0), but its changelog heading calls it a "
+                    + "${present.first()} (ADR-0012).\n"
+                    + "Heading: ${heading}\n"
+                    + 'A version is the milestone its builds patch. Labelling it as one of them is a '
+                    + 'contradiction a reader cannot resolve.')
+        }
+
+        if (!isVersion && present.isEmpty()) {
+            fail(version, "${version} is a build, and its changelog heading does not say which kind "
+                    + '(ADR-0012).\n'
+                    + "Heading: ${heading}\n"
+                    + "Add '— ${BUILD_LABELS.join("' or '— ")}'. The label is the only thing telling a reader "
+                    + 'whether this build repairs the version or previews the next one.')
+        }
+
+        if (present.size() > 1) {
+            fail(version, "${version} is labelled both ${present.join(' and ')} (ADR-0012).\n"
+                    + "Heading: ${heading}\n"
+                    + 'A build is one or the other. Use exactly one label.')
+        }
+
+        String kind = isVersion ? 'version' : present.first()
+
+        writeReport("version ladder: ${version} (${kind}), documented\n${heading}\n")
+        logger.lifecycle("version ladder: ${version} — ${kind}, changelog entry present")
+    }
+
+    /**
+     * Finds the changelog heading for {@code version}, ignoring anything inside a fenced code
+     * block. The prefix includes the closing bracket, so {@code ## [1.0.1]} cannot match
+     * {@code ## [1.0.10]} — which matters, because this ladder reaches 1.0.13.
+     *
+     * <p>Matching is anchored at column zero, so an indented or block-quoted heading is not an
+     * entry either.
+     */
+    private static String findHeading(File changelogFile, String version) {
+        String prefix = "## [${version}]"
+        boolean insideFence = false
+        for (String line : changelogFile.readLines('UTF-8')) {
+            String trimmed = line.trim()
+            if (trimmed.startsWith('```') || trimmed.startsWith('~~~')) {
+                insideFence = !insideFence
+                continue
+            }
+            if (!insideFence && line.startsWith(prefix)) {
+                return line
+            }
+        }
+        return null
+    }
+
+    private void writeReport(String text) {
+        File reportFile = report.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.setText(text, 'UTF-8')
+    }
+
+    private void fail(String version, String message) {
+        writeReport("version ladder: ${version} REJECTED\n${message}\n")
+        throw new GradleException(message)
+    }
+}

@@ -16,19 +16,23 @@
 modLoader = "javafml"
 loaderVersion = "${forge_loader_range}"
 license = "${mod_license}"
+issueTrackerURL = "https://github.com/Modzwastaken/NexusCore-Mod-NCM/issues"
 
 [[mods]]
 modId = "${mod_id}"
 version = "${mod_version}"
 displayName = "${mod_display_name}"
 authors = "${mod_authors}"
+displayURL = "https://mwtstudios.net"
 logoFile = "nexuscore.png"
 description = '''
 NexusCore is a native server administration framework for Minecraft Java Edition:
-permissions, economy, moderation, teleportation, player utilities, staff tools,
-configuration, storage, and audit logging in one mod.
+permissions, moderation, teleportation, player utilities, staff tools, configuration
+and a tamper-evident audit log in one mod, with no Bukkit/Spigot plugin and no other
+administration mod required.
 
-Install on the server. Players join with an unmodified vanilla client.
+Server-side only. Install this JAR on the dedicated server; players join with an
+unmodified vanilla client, admin GUI included.
 '''
 
 [[dependencies.${mod_id}]]

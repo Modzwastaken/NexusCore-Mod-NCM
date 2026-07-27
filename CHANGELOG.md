@@ -72,6 +72,11 @@ Work toward the next build.
   applied — removing the write-ahead property while leaving every other line intact — fails 9 of
   the 28. Dropping the already-applied skip that makes replay idempotent fails 4.
 
+`JsonStore`'s `move`, `force` and `forceDirectory` became package-private so the journal reuses
+them instead of carrying a second copy of the atomic-move protocol — including the
+`AtomicMoveNotSupported` fallback and its warning, which is exactly the kind of detail that gets
+fixed in one copy and not the other.
+
 ### Fixed
 
 - **The shared test suite ran on one loader of three.** `sourceSets.test.java.srcDirs +=
@@ -91,13 +96,6 @@ Work toward the next build.
   Now wired into all three. **714 test executions** where there were 214: 236 shared tests on each
   loader, plus Fabric's and Forge's own 3. No test needed changing — the three that locate source
   roots already walk up to find `common/src/main/java`, which 1.0.4 fixed for a different reason.
-
-`JsonStore`'s `move`, `force` and `forceDirectory` became package-private so the journal reuses
-them instead of carrying a second copy of the atomic-move protocol — including the
-`AtomicMoveNotSupported` fallback and its warning, which is exactly the kind of detail that gets
-fixed in one copy and not the other.
-
-### Fixed
 
 - **Both custom gates now run on all three loaders.** `stubMarkerCheck` and `versionLadderCheck`
   were registered only in `neoforge/build.gradle`. A `./gradlew build` in `fabric/` or `forge/`

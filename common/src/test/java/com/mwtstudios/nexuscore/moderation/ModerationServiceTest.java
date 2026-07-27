@@ -223,6 +223,19 @@ class ModerationServiceTest {
     }
 
     @Test
+    @DisplayName("regression: activeBans() counts once even when the strictest row is not first")
+    void activeBansDoesNotDoubleCountWhenStrictestIsLast() {
+        // The order matters, which is why the sibling test above could not catch this: resolving
+        // the weaker row first retires it and returns the stricter one, and the loop then reaches
+        // that stricter row still active and resolves it a second time.
+        writeTwoActiveBans(now.get() + 60_000L, Long.MAX_VALUE);
+        ModerationService reopened = new ModerationService(new JsonStore(directory), now::get);
+
+        assertEquals(1, reopened.activeBans().size(),
+                "/banlist and the admin panel counted one player per active row");
+    }
+
+    @Test
     @DisplayName("a deliberate re-ban replaces the earlier terms, even when shorter")
     void deliberateRebanReplacesEarlierTerms() {
         long farFuture = now.get() + 30L * 24 * 60 * 60 * 1000;

@@ -1,7 +1,9 @@
 package com.mwtstudios.nexuscore.moderation;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
@@ -273,12 +275,15 @@ public final class ModerationService {
     /** @return every currently active ban */
     public List<Record> activeBans() {
         List<Record> found = new ArrayList<>();
-        // Resolving each active row reconciles that player's records, retiring the duplicates, so
-        // the rows behind a doubly-banned player are already inactive by the time they are reached.
+        // One entry per player, not per row. Resolving a row reconciles that player's records, but
+        // reconciliation retires the rows it does NOT keep — so when the strictest row sits after a
+        // weaker one, the weaker row resolves to it and the loop then reaches it still active and
+        // resolves it again. Tracking the target is what makes the count independent of file order.
+        Set<UUID> counted = new HashSet<>();
         for (Record record : new ArrayList<>(document.records)) {
             if (record.active && Type.BAN.name().equals(record.type)) {
                 UUID target = parseUuid(record.targetUuid);
-                if (target != null) {
+                if (target != null && counted.add(target)) {
                     activeRecord(Type.BAN, target).ifPresent(found::add);
                 }
             }

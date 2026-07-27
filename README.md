@@ -14,12 +14,21 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/Modzwastaken/NexusCore-Mod-NCM-/actions/workflows/build.yml"><img alt="Build" src="https://github.com/Modzwastaken/NexusCore-Mod-NCM-/actions/workflows/build.yml/badge.svg"></a>
   <img alt="Minecraft 1.21.1" src="https://img.shields.io/badge/Minecraft-1.21.1-brightgreen">
   <img alt="Loaders" src="https://img.shields.io/badge/loaders-NeoForge%20%7C%20Fabric%20%7C%20Forge-blue">
   <img alt="Java 21" src="https://img.shields.io/badge/Java-21-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-209%20passing-success">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-214%20passing-success">
   <img alt="Version 1.1.0" src="https://img.shields.io/badge/version-1.1.0-informational">
   <img alt="All Rights Reserved" src="https://img.shields.io/badge/licence-All%20Rights%20Reserved-lightgrey">
+</p>
+
+<p align="center">
+  <a href="https://github.com/Modzwastaken/NexusCore-Mod-NCM-">Source</a> ·
+  <a href="https://github.com/Modzwastaken/NexusCore-Mod-NCM-/releases">Downloads</a> ·
+  <a href="https://github.com/Modzwastaken/NexusCore-Mod-NCM-/issues/new/choose">Report a bug</a> ·
+  <a href="https://github.com/Modzwastaken/NexusCore-Mod-NCM-/blob/main/SECURITY.md">Security</a> ·
+  <a href="https://github.com/Modzwastaken/NexusCore-Mod-NCM-/blob/main/IMPLEMENTATION_STATUS.md"><strong>What actually works</strong></a>
 </p>
 
 ---
@@ -81,7 +90,7 @@ the `n`-prefixed names (`/nban`, `/nkick`, …), which is also the automatic fal
 owns the name. **`/ban-ip` and `/pardon-ip` are not taken over**, so an IP ban is neither audited
 nor listed by NexusCore.
 
-Full reference: **[docs/admin/commands.md](docs/admin/commands.md)** — 50 commands, generated from
+Full reference: **[docs/admin/commands.md](https://github.com/Modzwastaken/NexusCore-Mod-NCM-/blob/main/docs/admin/commands.md)** — 50 commands, generated from
 the code so it cannot drift.
 
 ## Honest state of the project
@@ -98,25 +107,62 @@ muting, ban enforcement at login and teleport safety in practice are `implemente
 `tested`.
 
 **Known unfixed defects are published, not hidden.**
-[IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) lists every confirmed defect awaiting a fix,
+[IMPLEMENTATION_STATUS.md](https://github.com/Modzwastaken/NexusCore-Mod-NCM-/blob/main/IMPLEMENTATION_STATUS.md) lists every confirmed defect awaiting a fix,
 including security-relevant ones, so you can decide for yourself whether a gap matters to you. The
 most significant at 1.1.0: a vanilla level-2 operator can use `/execute as <player>` to act with
 that player's NexusCore permissions.
 
 **Not built yet:** economy, chat channels, jail and reports, scheduler, backups, the benchmark
 harness, and the custom-screen client GUI. Everything but the client GUI is scheduled on
-[the road to v1.5.0](IMPLEMENTATION_STATUS.md#the-road-to-v150).
+[the road to v1.5.0](https://github.com/Modzwastaken/NexusCore-Mod-NCM-/blob/main/IMPLEMENTATION_STATUS.md#the-road-to-v150).
 
 **The version number carries no completeness promise.**
-[IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) is the authoritative record, and it
+[IMPLEMENTATION_STATUS.md](https://github.com/Modzwastaken/NexusCore-Mod-NCM-/blob/main/IMPLEMENTATION_STATUS.md) is the authoritative record, and it
 distinguishes `implemented` from `tested` deliberately. Read it before trusting any feature list,
 including the one above.
+
+## The full vision
+
+NexusCore is planned as much more than a collection of commands. Every system is designed to work
+together through one shared permission engine, configuration system, storage layer, message
+framework and audit trail — so a moderation action, an economy transaction and a GUI click are all
+authorised the same way and all land in the same tamper-evident log.
+
+**Shipped** ✅ · **Next, on the road to v1.5** 🔜 · **Later** ⏳
+
+| | Capability |
+|---|---|
+| ✅ | Native groups and permissions |
+| ✅ | Homes, warps, spawn points, `/back`, and teleport requests |
+| ✅ | Safe teleport destination detection |
+| ✅ | Player utilities — healing, feeding, flight, god mode, vanish, speed |
+| ✅ | Moderation with bans, temporary bans, mutes and warnings |
+| ✅ | Detailed administrative audit logs |
+| ✅ | Configurable modules that can be enabled or disabled |
+| ✅ | An in-game administration dashboard |
+| ✅ | Consistent functionality across NeoForge, Forge and Fabric |
+| ✅ | Server administration and diagnostic tools |
+| 🔜 | Reports, staff notes and freeze |
+| 🔜 | Chat channels, private messages, staff chat and anti-spam protection |
+| 🔜 | A ledger-backed server economy and shop system |
+| 🔜 | Secure backups and validated restoration |
+| ⏳ | An admin button inside the player inventory |
+| ⏳ | Themes, sounds, accessibility options and responsive menus |
+| ⏳ | An extension API for other mods |
+
+The mission is to provide permissions, economy, moderation, teleportation, utilities, staff tools,
+configuration, storage, audit logging and an extension API **without** requiring another
+administration mod or a Bukkit-style plugin loader.
+
+Which of these actually exist today is tracked, item by item, in
+[IMPLEMENTATION_STATUS.md](https://github.com/Modzwastaken/NexusCore-Mod-NCM-/blob/main/IMPLEMENTATION_STATUS.md) — not in this table.
+
 
 ## Versioning
 
 `x.y.0` is a **version**. `x.y.1`–`x.y.5` are its **builds** — each a hotfix or a pre-release.
 There is no `x.y.6`: five builds fill a version and the minor moves up
-([ADR-0012](docs/architecture/ADR-0012.md)).
+([ADR-0012](https://github.com/Modzwastaken/NexusCore-Mod-NCM-/blob/main/docs/architecture/ADR-0012.md)).
 
 ```
 1.0.0 → 1.0.1 … 1.0.5 → 1.1.0 → 1.1.1 … 1.1.5 → 1.2.0 → … → 1.4.5 → 1.5.0
@@ -124,7 +170,7 @@ There is no `x.y.6`: five builds fill a version and the minor moves up
 
 **If the third component is not `0`, it is a build, not a version** — whatever semantic
 versioning would otherwise imply. The feature releases remain `v1.0` → `v1.5` → `v2.0`
-([ADR-0007](docs/architecture/ADR-0007.md)); `1.1.0`–`1.4.0` are intermediate versions on the way.
+([ADR-0007](https://github.com/Modzwastaken/NexusCore-Mod-NCM-/blob/main/docs/architecture/ADR-0007.md)); `1.1.0`–`1.4.0` are intermediate versions on the way.
 
 **Server-only mode is supported forever.** It is not a degraded path.
 
@@ -132,9 +178,12 @@ versioning would otherwise imply. The feature releases remain `v1.0` → `v1.5` 
 
 Requires JDK 21. Each loader is an **independent Gradle build** with its own wrapper — Forge is
 pinned to Gradle 8.x because ForgeGradle refuses to apply on Gradle 9, and that alone is why the
-three are separate builds ([ADR-0008](docs/architecture/ADR-0008.md)).
+three are separate builds ([ADR-0008](https://github.com/Modzwastaken/NexusCore-Mod-NCM-/blob/main/docs/architecture/ADR-0008.md)).
 
 ```bash
+git clone https://github.com/Modzwastaken/NexusCore-Mod-NCM-.git
+cd NexusCore-Mod-NCM-
+
 cd neoforge && ./gradlew clean build
 cd ../fabric && ./gradlew clean build
 cd ../forge  && ./gradlew clean build
@@ -166,7 +215,7 @@ interrupt it; it happens once per loader.
 | `forge/` | ForgeGradle build: `@Mod` entry point, `mods.toml`. Pinned to Gradle 8.x. |
 | `docs/` | ADRs and admin guides. `docs/admin/commands.md` is generated. |
 | `config/checkstyle/` | The one ruleset all three builds share. |
-| `archived/` | Published versions, exactly as shipped — [archived/README.md](archived/README.md). |
+| `archived/` | Published versions, exactly as shipped — [archived/README.md](https://github.com/Modzwastaken/NexusCore-Mod-NCM-/blob/main/archived/README.md). |
 | `.github/workflows/` | CI: builds and verifies all three loaders on every push. |
 | `<loader>server/` | Local test servers, one per loader. Not tracked. |
 
@@ -190,17 +239,17 @@ interrupt it; it happens once per loader.
 
 | | |
 |---|---|
-| [Command reference](docs/admin/commands.md) | All 50 commands, generated from the code |
-| [Permissions](docs/admin/permissions.md) | How a decision is reached, and the rule that surprises people |
-| [Admin panel](docs/admin/admin-gui.md) | The chest-menu panel |
-| [Implementation status](IMPLEMENTATION_STATUS.md) | **The authoritative record of what exists** |
-| [Changelog](CHANGELOG.md) | Shared-code changes · [NeoForge](neoforge/CHANGELOG.md) · [Fabric](fabric/CHANGELOG.md) · [Forge](forge/CHANGELOG.md) |
-| [Release notes](release-notes.md) | User-facing summary of releases |
-| [Architecture decisions](docs/architecture/) | ADR-0001 through ADR-0012 |
-| [Release checklist](RELEASE_CHECKLIST.md) | What a build or version must pass |
-| [Security policy](SECURITY.md) | How to report a vulnerability |
-| [Release archive](archived/README.md) | The exact bytes of each published version |
-| [Third-party notices](THIRD_PARTY_NOTICES.md) | Nothing is embedded in any jar |
+| [Command reference](https://github.com/Modzwastaken/NexusCore-Mod-NCM-/blob/main/docs/admin/commands.md) | All 50 commands, generated from the code |
+| [Permissions](https://github.com/Modzwastaken/NexusCore-Mod-NCM-/blob/main/docs/admin/permissions.md) | How a decision is reached, and the rule that surprises people |
+| [Admin panel](https://github.com/Modzwastaken/NexusCore-Mod-NCM-/blob/main/docs/admin/admin-gui.md) | The chest-menu panel |
+| [Implementation status](https://github.com/Modzwastaken/NexusCore-Mod-NCM-/blob/main/IMPLEMENTATION_STATUS.md) | **The authoritative record of what exists** |
+| [Changelog](https://github.com/Modzwastaken/NexusCore-Mod-NCM-/blob/main/CHANGELOG.md) | Shared-code changes · [NeoForge](https://github.com/Modzwastaken/NexusCore-Mod-NCM-/blob/main/neoforge/CHANGELOG.md) · [Fabric](https://github.com/Modzwastaken/NexusCore-Mod-NCM-/blob/main/fabric/CHANGELOG.md) · [Forge](https://github.com/Modzwastaken/NexusCore-Mod-NCM-/blob/main/forge/CHANGELOG.md) |
+| [Release notes](https://github.com/Modzwastaken/NexusCore-Mod-NCM-/blob/main/release-notes.md) | User-facing summary of releases |
+| [Architecture decisions](https://github.com/Modzwastaken/NexusCore-Mod-NCM-/blob/main/docs/architecture/) | ADR-0001 through ADR-0012 |
+| [Release checklist](https://github.com/Modzwastaken/NexusCore-Mod-NCM-/blob/main/RELEASE_CHECKLIST.md) | What a build or version must pass |
+| [Security policy](https://github.com/Modzwastaken/NexusCore-Mod-NCM-/blob/main/SECURITY.md) | How to report a vulnerability |
+| [Release archive](https://github.com/Modzwastaken/NexusCore-Mod-NCM-/blob/main/archived/README.md) | The exact bytes of each published version |
+| [Third-party notices](https://github.com/Modzwastaken/NexusCore-Mod-NCM-/blob/main/THIRD_PARTY_NOTICES.md) | Nothing is embedded in any jar |
 
 `docs/user`, `docs/api` and `docs/migration` are created as the milestones that produce their
 subject matter land.

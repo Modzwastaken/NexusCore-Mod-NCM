@@ -135,6 +135,61 @@ all found by an adversarial review before anything was built on it. None had shi
 review's verdict was that the design held and the implementation did not yet. The point of finding
 them here is that money and item custody were going to ride on this.
 
+**The two durability ceilings are resolved — one closed, one ruled.** They are the gate before
+1.2.2, because 1.2.2 is where money starts riding on this layer, and "we recorded the ceiling" is a
+weaker position than it sounds once a balance depends on it.
+
+- **`JsonStore.move` no longer completes a write it cannot make atomic.** Where `ATOMIC_MOVE` was
+  refused it logged a warning and did a plain replace — so §11.1-R4, *"a reader after a crash sees
+  the complete previous document or the complete new one, never a partial write"*, was quietly false
+  on that filesystem while every javadoc, spec row and status line went on claiming it. A torn
+  `permissions.json` is indistinguishable from a good one. The fallback is gone: the write fails,
+  the caller cleans up its temporary file and reports, and R4 holds or nothing happens.
+
+  A **same-directory precondition** is enforced first, and that is the part a test can reach. Both
+  callers already satisfied it — `write()`'s `.tmp` and the journal's staging file are each a
+  `resolveSibling` of their target — and it is what makes the move a rename, which is the only
+  operation a filesystem performs atomically. The refusal branch itself cannot be produced portably,
+  so it is argued rather than demonstrated, and `tools/mutate-storage.sh` says so in its header
+  instead of letting a green run imply otherwise.
+
+- **A rename is not flushed to disk on Windows, and that is now published rather than whispered.**
+  `forceDirectory` opens the directory as a channel; Windows cannot open a directory as a channel at
+  all, so every directory fsync NexusCore performs is a no-op there. The failure was logged at
+  DEBUG — which nobody runs — so the weakening was invisible on the one platform where it always
+  happens. It is now reported **once per run at WARN** and carries a named row on the published
+  defect list. **Ruled, not fixed**: there is no directory-fsync equivalent to reach for. Documents
+  are still replaced atomically; what is weakened is surviving a power loss immediately afterwards.
+  Linux and macOS are unaffected.
+
+**And two read/write-path defects, which turned out to be one mistake wearing two hats:**
+
+- **An unreadable file was treated as a corrupt one.** `read()` caught `IOException` alongside the
+  parse failures, so a full disk, a changed permission, an interrupted read or an NFS blip renamed
+  an operator's **intact** `permissions.json` to `.corrupt-<timestamp>`, told them it "could not be
+  parsed", and refused to start until they put it back. The data was never bad. Quarantine now means
+  what it says — bytes that were read and are not a document — and a failure to *read* reports and
+  leaves the file exactly where it is.
+
+  This is the same shape as the journal defect found in review a few hours earlier: both quarantined
+  on the wrong signal. Twice in one layer makes it a pattern rather than a slip, so it is named as
+  one: **quarantine is a judgement about content, and must never be reached by a path that never saw
+  the content.**
+
+- **A failed write left its scratch behind.** Cleanup lived inside `catch (IOException)`, and a
+  serialisation failure is not an `IOException` — so the `.tmp` survived, the next write found stale
+  scratch, and `noTemporaryFileLeftBehind` went on passing while being untrue. `JsonIOException` is
+  now named in the catch, because Gson wraps writer failures in it and it extends
+  `JsonParseException` rather than `IOException`, so it had been walking past untouched and reaching
+  callers as a raw `RuntimeException`. But naming it only fixes the *reported type* — the cleanup
+  moved to a `finally`, which is what actually closes it, because Gson only wraps failures coming
+  from the writer and a serialisation error raised anywhere else matches no catch clause here at all.
+
+  Worth recording how that was found: the first version of the test used a `Number` whose
+  `toString` threw. Gson reflected over the anonymous subclass instead of calling it, serialised
+  `{}`, and the test passed against code that still leaked. A test that passes against broken code is
+  the exact failure these tests exist to catch, met while writing one.
+
 - **The corrupt-record refusal destroyed the transaction it was protecting, on the second start.**
   `pendingRecords()` read each record through `JsonStore.read`, which moves an unparseable file to
   `<name>.corrupt-<timestamp>` **before** throwing. That renamed file no longer ends in `.json`, so

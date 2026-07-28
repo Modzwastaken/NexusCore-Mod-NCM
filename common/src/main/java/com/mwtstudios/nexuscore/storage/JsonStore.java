@@ -11,10 +11,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonIOException;
+import com.google.gson.JsonParseException;
 import com.google.gson.JsonSyntaxException;
 import com.mojang.logging.LogUtils;
 
@@ -28,15 +32,29 @@ import org.slf4j.Logger;
  * file, never a half-written one. When the target already exists it is first copied to
  * {@code <name>.json.bak}, so a serialisation bug cannot destroy the only copy.</p>
  *
- * <p><b>Read protocol.</b> A missing file yields the caller's default. A corrupt file is
- * <em>not</em> silently replaced with defaults — it is moved aside to
+ * <p><b>Read protocol.</b> A missing file yields the caller's default. A file whose bytes are not
+ * a document is <em>not</em> silently replaced with defaults — it is moved aside to
  * {@code <name>.json.corrupt-<timestamp>} and reported, because silently discarding an
  * operator's permission or punishment data is worse than failing loudly (§5, "Backward-compatible
  * data": never silently discard unknown or older data).</p>
+ *
+ * <p><b>Failing to read is not the same as bad content, and only one of them quarantines.</b> An
+ * {@code IOException} — a full disk, a changed permission, an interrupted read — means the bytes
+ * could not be got at, not that they are wrong. Those reads report and leave the file exactly where
+ * it is. Quarantine is reserved for bytes that were read and are not a document.</p>
+ *
+ * <p><b>Durability, honestly.</b> Replacement is atomic or it does not happen: where a filesystem
+ * cannot perform an atomic rename, {@link #move} refuses rather than completing the write with a
+ * weaker guarantee than this javadoc claims. The one guarantee that is genuinely weaker on some
+ * platforms is the durability of the rename itself — see {@link #forceDirectory}, which cannot
+ * work on Windows and says so.</p>
  */
 public final class JsonStore {
 
     private static final Logger LOGGER = LogUtils.getLogger();
+
+    /** Set the first time a directory fsync fails, so the warning is reported once rather than per write. */
+    private static final AtomicBoolean DIRECTORY_FSYNC_UNAVAILABLE = new AtomicBoolean();
 
     private static final Gson GSON = new GsonBuilder()
             .setPrettyPrinting()
@@ -89,7 +107,31 @@ public final class JsonStore {
                 throw new JsonSyntaxException("document is empty");
             }
             return parsed;
-        } catch (IOException | JsonSyntaxException | IllegalStateException e) {
+        } catch (IOException | JsonIOException e) {
+            // COULD NOT READ. Not the same thing as bad content, and until 1.1.4 this branch did not
+            // exist: an IOException was caught alongside the parse failures and the file was
+            // quarantined. A disk that filled, a permission that changed, an interrupted read, an NFS
+            // blip — any of them renamed an operator's INTACT permissions.json to
+            // permissions.json.corrupt-<ts> and told them it "could not parse". The data was fine and
+            // NexusCore moved it out from under them, then refused to start until they put it back.
+            //
+            // The file is untouched here. The same shape of error as the journal's quarantine defect:
+            // both quarantined on the wrong signal, so this is a pattern in this codebase and not a
+            // one-off. Quarantine means "these bytes are not a document"; it must never mean "I could
+            // not get at the bytes".
+            //
+            // JsonIOException is in this branch and not the one below because it is exactly this case
+            // wearing a Gson wrapper: Gson throws it when the underlying reader fails, not when the
+            // document is malformed. It also used to escape the catch entirely — it extends
+            // JsonParseException, NOT JsonSyntaxException and NOT IOException — so it propagated as an
+            // unhandled RuntimeException with no quarantine, no StorageException and nothing an
+            // operator could act on.
+            throw new StorageException("could not read " + file + " (" + e.getClass().getSimpleName()
+                    + ": " + e.getMessage() + "). The file has NOT been moved: this is a failure to read"
+                    + " it, not evidence that its contents are bad. Fix the underlying problem — disk"
+                    + " space, permissions, or the storage device — and start again.", e);
+        } catch (JsonParseException | IllegalStateException e) {
+            // The bytes were read and are not a document. This is what quarantine is for.
             Path quarantine = quarantine(file);
             throw new StorageException(
                     "could not parse " + file + "; the file has been preserved at " + quarantine
@@ -125,9 +167,24 @@ public final class JsonStore {
             }
             move(temp, file);
             forceDirectory(file.getParent());
-        } catch (IOException e) {
+        } catch (IOException | JsonIOException e) {
+            // JsonIOException is named here because it was missing until 1.1.4. Gson throws it when
+            // the underlying writer fails, and it extends JsonParseException, NOT IOException, so it
+            // walked straight past this catch and reached the caller as a raw RuntimeException
+            // instead of the StorageException every caller is written to handle.
+            throw new StorageException("could not write " + file + " (" + e.getClass().getSimpleName()
+                    + ": " + e.getMessage() + ")", e);
+        } finally {
+            // Unconditional, and this is the half that matters more than the catch above.
+            //
+            // Naming JsonIOException fixes the *reported* type; it does not fix the scratch, because
+            // Gson only wraps failures coming from the writer. A serialisation failure raised
+            // anywhere else — this store's own Gson calls toString on every Number it writes —
+            // is an ordinary RuntimeException that no catch clause here would have matched, and the
+            // `.tmp` survived it just the same. Cleaning up in a finally covers every way out of the
+            // block, including the ones nobody has thought of yet. On the success path the temp file
+            // has already been moved, so this is a no-op.
             deleteQuietly(temp);
-            throw new StorageException("could not write " + file, e);
         }
     }
 
@@ -193,13 +250,32 @@ public final class JsonStore {
     // AtomicMoveNotSupported fallback and its warning, which is exactly the sort of detail that
     // gets fixed in one copy and not the other.
     static void move(Path from, Path to) throws IOException {
+        // Same directory, always. Both callers already satisfy it — write()'s `.tmp` and the
+        // journal's staging file are each a resolveSibling of their target — and it is what makes
+        // this a same-filesystem rename, the only shape a filesystem performs atomically. Checking
+        // it turns "the filesystem might not support atomic move", which no test can produce, into
+        // a precondition a test can check.
+        if (!Objects.equals(from.getParent(), to.getParent())) {
+            throw new StorageException("refusing to move " + from + " to " + to
+                    + ": an atomic replacement must stay within one directory, and a cross-directory move"
+                    + " cannot be guaranteed atomic. This is a programming error, not an operator one.");
+        }
+
         try {
             Files.move(from, to, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
         } catch (AtomicMoveNotSupportedException e) {
-            // Some filesystems cannot do this. Report the weaker guarantee rather than hide it.
-            LOGGER.warn("filesystem at {} does not support atomic move; falling back to a replace, "
-                    + "which is not crash-safe", to.getParent(), e);
-            Files.move(from, to, StandardCopyOption.REPLACE_EXISTING);
+            // No fallback. Until 1.1.4 this logged a warning and completed the move non-atomically,
+            // which left §11.1-R4 — "a reader after a crash sees the complete previous document or
+            // the complete new one, never a partial write" — quietly false on that filesystem while
+            // every document, javadoc and status row went on claiming it. A torn permissions file is
+            // indistinguishable from a good one, and 1.2.2 puts money on this path.
+            //
+            // Refusing is the honest failure: the caller cleans up its temporary file and reports,
+            // and no document is left in a state the code cannot describe.
+            throw new IOException("the filesystem holding " + to.getParent() + " cannot perform an atomic"
+                    + " move, so replacing this document cannot be made crash-safe (§11.1-R4). NexusCore"
+                    + " refuses the write rather than completing it with a weaker guarantee than it claims."
+                    + " Move the NexusCore data directory to a filesystem that supports atomic rename.", e);
         }
     }
 
@@ -209,15 +285,41 @@ public final class JsonStore {
         }
     }
 
+    /**
+     * Forces a directory's own entries to disk, making a rename durable rather than merely done.
+     *
+     * <p><b>This is a no-op on some platforms, and that is a published limitation rather than a
+     * hidden one.</b> Windows cannot open a directory as a channel at all, so every call here fails
+     * and every rename NexusCore performs is durable only once the filesystem flushes its own
+     * metadata on its own schedule. Nothing is corrupted by that — documents are still replaced
+     * atomically — but a power loss can lose a rename that the process was told had succeeded.</p>
+     *
+     * <p>Until 1.1.4 the failure was logged at DEBUG, which no operator runs, so the weakening was
+     * invisible on the one platform where it always happens. It is now reported once per run at
+     * WARN, and named on the published defect list. Unlike the atomic-move ceiling above this one
+     * cannot be closed — there is no directory-fsync equivalent to reach for — so it is ruled and
+     * stated instead of fixed.</p>
+     */
     static void forceDirectory(Path directory) {
-        // Directory fsync makes the rename itself durable. It is not supported everywhere,
-        // and a failure here weakens durability without corrupting anything, so it is logged
-        // rather than thrown.
         try (FileChannel channel = FileChannel.open(directory, StandardOpenOption.READ)) {
             channel.force(true);
         } catch (IOException e) {
-            LOGGER.debug("could not fsync directory {}; the rename may not be durable across a power loss", directory, e);
+            if (DIRECTORY_FSYNC_UNAVAILABLE.compareAndSet(false, true)) {
+                LOGGER.warn("this platform cannot flush a directory to disk ({}), so a completed rename is"
+                        + " durable only once the filesystem writes its own metadata. Documents are still"
+                        + " replaced atomically; what is weakened is surviving a power loss immediately"
+                        + " afterwards. Expected on Windows, where a directory cannot be opened as a channel"
+                        + " at all, and published as a known platform limitation. Reported once per run.",
+                        directory, e);
+            } else {
+                LOGGER.debug("could not fsync directory {}", directory, e);
+            }
         }
+    }
+
+    /** @return true once a directory fsync has failed in this run; see {@link #forceDirectory} */
+    static boolean directoryFsyncUnavailable() {
+        return DIRECTORY_FSYNC_UNAVAILABLE.get();
     }
 
     private static Path quarantine(Path file) {

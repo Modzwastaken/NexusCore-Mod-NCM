@@ -102,6 +102,30 @@ them instead of carrying a second copy of the atomic-move protocol — including
 fixed in one copy and not the other.
 
 ### Fixed
+- **The chat and login paths no longer scan every punishment ever written.** `activeRecord()` runs on every chat message and every login, and it walked the whole
+  punishment document to find the handful belonging to one player — so the cost of sending a
+  chat message grew with the total history of the server, the one number that only ever goes
+  up. Records are never deleted here, so the scan could not be bounded by pruning. An index of
+  the ACTIVE subset, keyed by kind and player, bounds it instead; `activeBans()` walks that
+  index rather than the document, which also makes its per-player deduplication structural
+  rather than a guard against file order.
+
+  The index holds the same `Record` objects as the document — never copies — so a flag flipped
+  through one is visible through the other, and it is rebuilt from the document at construction
+  rather than persisted. The document stays the only source of truth.
+
+  **No speed claim is made.** No performance number in this repository is measured, and the
+  benchmark harness with a committed baseline is a later deliverable. What is claimed is the
+  complexity change and the behaviour, and the behaviour is what the tests pin.
+
+  One correction worth recording: the first version of this change documented the index drops
+  as a correctness guarantee — that a retired record left indexed would report a lifted ban as
+  still in force. That is false. `reconcile()` re-checks `active` on every entry it reads, so a
+  stale entry is skipped and cannot resurrect a ban. The drops are a **space** guarantee: without
+  them the index accumulates every record ever written and becomes the scan it replaced, in
+  memory. The claim was found to be wrong by mutation — removing a drop failed no behavioural
+  test — and `activeIndexSize()` exists so the real property can be asserted directly. All four
+  drop sites are now proven to fail: removing any one of them fails exactly one test.
 - **A custom command argument type broke the command tree sent to joining players, and the new
   in-server test harness caught it within minutes of existing.** The wildcard fix earlier in this
   build introduced `PermissionNodeArgument` so `nexuscore.command.*` could be typed unquoted.

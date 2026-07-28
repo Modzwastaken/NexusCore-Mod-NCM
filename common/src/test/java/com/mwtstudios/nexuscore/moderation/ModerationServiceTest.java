@@ -308,4 +308,149 @@ class ModerationServiceTest {
             throw new IllegalStateException("could not seed the legacy punishments document", e);
         }
     }
+
+
+    // ---- the active-record index -------------------------------------------------------
+    //
+    // activeRecord() runs on the chat path and the login path and used to scan every punishment
+    // ever written. It now reads an index of the ACTIVE subset. The index holds the same Record
+    // objects as the document, so the failure mode is not a stale copy — it is a retired record
+    // left in the index, which would report a lifted ban as still in force. That is worse than the
+    // scan it replaces, so these pin index/document agreement rather than any speed claim.
+
+    /** Everything the document says is active, reached through the public API. */
+    private long activeBanTargetsAccordingToHistory(UUID... players) {
+        long count = 0;
+        for (UUID player : players) {
+            if (moderation.history(player).stream()
+                    .anyMatch(r -> r.active() && r.type() == ModerationService.Type.BAN)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    @Test
+    @DisplayName("the index is rebuilt on reopen, so a ban survives a restart")
+    void indexIsRebuiltOnReopen() {
+        moderation.issue(ModerationService.Type.BAN, target, "alice", actor, "Mod", "grief", Long.MAX_VALUE);
+
+        ModerationService reopened = new ModerationService(new JsonStore(directory), now::get);
+
+        assertTrue(reopened.activeBan(target).isPresent(),
+                "the index is rebuilt from the document at construction — a ban that survives the "
+                        + "file must survive the index");
+        assertEquals(1, reopened.activeBans().size());
+    }
+
+    @Test
+    @DisplayName("regression: a lifted ban leaves the index, not just the document")
+    void aLiftedBanLeavesTheIndex() {
+        moderation.issue(ModerationService.Type.BAN, target, "alice", actor, "Mod", "grief", Long.MAX_VALUE);
+        moderation.lift(ModerationService.Type.BAN, target, actor, "Admin");
+
+        assertTrue(moderation.activeBan(target).isEmpty(), "the player is unbanned");
+        assertTrue(moderation.activeBans().isEmpty(),
+                "and /banlist must not still list them — an index that keeps a retired record "
+                        + "reports a lifted ban as in force, which is worse than the scan it replaced");
+    }
+
+    @Test
+    @DisplayName("regression: an expired ban leaves the index")
+    void anExpiredBanLeavesTheIndex() {
+        moderation.issue(ModerationService.Type.BAN, target, "alice", actor, "Mod", "spam", now.get() + 60_000L);
+        assertEquals(1, moderation.activeBans().size());
+
+        now.addAndGet(60_001L);
+
+        assertTrue(moderation.activeBan(target).isEmpty(), "the ban has lapsed");
+        assertTrue(moderation.activeBans().isEmpty(), "so it must not still appear in /banlist");
+    }
+
+    @Test
+    @DisplayName("regression: a superseded ban leaves the index, leaving exactly one in force")
+    void aSupersededBanLeavesTheIndex() {
+        moderation.issue(ModerationService.Type.BAN, target, "alice", actor, "Mod", "first", Long.MAX_VALUE);
+        now.addAndGet(1_000L);
+        moderation.issue(ModerationService.Type.BAN, target, "alice", actor, "Mod", "second", Long.MAX_VALUE);
+
+        assertEquals(1, moderation.activeBans().size(),
+                "the superseded record must be out of the index, or the player is listed twice");
+        assertEquals("second", moderation.activeBan(target).orElseThrow().reason());
+    }
+
+    @Test
+    @DisplayName("the index still agrees with the document after a churn of operations")
+    void indexAgreesWithTheDocumentAfterChurn() {
+        UUID second = UUID.randomUUID();
+        UUID third = UUID.randomUUID();
+
+        moderation.issue(ModerationService.Type.BAN, target, "alice", actor, "Mod", "a", Long.MAX_VALUE);
+        moderation.issue(ModerationService.Type.BAN, second, "bob", actor, "Mod", "b", now.get() + 30_000L);
+        moderation.issue(ModerationService.Type.BAN, third, "carol", actor, "Mod", "c", Long.MAX_VALUE);
+        moderation.issue(ModerationService.Type.MUTE, target, "alice", actor, "Mod", "m", Long.MAX_VALUE);
+        moderation.lift(ModerationService.Type.BAN, third, actor, "Admin");
+        moderation.issue(ModerationService.Type.BAN, target, "alice", actor, "Mod", "a2", Long.MAX_VALUE);
+        now.addAndGet(30_001L);
+
+        // alice banned (superseded to a2), bob lapsed, carol lifted.
+        assertEquals(1, moderation.activeBans().size(),
+                "exactly one player should still be banned after that sequence");
+        assertEquals(activeBanTargetsAccordingToHistory(target, second, third), moderation.activeBans().size(),
+                "the index and the document must agree about who is banned — they hold the same "
+                        + "Record objects, so any disagreement is an entry that failed to leave");
+        assertTrue(moderation.activeMute(target).isPresent(), "the mute is independent of the bans");
+    }
+
+
+    @Test
+    @DisplayName("the index holds only what is in force, so it cannot grow into the scan it replaced")
+    void indexDoesNotAccumulateRetiredRecords() {
+        // The point of the index is that its size tracks ACTIVE punishments, not the history of the
+        // server. reconcile() skips inactive entries, so a leaked entry would never be VISIBLE — it
+        // would just quietly rebuild the full scan in memory. Asserted directly for that reason.
+        for (int i = 0; i < 25; i++) {
+            moderation.issue(ModerationService.Type.BAN, target, "alice", actor, "Mod", "ban " + i, Long.MAX_VALUE);
+            now.addAndGet(1_000L);
+        }
+        assertEquals(25, moderation.history(target).size(),
+                "the document keeps every record, because history is never erased");
+
+        assertEquals(1, moderation.activeIndexSize(),
+                "each new ban supersedes the last, so exactly one is in force — if retired records "
+                        + "stayed indexed this would be 25 and the index would be the full scan again");
+
+        moderation.lift(ModerationService.Type.BAN, target, actor, "Admin");
+        assertEquals(0, moderation.activeIndexSize(), "and lifting the survivor empties it");
+    }
+
+
+    @Test
+    @DisplayName("an expired record leaves the index, not just the active flag")
+    void expiryShrinksTheIndex() {
+        moderation.issue(ModerationService.Type.BAN, target, "alice", actor, "Mod", "spam", now.get() + 60_000L);
+        assertEquals(1, moderation.activeIndexSize());
+
+        now.addAndGet(60_001L);
+        moderation.activeBan(target); // the read is what evaluates expiry
+
+        assertEquals(0, moderation.activeIndexSize(),
+                "an expiry that clears the flag but leaves the entry lets the index accumulate every "
+                        + "temporary punishment the server has ever issued");
+    }
+
+    @Test
+    @DisplayName("reconciling a legacy stack of active records leaves only the survivor indexed")
+    void reconcileShrinksTheIndex() {
+        // Written directly, because issue() now prevents this shape. This is the healing path for
+        // documents from builds that let bans stack.
+        writeTwoActiveBans(now.get() + 60_000L, Long.MAX_VALUE);
+        ModerationService reopened = new ModerationService(new JsonStore(directory), now::get);
+        assertEquals(2, reopened.activeIndexSize(), "both rows are active when the file is read");
+
+        assertTrue(reopened.activeBan(target).isPresent(), "reconciliation keeps the strictest");
+
+        assertEquals(1, reopened.activeIndexSize(),
+                "and the superseded row must leave the index, or healing an old document doubles it");
+    }
 }

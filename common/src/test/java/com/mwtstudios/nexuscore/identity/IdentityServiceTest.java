@@ -265,4 +265,108 @@ class IdentityServiceTest {
         assertTrue(Files.isRegularFile(file), "IdentityService.java not found at " + file);
         return Files.readString(file, StandardCharsets.UTF_8);
     }
+
+    // ---- write damping (1.1.4) ---------------------------------------------------------
+
+    /** Reads players.json straight off disk, so a test can tell a write from an in-memory change. */
+    private long persistedLastSeen(java.nio.file.Path dir, java.util.UUID uuid) throws java.io.IOException {
+        String json = java.nio.file.Files.readString(dir.resolve("players.json"),
+                java.nio.charset.StandardCharsets.UTF_8);
+        com.google.gson.JsonObject players = com.google.gson.JsonParser.parseString(json)
+                .getAsJsonObject().getAsJsonObject("players");
+        return players.getAsJsonObject(uuid.toString()).get("lastSeenEpochMillis").getAsLong();
+    }
+
+    @Test
+    @DisplayName("a player the document has never held is written immediately, not damped")
+    void aNewPlayerIsWrittenImmediately() throws java.io.IOException {
+        java.util.concurrent.atomic.AtomicLong clock = new java.util.concurrent.atomic.AtomicLong(1_000L);
+        JsonStore store = new JsonStore(directory);
+        IdentityService service = new IdentityService(store, clock::get);
+        java.util.UUID uuid = java.util.UUID.randomUUID();
+
+        service.observe(uuid, "Alice");
+
+        // Damping may cost a timestamp's precision. It must never cost a fact.
+        assertTrue(store.exists("players.json"), "a first sighting must reach disk at once");
+        assertTrue(persistedLastSeen(directory, uuid) > 0L);
+    }
+
+    @Test
+    @DisplayName("a repeat visit is damped, and the flush at shutdown is what makes that safe")
+    void repeatVisitsAreDampedAndFlushed() throws java.io.IOException {
+        java.util.concurrent.atomic.AtomicLong clock = new java.util.concurrent.atomic.AtomicLong(1_000L);
+        JsonStore store = new JsonStore(directory);
+        IdentityService service = new IdentityService(store, clock::get);
+        java.util.UUID uuid = java.util.UUID.randomUUID();
+        service.observe(uuid, "Alice");
+        long afterFirstWrite = persistedLastSeen(directory, uuid);
+
+        clock.set(2_000L);
+        service.observeDeparture(uuid);
+
+        assertEquals(afterFirstWrite, persistedLastSeen(directory, uuid),
+                "a departure inside the window must not rewrite the whole document");
+
+        service.flush();
+
+        // Asserted as an exact value, not `>=`. The first version of this test used `>=`, and a
+        // no-op flush() passed it — the damped write never landed, so the old value still satisfied
+        // the comparison. A fix whose removal no test notices is not a closed defect.
+        assertEquals(2_000L, persistedLastSeen(directory, uuid),
+                "the flush must land what damping held back — without it, damping would trade write "
+                        + "amplification for silent data loss on every clean shutdown");
+    }
+
+    @Test
+    @DisplayName("a damped change is written once the window elapses")
+    void dampingWindowElapses() throws java.io.IOException {
+        java.util.concurrent.atomic.AtomicLong clock = new java.util.concurrent.atomic.AtomicLong(1_000L);
+        JsonStore store = new JsonStore(directory);
+        IdentityService service = new IdentityService(store, clock::get);
+        service.setFlushIntervalMillis(30_000L);
+        java.util.UUID uuid = java.util.UUID.randomUUID();
+        service.observe(uuid, "Alice");
+
+        clock.set(1_000L + 30_000L);
+        service.observeDeparture(uuid);
+
+        assertEquals(31_000L, persistedLastSeen(directory, uuid),
+                "past the window the write goes through without waiting for a flush");
+    }
+
+    @Test
+    @DisplayName("a rename is written immediately, because the name index resolves by it")
+    void renameIsWrittenImmediately() throws java.io.IOException {
+        java.util.concurrent.atomic.AtomicLong clock = new java.util.concurrent.atomic.AtomicLong(1_000L);
+        JsonStore store = new JsonStore(directory);
+        IdentityService service = new IdentityService(store, clock::get);
+        java.util.UUID uuid = java.util.UUID.randomUUID();
+        service.observe(uuid, "Alice");
+
+        clock.set(1_500L);
+        service.observe(uuid, "Bob");
+
+        String json = java.nio.file.Files.readString(directory.resolve("players.json"),
+                java.nio.charset.StandardCharsets.UTF_8);
+        assertTrue(json.contains("Bob"), "a name change is a fact and must not wait for the window");
+        assertTrue(json.contains("Alice"), "and the previous name is kept in the history");
+    }
+
+    @Test
+    @DisplayName("a zero window writes every change, as the service behaved before 1.1.4")
+    void zeroWindowWritesEverything() throws java.io.IOException {
+        java.util.concurrent.atomic.AtomicLong clock = new java.util.concurrent.atomic.AtomicLong(1_000L);
+        IdentityService service = new IdentityService(new JsonStore(directory), clock::get);
+        service.setFlushIntervalMillis(0L);
+        java.util.UUID uuid = java.util.UUID.randomUUID();
+        service.observe(uuid, "Alice");
+        long first = persistedLastSeen(directory, uuid);
+
+        clock.set(1_001L);
+        service.observeDeparture(uuid);
+
+        assertEquals(1_001L, persistedLastSeen(directory, uuid), "a zero window writes through at once");
+        assertEquals(1_000L, first);
+    }
 }

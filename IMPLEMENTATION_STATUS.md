@@ -20,7 +20,7 @@ fails the build if they do.
 cited. A file that looks finished but has never been compiled is `in progress`, however
 complete it appears.
 
-**Last updated:** 2026-07-27 · **Version:** 1.1.1 (in progress) ·
+**Last updated:** 2026-07-28 · **Version:** 1.1.1 (in progress) ·
 **Previous version:** 1.0.0 · **Milestones passed:** M0, M1, M2, M3, M4, M5 (partial)
 
 > **v1.0 does not mean feature complete.** The version scheme (ADR-0007) is the owner's
@@ -58,8 +58,8 @@ utilities, moderation with confirmations, and a working admin GUI.
 
 **Two things are true at once, and both matter:**
 
-1. **248 automated tests pass, and since 1.1.1 the 242 shared ones run on every loader** — 732
-   test executions in total (242 shared × 3, plus 3 Fabric-specific and 3 Forge-specific).
+1. **312 automated tests pass, and since 1.1.1 the 306 shared ones run on every loader** — 924
+   test executions in total (306 shared × 3, plus 3 Fabric-specific and 3 Forge-specific).
    **Until 1.1.1 they did not.** The shared suite was wired into `check` for NeoForge only, so
    "214 tests, three loaders green" was 208 tests on one loader and 3 on each of the others while
    all three compiled the code under test. The count read like three-way coverage and was not.
@@ -74,10 +74,9 @@ utilities, moderation with confirmations, and a working admin GUI.
    `build/`, so the decompile step had never run cold here). The whole feature set has also been
    exercised end to end on real dedicated servers for all three loaders, with zero errors.
 
-   **34 of those 248 are the write-ahead journal's and postdate the v1.1.0 release**: they pass
-   locally on all three loaders and have **not** yet run in CI, because the branch carrying them is
-   not merged. The journal also has no production caller and so has never run on a real server —
-   unlike everything else in this list, it is proven by tests alone.
+   **34 of those are the write-ahead journal's**, and the journal has **no production caller** — so
+   unlike everything else in this list it has never run on a real server and is proven by tests
+   alone. M6's economy is the intended first caller.
 2. **The mod has now been human-tested on a real dedicated server, by one player.** Reported by
    the project owner at the 1.1.0 release: a real player joined a real dedicated server and
    exercised most of the feature set, including the admin panel rendering to an unmodified vanilla
@@ -242,7 +241,6 @@ the list below and is not yet fixed.
 | `setHome` leaks an empty entry when refused | low | The per-owner map is inserted before the limit check, so refused `/sethome` calls leave permanent empty entries in `homes.json`. |
 | **A rename is not flushed to disk on Windows** | medium | `JsonStore.forceDirectory` opens the directory as a channel and forces it. **Windows cannot open a directory as a channel at all**, so every directory fsync NexusCore performs is a no-op there, and a completed rename is durable only once the filesystem writes its own metadata on its own schedule. Documents are still *replaced* atomically — what is weakened is surviving a power loss in the moments after. **Ruled rather than fixed at 1.1.4**: there is no directory-fsync equivalent to reach for on that platform. Reported once per run at WARN since 1.1.4; before that it was logged at DEBUG, which nobody runs, so the weakening was invisible on the one platform where it always happens. Linux and macOS are unaffected. |
 | `config.json` silently loses operator keys | medium | `load()` rewrites the file from the typed object, deleting any key the schema does not know, while reporting `no problems found`. |
-| `players.json` rewritten in full on every login and logout | medium | Never pruned; each write copies a full `.bak` and fsyncs twice. |
 | Fabric death messages lose their cause | medium | Every styled death reads `<Player> died` on Fabric only. |
 | `ban-ip`/`pardon-ip` stay vanilla commands | low | IP bans are now listed by `/banlist`, but their issue and lift still bypass NexusCore, so they are not audited. |
 | Admin GUI acts on a stale `ServerPlayer` | low | A handler captured before the target logged out performs a no-op and audits it as `allowed`. |

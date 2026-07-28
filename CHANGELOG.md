@@ -187,6 +187,28 @@ weaker position than it sounds once a balance depends on it.
   `sequence` field, so one bounded segment is read instead of everything ever written. `tail()`
   reads back from the newest log and stops as soon as it has enough.
 
+- **`players.json` was rewritten in full on every join and every leave.** A rejoining player moves
+  one timestamp; paying a whole-document serialise, a `.bak` copy and an fsync for that — twice per
+  session, per player, forever — is the amplification. Last-seen updates are now damped behind a
+  30-second window and flushed when the identity module stops.
+
+  **Damping may cost a timestamp's precision. It must never cost a fact.** A player the document has
+  never held, and a name change the index resolves by, are written through immediately; only pure
+  observation waits. And the flush on shutdown is what makes any of it safe — without it, damping
+  would trade a real write-amplification problem for a quiet data-loss one on every clean stop.
+
+  The service also had **two clocks**: the damping window ran on the injected one while the
+  timestamps it damped ran on `System.currentTimeMillis()`. That is now one clock throughout, and it
+  is not a tidiness change — see below.
+
+  **A test of mine passed against a no-op `flush()`.** The first version asserted the persisted
+  timestamp was `>=` its previous value; when the damped write never landed, the old value satisfied
+  that comparison and the suite stayed green. The two clocks are why it could not have caught it —
+  no test could observe a damped write landing while the value being damped came from wall-clock.
+  Fixing the clock made the assertion expressible as an exact value, and the injection now fails as
+  it should. **A fix whose removal no test notices is not a closed defect** — the standard Master
+  Mode applied to its own safe-mode row this session, met here by failing it first.
+
 **And two read/write-path defects, which turned out to be one mistake wearing two hats:**
 
 - **An unreadable file was treated as a corrupt one.** `read()` caught `IOException` alongside the

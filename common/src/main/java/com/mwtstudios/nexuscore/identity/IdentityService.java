@@ -10,6 +10,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.function.BooleanSupplier;
+import java.util.function.LongSupplier;
 
 import com.mwtstudios.nexuscore.storage.JsonStore;
 
@@ -40,7 +41,17 @@ public final class IdentityService {
     public static final int CURRENT_SCHEMA_VERSION = 1;
 
     private final JsonStore store;
+    private final LongSupplier clock;
     private final Document document;
+
+    /** Set when the document has changed since the last write; cleared by every write. */
+    private boolean dirty;
+
+    /** When the document was last written, on the injected clock. */
+    private long lastWriteAt;
+
+    /** How long a damped change may wait before it is written anyway. */
+    private long flushIntervalMillis = DEFAULT_FLUSH_INTERVAL_MILLIS;
     /** Lowercased current name to UUID. Rebuilt from the document, never persisted separately. */
     private final Map<String, UUID> nameIndex = new LinkedHashMap<>();
 
@@ -55,10 +66,27 @@ public final class IdentityService {
     private static final int MAX_REMEMBERED_MISSES = 256;
 
     /**
+     * How long a last-seen update may sit unwritten. A rejoining player only moves a timestamp, and
+     * paying a full document rewrite plus a backup copy and an fsync for that — on every join AND
+     * every leave — is the write amplification this bounds.
+     */
+    private static final long DEFAULT_FLUSH_INTERVAL_MILLIS = 30_000L;
+
+    /**
      * @param store the data store holding {@value #FILE}
      */
     public IdentityService(JsonStore store) {
+        this(store, System::currentTimeMillis);
+    }
+
+    /**
+     * @param store the data store holding {@value #FILE}
+     * @param clock supplies epoch milliseconds, injected so a test can drive the damping window
+     *     without sleeping — the same reason {@code RateLimiter} and {@code ModerationService} take one
+     */
+    public IdentityService(JsonStore store, LongSupplier clock) {
         this.store = store;
+        this.clock = clock;
         this.document = store.read(FILE, Document.class, Document::new);
         if (document.players == null) {
             document.players = new LinkedHashMap<>();
@@ -90,13 +118,20 @@ public final class IdentityService {
         if (changed && profile.currentName != null && !profile.knownNames.contains(profile.currentName)) {
             profile.knownNames.add(profile.currentName);
         }
+        boolean isNew = profile.firstSeenEpochMillis == 0L;
         profile.currentName = name;
-        profile.lastSeenEpochMillis = System.currentTimeMillis();
-        if (profile.firstSeenEpochMillis == 0L) {
+        profile.lastSeenEpochMillis = clock.getAsLong();
+        if (isNew) {
             profile.firstSeenEpochMillis = profile.lastSeenEpochMillis;
         }
         rebuildIndex();
-        save();
+        if (isNew || changed) {
+            // A player this document has never held, or a name the index now resolves by. Facts,
+            // not timestamps — a crash must not lose them.
+            saveNow();
+        } else {
+            saveDamped();
+        }
     }
 
     /**
@@ -119,10 +154,15 @@ public final class IdentityService {
         if (renamed && profile.currentName != null && !profile.knownNames.contains(profile.currentName)) {
             profile.knownNames.add(profile.currentName);
         }
+        boolean isNew = profile.firstSeenEpochMillis == 0L && profile.knownNames.isEmpty();
         profile.currentName = name;
         recentMisses.remove(name.toLowerCase(Locale.ROOT));
         rebuildIndex();
-        save();
+        if (isNew || renamed) {
+            saveNow();
+        } else {
+            saveDamped();
+        }
     }
 
     /**
@@ -137,7 +177,7 @@ public final class IdentityService {
                 oldest.remove();
             }
         }
-        recentMisses.put(name.toLowerCase(Locale.ROOT), System.currentTimeMillis());
+        recentMisses.put(name.toLowerCase(Locale.ROOT), clock.getAsLong());
     }
 
     /**
@@ -149,7 +189,7 @@ public final class IdentityService {
         if (at == null) {
             return false;
         }
-        if (System.currentTimeMillis() - at > MISS_MEMORY_MILLIS) {
+        if (clock.getAsLong() - at > MISS_MEMORY_MILLIS) {
             recentMisses.remove(name.toLowerCase(Locale.ROOT));
             return false;
         }
@@ -160,8 +200,9 @@ public final class IdentityService {
     public void observeDeparture(UUID uuid) {
         Profile profile = document.players.get(uuid.toString());
         if (profile != null) {
-            profile.lastSeenEpochMillis = System.currentTimeMillis();
-            save();
+            profile.lastSeenEpochMillis = clock.getAsLong();
+            // Purely a timestamp. The flush on module stop is what makes damping this safe.
+            saveDamped();
         }
     }
 
@@ -365,9 +406,51 @@ public final class IdentityService {
         }
     }
 
-    private void save() {
+    /** Writes immediately. For changes that must survive the very next crash. */
+    private void saveNow() {
         document.schemaVersion = CURRENT_SCHEMA_VERSION;
         store.write(FILE, document);
+        dirty = false;
+        lastWriteAt = clock.getAsLong();
+    }
+
+    /**
+     * Records a change, writing only if the damping window has elapsed.
+     *
+     * <p>Used for updates that are pure observation — a last-seen timestamp moving. Losing the last
+     * few of those to a crash costs an approximate answer from {@code /seen}; writing every one of
+     * them costs a full document rewrite, a backup copy and an fsync per join and per leave, for
+     * every player, forever. <b>Anything that changes what the document *means* — a player it has
+     * never recorded, or a name change that the name index resolves by — goes through
+     * {@link #saveNow} instead</b>, so damping never costs a fact, only a timestamp's precision.</p>
+     */
+    private void saveDamped() {
+        dirty = true;
+        if (clock.getAsLong() - lastWriteAt >= flushIntervalMillis) {
+            saveNow();
+        }
+    }
+
+    /**
+     * Writes any damped change immediately.
+     *
+     * <p>Called when the identity module stops. Without it, damping would trade a real write
+     * amplification problem for a quiet data-loss one: every clean shutdown would discard whatever
+     * had not yet reached disk, which is worse than the defect being fixed.</p>
+     */
+    public void flush() {
+        if (dirty) {
+            saveNow();
+        }
+    }
+
+    /**
+     * Sets how long a damped change may wait.
+     *
+     * @param millis the window; zero writes every change immediately, as before 1.1.4
+     */
+    public void setFlushIntervalMillis(long millis) {
+        this.flushIntervalMillis = millis;
     }
 
     /**

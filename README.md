@@ -32,7 +32,7 @@
 </p>
 
 <p align="center">
-  <a href="https://mwtstudios.net/nexuscore/">mwtstudios.net</a> ·
+  <a href="https://mwtstudios.net/nexuscore/">Website</a> ·
   <a href="https://modrinth.com/mod/nexuscore-mod-ncm">Modrinth</a> ·
   <a href="https://discord.gg/yPS6383Xax">Discord</a>
 </p>

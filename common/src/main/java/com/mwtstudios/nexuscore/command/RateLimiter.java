@@ -21,8 +21,8 @@ public final class RateLimiter {
     /** Maximum distinct subjects tracked at once. */
     public static final int MAX_TRACKED = 2048;
 
-    private final int capacity;
-    private final double refillPerMilli;
+    private volatile int capacity;
+    private volatile double refillPerMilli;
     private final LongSupplier clock;
     private final Map<UUID, Bucket> buckets;
 
@@ -31,9 +31,8 @@ public final class RateLimiter {
      * @param clock supplies the current time in milliseconds
      */
     public RateLimiter(int permitsPerMinute, LongSupplier clock) {
-        this.capacity = Math.max(1, permitsPerMinute);
-        this.refillPerMilli = this.capacity / 60_000.0;
         this.clock = clock;
+        setPermitsPerMinute(permitsPerMinute);
         this.buckets = new LinkedHashMap<>(16, 0.75f, true) {
             private static final long serialVersionUID = 1L;
 
@@ -42,6 +41,18 @@ public final class RateLimiter {
                 return size() > MAX_TRACKED;
             }
         };
+    }
+
+    /**
+     * Applies a new sustained rate on reload. Existing buckets keep their current token level and
+     * refill toward the new capacity from here — a lowered limit therefore takes effect at the
+     * next refill rather than retroactively, which is the honest reading of "from now on".
+     *
+     * @param permitsPerMinute the new sustained rate, also the burst capacity
+     */
+    public synchronized void setPermitsPerMinute(int permitsPerMinute) {
+        this.capacity = Math.max(1, permitsPerMinute);
+        this.refillPerMilli = this.capacity / 60_000.0;
     }
 
     /**

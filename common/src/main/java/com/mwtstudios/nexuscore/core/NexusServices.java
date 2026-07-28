@@ -445,5 +445,10 @@ public final class NexusServices {
         }
         confirmations.setTimeoutSeconds(settings.confirmationTimeoutSeconds);
         audit.setEnabled(settings.auditEnabled);
+        // Both of these kept their boot-time value through a reload while /nexus reload reported
+        // success. commandsPerMinute is a rate limit — a security control that silently did not
+        // apply — so this is the more important of the two.
+        rateLimiter.setPermitsPerMinute(settings.commandsPerMinute);
+        permissions.setCacheSize(settings.permissionCacheSize);
     }
 }

@@ -247,10 +247,8 @@ the list below and is not yet fixed.
 | `players.json` rewritten in full on every login and logout | medium | Never pruned; each write copies a full `.bak` and fsyncs twice. |
 | Fabric death messages lose their cause | medium | Every styled death reads `<Player> died` on Fabric only. |
 | `ban-ip`/`pardon-ip` stay vanilla commands | low | IP bans are now listed by `/banlist`, but their issue and lift still bypass NexusCore, so they are not audited. |
-| `/nexus reload` silently ignores two settings | low | `commandsPerMinute` and `permissionCacheSize` keep boot-time values while the reload reports success. `commandsPerMinute` is a rate limit, so a security control does not apply. |
 | Admin GUI acts on a stale `ServerPlayer` | low | A handler captured before the target logged out performs a no-op and audits it as `allowed`. |
 | Death-message edge cases | low | Reload double-broadcasts until restart; the dying player's own screen loses its cause; team `deathMessageVisibility` is ignored. |
-| `DurationParser.format()` returns empty below one second | low | `describeRemaining()` yields `""` rather than a time. |
 | `/nexus permission check` bypasses `authorise()` | low | It calls the evaluator directly, so it can never show the operator-bootstrap grant — the command whose job is explaining a decision under-reports who can do what. |
 | Gson I/O errors escape the write protocol | low | For documents larger than the writer buffer, Gson wraps the failure in `JsonIOException`, bypassing `catch (IOException)` and leaving the `.tmp`. |
 | One non-UTF-8 byte in `audit.log` prevents startup | low | No recovery path inside the mod. |

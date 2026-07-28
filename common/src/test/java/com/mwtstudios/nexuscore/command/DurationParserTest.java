@@ -174,4 +174,21 @@ class DurationParserTest {
         assertEquals("expired", DurationParser.describeRemaining(1_000L, 1_000L));
         assertEquals("30s", DurationParser.describeRemaining(31_000L, 1_000L));
     }
+
+    @Test
+    @DisplayName("regression: a sub-second remainder renders as 1s, not as empty text")
+    void subSecondRemainderIsNotEmpty() {
+        // A market listing or kit cooldown in its last second used to render "" — a blank where
+        // a time should be, on the row an operator is most likely to be watching.
+        assertEquals("1s", DurationParser.format(java.time.Duration.ofMillis(500)));
+        assertEquals("1s", DurationParser.describeRemaining(1_000_500L, 1_000_000L));
+    }
+
+    @Test
+    @DisplayName("the boundaries around one second stay exact")
+    void subSecondBoundaries() {
+        assertEquals("expired", DurationParser.describeRemaining(1_000_000L, 1_000_000L));
+        assertEquals("1s", DurationParser.describeRemaining(1_001_000L, 1_000_000L));
+        assertEquals("0s", DurationParser.format(java.time.Duration.ZERO));
+    }
 }

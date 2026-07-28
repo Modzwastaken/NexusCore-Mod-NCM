@@ -93,6 +93,12 @@ them instead of carrying a second copy of the atomic-move protocol — including
 fixed in one copy and not the other.
 
 ### Fixed
+- `/nexus reload` now applies `commandsPerMinute` and `permissionCacheSize`. Both kept their
+  boot-time values while the command reported success — the first is a rate limit, so an operator
+  lowering it after abuse was told it had worked when it had not. `ApplySettingsTest` drives the
+  real reload path rather than the setters.
+- `DurationParser.format()` renders `1s` rather than empty text for a positive duration under one
+  second, so a cooldown or expiry in its final second no longer shows a blank where a time belongs.
 - `/pardon` lifts pre-NexusCore vanilla bans too — the takeover pardon only lifted NexusCore
   records, leaving bans that predate the mod enforceable at login but liftable by nobody. It now
   lifts both systems and says which it found; vanilla's own entry also supplies the UUID, so a

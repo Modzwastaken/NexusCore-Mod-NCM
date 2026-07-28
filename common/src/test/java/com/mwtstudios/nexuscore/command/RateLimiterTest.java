@@ -120,4 +120,30 @@ class RateLimiterTest {
 
         assertFalse(limiter.tryAcquire(subject), "a backwards clock must not refill the bucket");
     }
+
+    @Test
+    @DisplayName("regression: a reloaded commandsPerMinute actually applies")
+    void reloadedRateApplies() {
+        AtomicLong clock = new AtomicLong(0L);
+        RateLimiter limiter = new RateLimiter(60, clock::get);
+        UUID subject = UUID.randomUUID();
+
+        // Spend the boot-time allowance.
+        for (int i = 0; i < 60; i++) {
+            assertTrue(limiter.tryAcquire(subject), "permit " + i + " should be within the boot capacity");
+        }
+        assertFalse(limiter.tryAcquire(subject), "the boot-time bucket should now be empty");
+
+        // Raise the limit and let a full minute refill. commandsPerMinute is a rate limit — a
+        // security control that kept its boot value through /nexus reload while the command
+        // reported success.
+        limiter.setPermitsPerMinute(600);
+        clock.addAndGet(60_000L);
+
+        int granted = 0;
+        while (limiter.tryAcquire(subject)) {
+            granted++;
+        }
+        assertEquals(600, granted, "the reloaded capacity should govern, not the boot-time one");
+    }
 }

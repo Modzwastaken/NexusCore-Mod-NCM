@@ -90,6 +90,7 @@ public final class NexusCore {
         NeoForge.EVENT_BUS.addListener(this::onServerStopping);
         NeoForge.EVENT_BUS.addListener(this::onServerTick);
         NeoForge.EVENT_BUS.addListener(this::onPlayerLogin);
+        NeoForge.EVENT_BUS.addListener(this::onPlayerRespawn);
         NeoForge.EVENT_BUS.addListener(this::onPlayerLogout);
         NeoForge.EVENT_BUS.addListener(this::onServerChat);
         NeoForge.EVENT_BUS.addListener(this::onPlayerDeath);
@@ -137,6 +138,10 @@ public final class NexusCore {
             return;
         }
         services.identity().observe(player);
+        if (services.has("player-utilities")) {
+            // Guarded like the handlers around it: throwing here would stop players joining.
+            services.players().hideVanishedFrom(player.server, player);
+        }
 
         // Guarded: a login handler that threw because moderation is disabled would stop players
         // joining at all, which is the opposite of what safe mode is for.
@@ -153,6 +158,13 @@ public final class NexusCore {
                     player.getUUID().toString(), "denied", ban.reason(),
                     java.util.Map.of("remaining", remaining), UUID.randomUUID().toString());
         });
+    }
+
+    /** Respawning rebuilds the entity, so vanish has to be put back on it. */
+    private void onPlayerRespawn(PlayerEvent.PlayerRespawnEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player && services.has("player-utilities")) {
+            services.players().reapplyVanish(player.server, player);
+        }
     }
 
     private void onPlayerLogout(PlayerEvent.PlayerLoggedOutEvent event) {

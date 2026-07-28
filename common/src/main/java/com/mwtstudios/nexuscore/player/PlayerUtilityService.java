@@ -177,6 +177,51 @@ public final class PlayerUtilityService {
     }
 
     /**
+     * Hides everyone currently vanished from a player who has just joined.
+     *
+     * <p>Vanilla sends a new client the whole player list, so a staff member who vanished
+     * before that client connected appeared in their list anyway. Vanish held only for the
+     * clients that were already connected when it was switched on, which made it look like it
+     * randomly stopped working.</p>
+     *
+     * @param server the running server
+     * @param joiner the player who has just connected
+     */
+    public void hideVanishedFrom(MinecraftServer server, ServerPlayer joiner) {
+        List<UUID> hidden = vanished.stream().filter(uuid -> !uuid.equals(joiner.getUUID())).toList();
+        if (hidden.isEmpty()) {
+            return;
+        }
+        joiner.connection.send(new ClientboundPlayerInfoRemovePacket(hidden));
+        for (UUID uuid : hidden) {
+            ServerPlayer hiddenPlayer = server.getPlayerList().getPlayer(uuid);
+            if (hiddenPlayer != null) {
+                hiddenPlayer.setInvisible(true);
+            }
+        }
+    }
+
+    /**
+     * Re-applies vanish to a player whose entity has just been rebuilt.
+     *
+     * <p>Respawning replaces the {@code ServerPlayer}, so the invisibility flag was lost while
+     * the vanished set still held the UUID. NexusCore then believed the staff member was hidden
+     * — {@code /list} and {@code /near} filtered them out — while every client could see them
+     * standing there. The two halves of the state disagreed, and the visible half was the wrong
+     * one.</p>
+     *
+     * @param server the running server
+     * @param player the player after respawn
+     */
+    public void reapplyVanish(MinecraftServer server, ServerPlayer player) {
+        if (!isVanished(player.getUUID())) {
+            return;
+        }
+        player.setInvisible(true);
+        broadcastExcept(server, player, new ClientboundPlayerInfoRemovePacket(List.of(player.getUUID())));
+    }
+
+    /**
      * @param player the player's UUID
      * @return true when they are currently vanished
      */

@@ -6,6 +6,7 @@
   "error.unknown-player": "&c&lNEXUS &c» &7No player named &f{name}&7 is known to this server.",
   "confirm.rejected": "&c&lCONFIRM &c» &7That confirmation is not valid &8({reason})&7. Run the command again to get a new one.",
   "confirm.done": "&a&lCONFIRM &a» &7Confirmed: &f{action}",
+  "confirm.failed": "&c&lNEXUS &c» &7{action} &cdid not complete&7: {reason} &8— the confirmation has been used up; the failure is recorded in the audit log.",
   "player.heal.success": "&a&lHEAL &a» &7Healed &f{target}&7.",
   "player.feed.success": "&a&lFEED &a» &7Fed &f{target}&7.",
   "player.fly.enabled": "&b&lFLY &b» &7Flight for &f{target}&7: &aenabled",
@@ -59,12 +60,16 @@
   "moderation.warn.notify": "&e&lWARN &e» &7You have been warned by staff: &f\"{reason}\"",
   "moderation.warnings.none": "&e&lWARN &e» &f{target} &7has no warnings.",
   "moderation.banlist.none": "&a&lBAN &a» &7There are no active bans.",
+  "moderation.lift.vanilla-only": "&a&lNEXUS &a» &f{target}&7 had no NexusCore ban, but their &epre-NexusCore vanilla ban&7 was removed. They can join again.",
+  "moderation.lift.both": "&a&lNEXUS &a» &f{target}&7 is unbanned — their NexusCore ban and a &epre-NexusCore vanilla entry&7 were both lifted.",
+  "header.bans.ip": "&c&lIP BANS &c» &7{count} vanilla IP ban(s) — issue and lift with &f/ban-ip &7and &f/pardon-ip&7:",
   "permission.set.success": "&9&lPERMS &9» &7Set &f{node} &8= &6{value}&7 directly on &f{target}&7.",
   "permission.unset.success": "&9&lPERMS &9» &7Removed the direct node &f{node}&7 from &f{target}&7.",
   "permission.unset.none": "&c&lPERMS &c» &f{target} &7has no direct node &f{node}&7.",
   "audit.tail.none": "&e&lAUDIT &e» &7The audit log is empty.",
   "player.seen.online": "&a&lSEEN &a» &f{target} &7is &aonline &7right now.",
   "player.seen.offline": "&e&lSEEN &e» &f{target} &7was last seen &6{ago}&7 ago. &8— &7First joined: &e{first}",
+  "player.seen.never": "&e&lSEEN &e» &f{target} &7is a real account, but has never joined this server.",
   "player.list.header": "&b&lLIST &b» &7Online &6{count}&7/&6{max}&7:",
   "player.near.header": "&b&lNEAR &b» &6{count}&7 player(s) within &6{radius}&7 blocks:",
   "player.near.none": "&b&lNEAR &b» &7No other players within &6{radius}&7 blocks.",
@@ -93,5 +98,6 @@
   "help.footer": "&8Only commands you have permission for are listed.",
   "permission.check.result": "&9&lPERMS &9» &f{target} &8→ &f{node}\n&8→ &7Result: &6{result}\n&8→ &7{explanation}\n&8→ &7Groups: &f{groups}",
   "gui.admin.opening": "&a&lNEXUS &a» &7Opening the admin panel…",
-  "error.module.disabled": "&c&lNEXUS &c» &7That feature is disabled: the server is running in &fsafe mode&7."
+  "error.module.disabled": "&c&lNEXUS &c» &7That feature is disabled: the server is running in &fsafe mode&7.",
+  "error.unknown-player.looking-up": "&e&lNEXUS &e» &7&f{name}&7 has not played here. A profile lookup has been started — run the command again in a moment."
 }

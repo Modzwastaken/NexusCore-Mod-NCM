@@ -93,6 +93,42 @@ them instead of carrying a second copy of the atomic-move protocol — including
 fixed in one copy and not the other.
 
 ### Fixed
+- A confirmation is no longer staged for an action that cannot run. `/ban` in safe mode issued its
+  prompt happily, because the only thing reaching the moderation module was the token's *body* —
+  and a body does not run until the operator confirms. `/nexus confirm` then spent the token, the
+  action failed, and the operator was left with no ban, no token, and no record of either.
+  `proposeBan()` now reaches the module first, so the refusal happens before anything is staged;
+  and a body that throws after its token is spent is audited and reported, because the token
+  stays spent — single use is a security property, and returning it would let a partially applied
+  action be retried.
+
+  **Recorded honestly: this fix is not closed by a test.** Both changes sit at command call sites,
+  which nothing can invoke without a `CommandSourceStack` harness; removing either leaves all 289
+  tests green, which was verified by mutation rather than assumed. `SafeModeConfirmationTest`
+  pins the mechanisms it can reach. The row stays in the defect table until 1.1.2's command tests
+  can drive the propose and confirm paths.
+- `/nexus permission set|unset|check` accept a wildcard pattern. The node argument used
+  Brigadier's `word()`, whose character set excludes `*`, so it silently stopped at the dot and
+  `nexuscore.command.*` — the form operators most often want — could not be typed at all. A
+  `PermissionNodeArgument` reads the pattern whole and validates it with the same
+  `PermissionNode.of()` the engine uses, so an argument that parses is one the permission system
+  accepts, and a mid-pattern wildcard is refused at the keyboard with the engine's own reason.
+- `/nexus permission check` explains the decision enforcement would actually reach. It called the
+  evaluator directly, bypassing `authorise()`, so it could never show the operator-bootstrap
+  grant: the command whose entire job is explaining a decision under-reported who could do what.
+  Bootstrap application is now one implementation shared by the explain and enforcement paths,
+  and it resolves operator level for offline subjects too.
+- `/nexus reload` now applies `commandsPerMinute` and `permissionCacheSize`. Both kept their
+  boot-time values while the command reported success — the first is a rate limit, so an operator
+  lowering it after abuse was told it had worked when it had not. `ApplySettingsTest` drives the
+  real reload path rather than the setters.
+- `DurationParser.format()` renders `1s` rather than empty text for a positive duration under one
+  second, so a cooldown or expiry in its final second no longer shows a blank where a time belongs.
+- `/pardon` lifts pre-NexusCore vanilla bans too — the takeover pardon only lifted NexusCore
+  records, leaving bans that predate the mod enforceable at login but liftable by nobody. It now
+  lifts both systems and says which it found; vanilla's own entry also supplies the UUID, so a
+  pre-takeover pardon works on the first attempt with no network lookup. `/banlist` now shows
+  vanilla-only entries and vanilla IP bans instead of hiding enforced bans.
 
 Six defects in the journal above — three of them serious enough to lose a committed transaction —
 all found by an adversarial review before anything was built on it. None had shipped, and the
@@ -160,6 +196,77 @@ them here is that money and item custody were going to ride on this.
   Now wired into all three. **732 test executions** where there were 214: 242 shared tests on each
   loader, plus Fabric's and Forge's own 3. No test needed changing — the three that locate source
   roots already walk up to find `common/src/main/java`, which 1.0.4 fixed for a different reason.
+
+- **Vanish now applies to players who join later, and survives death.** Two of the four faults
+  in that row. Vanilla sends a new client the entire player list, so a staff member who vanished
+  before that client connected appeared in their list anyway — vanish held only for whoever was
+  already online when it was switched on, which read as it randomly failing. And respawning
+  replaces the `ServerPlayer`, so the invisibility flag was lost while the vanished set still held
+  the UUID: NexusCore filtered the staff member out of `/list` and `/near` while every client could
+  see them standing there. The two halves of the state disagreed and the visible half was wrong.
+
+  `hideVanishedFrom` runs on join and `reapplyVanish` on respawn, on **all three loaders**. Both
+  are behind the `player-utilities` module check, because these run inside login handlers where an
+  exception stops players joining at all.
+
+  **The other two faults are not fixed and are not claimed to be.** The player-list desync that
+  renders staff chat as a red chat-validation error, and un-vanish not restoring the entity for
+  clients that received `AddEntity` while vanished, are both client-rendering behaviour. The first
+  can only be fixed by changing how staff chat is delivered, which is a product decision rather
+  than a defect fix. Both are scheduled for the 1.1.3 two-real-players sweep.
+
+  **Proven to fail, not merely to pass:** `VanishParityTest` checks all three entry points, since
+  they are the one file the builds do not share — exactly where a fix lands on one loader and
+  misses the others, as the Fabric death-message row in the defect table already shows. Removing
+  both hooks from Fabric alone failed two of its three tests; restoring them went green.
+
+- **A second ban or mute no longer stacks on the first.** Three faults shared one cause:
+  `/unban` lifted one record, reported success, and left the player banned; `activeBans()` counted
+  a player once per active row, inflating `/banlist` and the admin panel; and `activeRecord()`
+  returned the last-issued match, so an arbitrary position in the file decided how long somebody
+  stayed banned. `ModerationService:108,150,205`.
+
+  `issue()` now retires any punishment of the same kind already in force, stamping the old record
+  with `supersededByRecordId` — punishments are still never deleted, so the history shows what
+  replaced what. A named `reconcile()` retires lapsed records, keeps the **strictest** of whatever
+  remains, and retires the rest; `lift()` calls it explicitly rather than relying on a query to
+  mutate state as a side effect, because that dependency is exactly what a later refactor removes
+  without noticing.
+
+  The two rules answer different questions and both are needed. A deliberate re-ban is the
+  operator's decision and takes the new terms, shorter or longer. Several records in force at once
+  carry no such intent — they are what builds before this wrote — so there the strictest holds.
+
+  **Proven to fail, not merely to pass:** each mechanism was reverted separately and the suite
+  re-run. Removing the reconciliation failed three tests; removing strictest-selection failed two;
+  removing supersede-on-issue failed two. An earlier revision also carried a lift-all sweep and a
+  de-duplicated `activeBans()`; **neither could be made to fail any test**, because reconciliation
+  already covered them, so both were removed rather than shipped as paths nothing exercises.
+
+- **Identity lookup no longer stalls the server thread on a Mojang request.**
+  `IdentityService.resolve()` fell through to `GameProfileCache.get(String)`, which performs a
+  synchronous HTTP lookup whenever the name is not already cached. It runs on the server thread
+  and any ordinary player could reach it by typing `/seen <unknown-name>`, so one slow or
+  unreachable Mojang response parked the whole server for the length of the request. Eleven
+  command sites resolved names through that path.
+
+  `resolve()` is now local only — the online player list and NexusCore's own record of everyone
+  who has joined. A new `resolveAsync()` performs the profile-cache lookup through
+  `getAsync(String)`, which runs on the background executor and de-duplicates concurrent requests
+  for the same name, then files the result through `observe()` **on the server thread**, because
+  the identity document and its name index are not thread-safe and that completion arrives on a
+  background thread. A name nobody here has played under is now refused with
+  `error.unknown-player.looking-up`, which says a lookup has started and to try again — the retry
+  resolves locally.
+
+  This is a deliberate behaviour change: pre-banning a player who has never joined now takes two
+  attempts instead of one. It buys the removal of a server-wide stall that any player could
+  trigger at will.
+
+  **Proven to fail, not merely to pass:** the blocking call was reinstated and
+  `IdentityServiceTest.identityLookupNeverBlocksOnTheProfileCache` rejected it; the file was
+  restored and the suite re-run clean. Five behavioural tests cover local resolution,
+  case-insensitivity, renames, unknown names, and survival across a restart.
 
 - **Both custom gates now run on all three loaders.** `stubMarkerCheck` and `versionLadderCheck`
   were registered only in `neoforge/build.gradle`. A `./gradlew build` in `fabric/` or `forge/`

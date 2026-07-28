@@ -24,6 +24,7 @@ import com.mwtstudios.nexuscore.message.MessageService;
 import com.mwtstudios.nexuscore.module.ModuleException;
 import com.mwtstudios.nexuscore.message.TimeText;
 import com.mwtstudios.nexuscore.moderation.ModerationService;
+import com.mwtstudios.nexuscore.moderation.VanillaBans;
 import com.mwtstudios.nexuscore.moderation.PunishmentMessages;
 import com.mwtstudios.nexuscore.permission.PermissionDecision;
 import com.mwtstudios.nexuscore.teleport.TeleportService;
@@ -439,9 +440,22 @@ public final class NexusCommands {
             throw new Refused(services.messages().raw("confirm.rejected",
                     "reason", taken.outcome().name().toLowerCase(Locale.ROOT)));
         }
-        taken.body().run();
+        try {
+            taken.body().run();
+        } catch (RuntimeException e) {
+            // The token is already spent, and it stays spent: single use is a security property,
+            // and handing it back would let a partially applied action be retried. But a token
+            // consumed by an action that did not happen is exactly what an operator needs a
+            // record of — the module-disabled path in the command wrapper deliberately writes no
+            // audit record, which is right for a refusal and wrong for a spent token.
+            services.audit(source, "core.confirm", "confirmation", taken.description(),
+                    "failed", e.getMessage(), Map.of(), UUID.randomUUID().toString());
+            throw new Refused(services.messages().raw("confirm.failed",
+                    "action", taken.description(), "reason", String.valueOf(e.getMessage())));
+        }
         return Feedback.of(services.messages().render("confirm.done", "action", taken.description()));
     }
+
 
     private static Feedback openGui(NexusServices services, CommandSourceStack source, AdminGuiService gui)
             throws Refused {
@@ -456,7 +470,7 @@ public final class NexusCommands {
         return Commands.literal("permission")
                 .then(Commands.literal("check")
                         .then(Commands.argument("player", StringArgumentType.word())
-                                .then(Commands.argument("node", StringArgumentType.word())
+                                .then(Commands.argument("node", PermissionNodeArgument.permissionNode())
                                         .executes(context -> run(context, services, "nexuscore.command.permission.check",
                                                 "permission.check",
                                                 source -> permissionCheck(source, services,
@@ -487,7 +501,7 @@ public final class NexusCommands {
                                                                 StringArgumentType.getString(context, "group"), false)))))))
                 .then(Commands.literal("set")
                         .then(Commands.argument("player", StringArgumentType.word())
-                                .then(Commands.argument("node", StringArgumentType.word())
+                                .then(Commands.argument("node", PermissionNodeArgument.permissionNode())
                                         .then(Commands.literal("allow")
                                                 .executes(context -> run(context, services,
                                                         "nexuscore.command.permission.set", "permission.set",
@@ -502,7 +516,7 @@ public final class NexusCommands {
                                                                 StringArgumentType.getString(context, "node"), false)))))))
                 .then(Commands.literal("unset")
                         .then(Commands.argument("player", StringArgumentType.word())
-                                .then(Commands.argument("node", StringArgumentType.word())
+                                .then(Commands.argument("node", PermissionNodeArgument.permissionNode())
                                         .executes(context -> run(context, services,
                                                 "nexuscore.command.permission.set", "permission.unset",
                                                 source -> unsetNode(source, services,
@@ -513,7 +527,9 @@ public final class NexusCommands {
     private static Feedback permissionCheck(CommandSourceStack source, NexusServices services, String name, String node)
             throws Refused {
         UUID target = resolve(source, services, name);
-        PermissionDecision decision = services.permissions().evaluate(target, node);
+        // Through authorise(), not the evaluator: the operator-bootstrap grant lives there, and
+        // an explain command that disagrees with enforcement under-reports who can do what.
+        PermissionDecision decision = services.authorise(source.getServer(), target, name, node);
         return Feedback.of(services.messages().render("permission.check.result",
                         "target", name, "node", node,
                         "result", decision.result().name(),
@@ -1001,6 +1017,12 @@ public final class NexusCommands {
      */
     private static Feedback proposeBan(NexusServices services, CommandSourceStack source, String name, String rawReason)
             throws Refused {
+        // Touch the module BEFORE staging anything. The confirmation body is what used to reach
+        // moderation first, and it does not run until the operator confirms — so in safe mode the
+        // prompt was issued happily, the token was then spent by /nexus confirm, and the action
+        // failed with the token already gone. Failing here throws the same ModuleException the
+        // command wrapper reports cleanly, and no token is ever staged for work that cannot run.
+        services.moderation();
         UUID target = resolve(source, services, name);
         String reason = ModerationService.sanitiseReason(rawReason, services.settings().maxReasonLength);
         UUID actor = source.getEntity() instanceof ServerPlayer player ? player.getUUID() : null;
@@ -1129,6 +1151,9 @@ public final class NexusCommands {
 
     private static Feedback liftPunishment(NexusServices services, CommandSourceStack source, ModerationService.Type type,
             String name, String messageKey) throws Refused {
+        if (type == ModerationService.Type.BAN) {
+            return liftBanEverywhere(services, source, name, messageKey);
+        }
         UUID target = resolve(source, services, name);
         UUID actor = source.getEntity() instanceof ServerPlayer player ? player.getUUID() : null;
 
@@ -1138,6 +1163,39 @@ public final class NexusCommands {
         }
         return Feedback.of(services.messages().render(messageKey, "target", name))
                 .withTarget("player", target.toString());
+    }
+
+    /**
+     * {@code /pardon} means "let this player back in", and vanilla still enforces its own list
+     * at login — so a ban must be lifted from <em>both</em> systems. A pre-takeover vanilla ban
+     * is also often the only local record of the player, so vanilla's entry is consulted for the
+     * UUID before any network lookup: without that, the one command able to free such a player
+     * would first demand a Mojang round-trip to learn who they are.
+     */
+    private static Feedback liftBanEverywhere(NexusServices services, CommandSourceStack source,
+            String name, String messageKey) throws Refused {
+        VanillaBans vanilla = VanillaBans.of(source.getServer());
+        UUID target = services.identity().resolve(source.getServer(), name)
+                .or(() -> vanilla.uuidOfBanned(name))
+                .orElse(null);
+        if (target == null) {
+            target = resolve(source, services, name);
+        }
+        UUID actor = source.getEntity() instanceof ServerPlayer player ? player.getUUID() : null;
+
+        VanillaBans.LiftOutcome outcome = VanillaBans.liftBan(
+                services.moderation(), vanilla, target, name, actor, source.getTextName());
+        return switch (outcome) {
+            case NOTHING_TO_LIFT -> throw new Refused(services.messages().raw("moderation.lift.none",
+                    "target", name, "type", "ban"));
+            case NEXUS_ONLY -> Feedback.of(services.messages().render(messageKey, "target", name))
+                    .withTarget("player", target.toString());
+            case VANILLA_ONLY -> Feedback.of(services.messages().render("moderation.lift.vanilla-only",
+                            "target", name))
+                    .withTarget("player", target.toString());
+            case BOTH -> Feedback.of(services.messages().render("moderation.lift.both", "target", name))
+                    .withTarget("player", target.toString());
+        };
     }
 
     private static LiteralArgumentBuilder<CommandSourceStack> warnNode(NexusServices services) {
@@ -1200,11 +1258,17 @@ public final class NexusCommands {
                 .executes(context -> run(context, services, "nexuscore.command.moderation.banlist", "moderation.banlist",
                         source -> {
                             List<ModerationService.Record> bans = services.moderation().activeBans();
-                            if (bans.isEmpty()) {
+                            VanillaBans vanilla = VanillaBans.of(source.getServer());
+                            // Pre-takeover entries and IP bans live in vanilla's lists, which
+                            // still enforce at login. A banlist that hides an enforced ban is
+                            // wrong in the way that matters most.
+                            List<String> legacy = VanillaBans.vanillaOnlyNames(bans, vanilla);
+                            List<String> ips = vanilla.bannedIps();
+                            if (bans.isEmpty() && legacy.isEmpty() && ips.isEmpty()) {
                                 return Feedback.of(services.messages().render("moderation.banlist.none"));
                             }
-                            StringBuilder text = new StringBuilder(
-                                    services.messages().raw("header.bans", "count", String.valueOf(bans.size())));
+                            StringBuilder text = new StringBuilder(services.messages().raw("header.bans",
+                                    "count", String.valueOf(bans.size() + legacy.size())));
                             for (ModerationService.Record record : bans) {
                                 text.append("\n&7- &c").append(record.targetName()).append(" &7")
                                         .append(record.reason()).append(" &8(")
@@ -1212,6 +1276,17 @@ public final class NexusCommands {
                                                 : TimeText.remaining(record.expiresAt(),
                                                         System.currentTimeMillis()))
                                         .append(')');
+                            }
+                            for (String legacyName : legacy) {
+                                text.append("\n&7- &c").append(legacyName)
+                                        .append(" &8(vanilla, pre-NexusCore — /pardon lifts it)");
+                            }
+                            if (!ips.isEmpty()) {
+                                text.append('\n').append(services.messages().raw("header.bans.ip",
+                                        "count", String.valueOf(ips.size())));
+                                for (String ip : ips) {
+                                    text.append("\n&7- &c").append(ip);
+                                }
                             }
                             return Feedback.of(Component.literal(MessageService.colourise(text.toString())));
                         }));
@@ -1289,6 +1364,14 @@ public final class NexusCommands {
                                     var profile = services.identity().profileOf(target)
                                             .orElseThrow(() -> new Refused(services.messages()
                                                     .raw("error.unknown-player", "name", name)));
+                                    // A record filed by a lookup carries a name but no visit.
+                                    // Reporting "last seen just now" for someone who has never
+                                    // connected would be inventing the answer.
+                                    if (profile.lastSeenEpochMillis() == 0L) {
+                                        return Feedback.of(services.messages().render("player.seen.never",
+                                                        "target", profile.name()))
+                                                .withTarget("player", target.toString());
+                                    }
                                     return Feedback.of(services.messages().render("player.seen.offline",
                                                     "target", profile.name(),
                                                     "ago", TimeText.elapsed(
@@ -1431,9 +1514,28 @@ public final class NexusCommands {
         }
     }
 
+    /**
+     * Resolves an operator-typed name without blocking the server thread.
+     *
+     * <p>The local sources answer instantly. When they miss, the vanilla profile cache is
+     * consulted <em>asynchronously</em> and the command is refused with an invitation to retry,
+     * rather than the server thread being parked on a Mojang HTTP request that any player could
+     * trigger with {@code /seen <unknown-name>}. The async lookup files its result into the
+     * identity index, so the retry resolves locally.</p>
+     */
     private static UUID resolve(CommandSourceStack source, NexusServices services, String name) throws Refused {
         Optional<UUID> found = services.identity().resolve(source.getServer(), name);
-        return found.orElseThrow(() -> new Refused(services.messages().raw("error.unknown-player", "name", name)));
+        if (found.isPresent()) {
+            return found.get();
+        }
+        // A lookup that already came back empty is a definitive answer, and saying so is the
+        // difference between "try again in a moment" forever and being told the account does
+        // not exist. Vanilla caches only positive results, so this memory is ours.
+        if (services.identity().recentlyMissed(name)) {
+            throw new Refused(services.messages().raw("error.unknown-player", "name", name));
+        }
+        services.identity().resolveAsync(source.getServer(), name);
+        throw new Refused(services.messages().raw("error.unknown-player.looking-up", "name", name));
     }
 
     static ServerPlayer requirePlayer(NexusServices services, CommandSourceStack source) throws Refused {

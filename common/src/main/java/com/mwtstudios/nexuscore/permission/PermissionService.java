@@ -48,6 +48,8 @@ public final class PermissionService {
 
     /** Bounded LRU of evaluated decisions, cleared whenever the data changes. */
     private final Map<String, PermissionDecision> cache;
+    /** The LRU bound the cache evicts against; re-applied on reload. */
+    private volatile int cacheBound;
     private int cacheHits;
     private int cacheMisses;
 
@@ -59,16 +61,42 @@ public final class PermissionService {
         this.store = store;
         this.document = store.read(FILE, Document.class, PermissionService::defaults);
         normalise();
-        int bound = Math.max(64, cacheSize);
+        this.cacheBound = Math.max(64, cacheSize);
         this.cache = new LinkedHashMap<>(16, 0.75f, true) {
             private static final long serialVersionUID = 1L;
 
             @Override
             protected boolean removeEldestEntry(Map.Entry<String, PermissionDecision> eldest) {
-                return size() > bound;
+                return size() > cacheBound;
             }
         };
         save();
+    }
+
+    /**
+     * Applies a new decision-cache bound on reload. The cache kept its boot-time size through a
+     * reload while {@code /nexus reload} reported success. A shrink is enforced immediately by
+     * clearing — the LRU only evicts on insertion, so without this an over-size cache would sit
+     * above its new bound until the next miss.
+     *
+     * @param cacheSize the new maximum, floored at 64 per §16
+     */
+    public synchronized void setCacheSize(int cacheSize) {
+        int bound = Math.max(64, cacheSize);
+        if (bound != cacheBound) {
+            cacheBound = bound;
+            cache.clear();
+        }
+    }
+
+    /** @return how many decisions are currently cached */
+    public synchronized int cacheSize() {
+        return cache.size();
+    }
+
+    /** @return the LRU bound currently in force */
+    public int cacheBound() {
+        return cacheBound;
     }
 
     // ---- evaluation --------------------------------------------------------------------

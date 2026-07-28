@@ -229,4 +229,20 @@ class PermissionServiceTest {
         assertTrue(permissions.allows(player, "nexuscore.command.player.heal"));
         assertFalse(permissions.allows(player, NODE));
     }
+
+    @Test
+    @DisplayName("regression: a reloaded permissionCacheSize actually applies")
+    void reloadedCacheSizeApplies() {
+        PermissionService service = new PermissionService(new JsonStore(directory), 4096);
+        UUID subject = UUID.randomUUID();
+        service.evaluate(subject, "nexuscore.command.player.seen");
+        assertTrue(service.cacheSize() > 0, "the evaluation should be cached");
+
+        // The bound kept its boot value through a reload while /nexus reload reported success.
+        // Shrinking clears, because an LRU only evicts on insertion — otherwise an over-size
+        // cache sits above its new bound until the next miss.
+        service.setCacheSize(64);
+        assertEquals(0, service.cacheSize(), "shrinking the bound must take effect immediately");
+        assertEquals(64, service.cacheBound(), "the new bound should be the one in force");
+    }
 }

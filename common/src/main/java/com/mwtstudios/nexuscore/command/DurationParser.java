@@ -132,6 +132,12 @@ public final class DurationParser {
                 seconds -= count * unitSeconds;
             }
         }
+        if (text.isEmpty()) {
+            // A positive duration under one second has no whole unit to print, and "" is a blank
+            // where a time should be. 1s is the smallest duration this parser can express, and
+            // for a remainder it is the honest ceiling: the thing is still in force.
+            return "1s";
+        }
         return text.toString();
     }
 

@@ -226,30 +226,28 @@ total but only if the split is known — and **the per-sweep breakdown of the ot
 kept**. It cannot be recovered from the repository. Neither figure is published on any external
 surface, and neither should be until somebody who ran the sweeps reconstructs it.
 
-Two of the three items previously listed here as the `1.1.1` priorities are now fixed. The
-remaining one heads the list below.
+**Two of the three `1.1.1` priorities are fixed and have been removed from this table**, per the
+convention that a row leaves only when its fix carries a named test: `IdentityService.resolve()`
+blocking the server thread (`IdentityServiceTest`, seven tests, two of them regression guards) and
+the multiple-active-punishments group (`ModerationServiceTest`, six new tests). Both are recorded
+in `CHANGELOG.md` under `[1.1.1]`, which is the record. The third — the four vanish faults — heads
+the list below and is not yet fixed.
 
 | Defect | Severity | Detail |
 |---|---|---|
-| **`IdentityService.resolve()` blocks the server thread on a Mojang HTTP lookup** | **high** | It falls back to `GameProfileCache.get(String)`, which performs a network call. Reachable by any ordinary player via `/seen <name>` with an unknown name, so a slow or unreachable Mojang API stalls the whole server for as long as the request takes. A non-blocking `getAsync` exists and its executor lives for the whole server lifetime — the first item for `1.1.1`. |
-| Vanish desynchronises the client's player list | medium | Removing the staff member's `PlayerInfo` makes their chat render as a red chat-validation error for everyone else; un-vanishing does not restore the entity for clients that received `AddEntity` while vanished; vanish is not re-applied to players who join later; and the vanished set survives death while the invisibility flag does not. Four related faults in one mechanism. Needs a real client to confirm each. |
-| Multiple active punishments of the same kind | medium | A second ban or mute does not deactivate the first. `/unban` lifts one and reports success while the player stays banned; `activeBans()` double-counts; `activeRecord()` returns the last-issued match rather than the strictest. `ModerationService:108,150,205`. |
+| Vanish: two client-rendering faults **awaiting the 1.1.3 sweep** | medium | **Two of the original four are fixed** and covered by `VanishParityTest` on all three loaders: vanish is now applied to players who join later (`hideVanishedFrom`), and it survives death (`reapplyVanish`), which previously left NexusCore reporting a staff member hidden while every client could see them. **Two remain, both client-rendering and neither guessed at:** removing the staff member's `PlayerInfo` makes their chat render as a red chat-validation error for everyone else, and un-vanishing does not restore the entity for clients that received `AddEntity` while vanished. Fixing the first changes how staff chat is delivered, which is a product decision rather than a defect fix, so it is **not** being made unilaterally. Both are scheduled for the 1.1.3 two-real-players sweep with the owner's second account — awaiting that sweep, not unreproducible. |
 | `audit.log` never rotates | medium | Fully read into heap and SHA-256'd on the **server thread** at startup, at shutdown, and on every `verify` and `tail`. Unbounded growth plus a synchronous full read. |
 | `config.json` `defaultGroup` is ignored at startup | low | The permissions module reads only `permissionCacheSize` from settings, so a `defaultGroup` set in `config.json` takes effect only after some later mutation rewrites the permissions document. |
-| `/ban` in safe mode stages a confirmation that can never complete | low | The prompt is issued before the module check, and confirming spends the token with no audit record. |
-| `/nexus permission set` cannot express a wildcard | low | `StringArgumentType.word()` rejects `*`, so the one permission form operators most need to grant cannot be typed. |
+| `/ban` in safe mode stages a confirmation that can never complete | low | **Fixed in code, not yet closed by test.** `proposeBan()` now calls `services.moderation()` before staging, so the refusal happens before a token exists; `confirm()` audits a token spent on a body that threw and tells the operator the token is gone. Both changes are at command call sites, which no test can invoke without a `CommandSourceStack` harness — removing either leaves all tests green, verified by mutation. `SafeModeConfirmationTest` pins the mechanisms (the module throws in safe mode, a failed body does not return the token, audit survives safe mode) but not the ordering. Closes when 1.1.2's command tests can drive the propose/confirm path. |
 | Teleport warmup does not re-check permission at commit | low | The class documents a §19.1 step-5 permission re-check that does not exist; only destination safety is rechecked. |
 | `setHome` leaks an empty entry when refused | low | The per-owner map is inserted before the limit check, so refused `/sethome` calls leave permanent empty entries in `homes.json`. |
 | `JsonStore.read()` quarantines on any `IOException` | medium | A transient read error moves an intact `permissions.json` aside and the next boot starts from defaults. |
 | `config.json` silently loses operator keys | medium | `load()` rewrites the file from the typed object, deleting any key the schema does not know, while reporting `no problems found`. |
 | `players.json` rewritten in full on every login and logout | medium | Never pruned; each write copies a full `.bak` and fsyncs twice. |
 | Fabric death messages lose their cause | medium | Every styled death reads `<Player> died` on Fabric only. |
-| `/pardon` and `/banlist` strand vanilla ban state | medium | Pre-takeover vanilla bans become un-liftable, and `ban-ip`/`pardon-ip` are separate commands NexusCore never takes over, so IP bans are neither audited nor listed. |
-| `/nexus reload` silently ignores two settings | low | `commandsPerMinute` and `permissionCacheSize` keep boot-time values while the reload reports success. `commandsPerMinute` is a rate limit, so a security control does not apply. |
+| `ban-ip`/`pardon-ip` stay vanilla commands | low | IP bans are now listed by `/banlist`, but their issue and lift still bypass NexusCore, so they are not audited. |
 | Admin GUI acts on a stale `ServerPlayer` | low | A handler captured before the target logged out performs a no-op and audits it as `allowed`. |
 | Death-message edge cases | low | Reload double-broadcasts until restart; the dying player's own screen loses its cause; team `deathMessageVisibility` is ignored. |
-| `DurationParser.format()` returns empty below one second | low | `describeRemaining()` yields `""` rather than a time. |
-| `/nexus permission check` bypasses `authorise()` | low | It calls the evaluator directly, so it can never show the operator-bootstrap grant — the command whose job is explaining a decision under-reports who can do what. |
 | Gson I/O errors escape the write protocol | low | For documents larger than the writer buffer, Gson wraps the failure in `JsonIOException`, bypassing `catch (IOException)` and leaving the `.tmp`. |
 | One non-UTF-8 byte in `audit.log` prevents startup | low | No recovery path inside the mod. |
 | Fabric login ban screen uses a startup snapshot | low | `/nexus reload` never changes it, unlike the other two loaders. |

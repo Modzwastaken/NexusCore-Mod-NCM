@@ -177,4 +177,135 @@ class ModerationServiceTest {
         assertEquals("a b", ModerationService.sanitiseReason("a     b", 256));
         assertEquals(16, ModerationService.sanitiseReason("x".repeat(500), 16).length());
     }
+
+    // ---- multiple active punishments of the same kind -----------------------------------
+    //
+    // Three faults in one mechanism, all from a second punishment not retiring the first:
+    // /unban lifted one and reported success while the player stayed banned, activeBans()
+    // counted the player once per active row, and activeRecord() returned the last-issued
+    // match rather than the strictest — so a short ban issued after a long one silently
+    // shortened it. ModerationService:108,150,205.
+
+    @Test
+    @DisplayName("regression: a second ban supersedes the first rather than stacking")
+    void secondBanSupersedesTheFirst() {
+        moderation.issue(ModerationService.Type.BAN, target, "alice", actor, "Mod", "first", Long.MAX_VALUE);
+        now.addAndGet(1_000L);
+        moderation.issue(ModerationService.Type.BAN, target, "alice", actor, "Mod", "second", Long.MAX_VALUE);
+
+        assertEquals(1, countActive(ModerationService.Type.BAN),
+                "two bans must not both be in force");
+        assertEquals("second", moderation.activeBan(target).orElseThrow().reason());
+        assertEquals(2, moderation.history(target).size(), "the superseded record is kept");
+    }
+
+    @Test
+    @DisplayName("regression: one /unban fully unbans a player carrying several active bans")
+    void oneUnbanClearsEveryActiveBan() {
+        writeTwoActiveBans();
+        ModerationService reopened = new ModerationService(new JsonStore(directory), now::get);
+        assertTrue(reopened.activeBan(target).isPresent());
+
+        assertTrue(reopened.lift(ModerationService.Type.BAN, target, actor, "Admin").isPresent());
+
+        assertTrue(reopened.activeBan(target).isEmpty(),
+                "/unban reported success while the player stayed banned — the original defect");
+    }
+
+    @Test
+    @DisplayName("regression: activeBans() lists a doubly-banned player once, not twice")
+    void activeBansDoesNotDoubleCount() {
+        writeTwoActiveBans();
+        ModerationService reopened = new ModerationService(new JsonStore(directory), now::get);
+
+        assertEquals(1, reopened.activeBans().size(),
+                "/banlist and the admin panel counted one player per active row");
+    }
+
+    @Test
+    @DisplayName("regression: activeBans() counts once even when the strictest row is not first")
+    void activeBansDoesNotDoubleCountWhenStrictestIsLast() {
+        // The order matters, which is why the sibling test above could not catch this: resolving
+        // the weaker row first retires it and returns the stricter one, and the loop then reaches
+        // that stricter row still active and resolves it a second time.
+        writeTwoActiveBans(now.get() + 60_000L, Long.MAX_VALUE);
+        ModerationService reopened = new ModerationService(new JsonStore(directory), now::get);
+
+        assertEquals(1, reopened.activeBans().size(),
+                "/banlist and the admin panel counted one player per active row");
+    }
+
+    @Test
+    @DisplayName("a deliberate re-ban replaces the earlier terms, even when shorter")
+    void deliberateRebanReplacesEarlierTerms() {
+        long farFuture = now.get() + 30L * 24 * 60 * 60 * 1000;
+        moderation.issue(ModerationService.Type.BAN, target, "alice", actor, "Mod", "long", farFuture);
+        now.addAndGet(1_000L);
+        moderation.issue(ModerationService.Type.BAN, target, "alice", actor, "Mod", "short", now.get() + 60_000L);
+
+        // An operator typing a new /ban means the new terms. The old record stays in history.
+        assertEquals("short", moderation.activeBan(target).orElseThrow().reason());
+
+        now.addAndGet(120_000L);
+        assertTrue(moderation.activeBan(target).isEmpty(),
+                "the replacement's expiry governs, so the player is free once it lapses");
+    }
+
+    @Test
+    @DisplayName("regression: strictest wins when a legacy document holds several active bans")
+    void strictestWinsAcrossLegacyActiveRecords() {
+        // There is no issue order to honour here: these rows come from a build that let bans
+        // stack, so the safe reconciliation is the strictest, not whichever sits last in the file.
+        writeTwoActiveBans(Long.MAX_VALUE, now.get() + 60_000L);
+        ModerationService reopened = new ModerationService(new JsonStore(directory), now::get);
+
+        assertTrue(reopened.activeBan(target).orElseThrow().permanent(),
+                "the permanent ban must survive reconciliation, not the timed one");
+        assertEquals(1, reopened.activeBans().size());
+    }
+
+    @Test
+    @DisplayName("mutes and bans supersede independently of each other")
+    void mutesAndBansSupersedeIndependently() {
+        moderation.issue(ModerationService.Type.BAN, target, "alice", actor, "Mod", "ban", Long.MAX_VALUE);
+        moderation.issue(ModerationService.Type.MUTE, target, "alice", actor, "Mod", "mute", Long.MAX_VALUE);
+
+        assertTrue(moderation.activeBan(target).isPresent());
+        assertTrue(moderation.activeMute(target).isPresent());
+        assertEquals(1, countActive(ModerationService.Type.BAN));
+        assertEquals(1, countActive(ModerationService.Type.MUTE));
+    }
+
+    private long countActive(ModerationService.Type type) {
+        return moderation.history(target).stream()
+                .filter(r -> r.active() && r.type() == type)
+                .count();
+    }
+
+    /**
+     * Writes a punishments document holding two simultaneously-active bans — the shape produced
+     * by builds before {@code issue()} superseded. Written directly rather than through
+     * {@code issue()}, which now prevents it, so the healing path is what is under test.
+     */
+    private void writeTwoActiveBans() {
+        writeTwoActiveBans(Long.MAX_VALUE, Long.MAX_VALUE);
+    }
+
+    private void writeTwoActiveBans(long firstExpiry, long secondExpiry) {
+        String json = """
+                {"schemaVersion":1,"records":[
+                 {"id":"a","type":"BAN","targetUuid":"%s","targetName":"alice","actorName":"Mod",
+                  "reason":"first","issuedAtEpochMillis":1,"expiresAtEpochMillis":%d,
+                  "active":true},
+                 {"id":"b","type":"BAN","targetUuid":"%s","targetName":"alice","actorName":"Mod",
+                  "reason":"second","issuedAtEpochMillis":2,"expiresAtEpochMillis":%d,
+                  "active":true}]}
+                """.formatted(target, firstExpiry, target, secondExpiry);
+        try {
+            java.nio.file.Files.writeString(directory.resolve(ModerationService.FILE), json,
+                    java.nio.charset.StandardCharsets.UTF_8);
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("could not seed the legacy punishments document", e);
+        }
+    }
 }

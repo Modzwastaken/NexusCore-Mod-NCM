@@ -491,5 +491,6 @@ public final class NexusServices {
         // apply — so this is the more important of the two.
         rateLimiter.setPermitsPerMinute(settings.commandsPerMinute);
         permissions.setCacheSize(settings.permissionCacheSize);
+        audit.setMaxSegmentBytes(settings.auditMaxSegmentBytes);
     }
 }

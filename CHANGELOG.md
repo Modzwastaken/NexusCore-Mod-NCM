@@ -162,6 +162,28 @@ weaker position than it sounds once a balance depends on it.
   are still replaced atomically; what is weakened is surviving a power loss immediately afterwards.
   Linux and macOS are unaffected.
 
+- **`audit.log` grew without bound, and every start re-read all of it.** It is now sealed into
+  numbered segments — `audit-000001.log`, oldest first — at `auditMaxSegmentBytes`, default 8 MiB,
+  configurable and honoured on `/nexus reload`. Zero disables rotation, which is deliberately *not*
+  routed through `clamp()`: clamp would read zero as out of range and correct it back to the
+  default, quietly turning rotation on for an operator who turned it off.
+
+  **The chain crosses a rotation untouched, which is the whole difficulty.** Rotation only renames
+  a file: the next record's `previous_hash` is still the in-memory hash of the record before it, so
+  the chain does not know a rotation happened. Nothing is rewritten, so nothing can be rewritten
+  *wrongly* — a rotation that re-hashed or re-numbered anything would be indistinguishable from
+  tampering, in the one file whose entire purpose is being tamper-evident.
+
+  `verify()` now walks every sealed segment oldest-first and then the live log, and names the
+  segment a break is in. Verifying only the live log would report *chain intact* over a history
+  whose older half had been edited — answering the question wrongly, which is worse than not
+  answering it. **Proven to fail two ways**: restricting `verify()` to the live log fails 2 tests,
+  and resetting the chain on seal fails 3, including the restart case.
+
+  Startup no longer re-reads the whole history: the resume point comes from the last record's own
+  `sequence` field, so one bounded segment is read instead of everything ever written. `tail()`
+  reads back from the newest log and stops as soon as it has enough.
+
 **And two read/write-path defects, which turned out to be one mistake wearing two hats:**
 
 - **An unreadable file was treated as a corrupt one.** `read()` caught `IOException` alongside the

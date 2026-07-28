@@ -11,9 +11,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -191,6 +195,62 @@ public final class JsonStore {
     /** @return true if the named document exists */
     public boolean exists(String name) {
         return Files.isRegularFile(PathSafety.resolveWithin(root, name));
+    }
+
+    /**
+     * @param name file name relative to the data root
+     * @return the file's size in bytes, or 0 if it does not exist
+     */
+    public long sizeOf(String name) {
+        Path file = PathSafety.resolveWithin(root, name);
+        try {
+            return Files.isRegularFile(file) ? Files.size(file) : 0L;
+        } catch (IOException e) {
+            throw new StorageException("could not measure " + file, e);
+        }
+    }
+
+    /**
+     * Renames a document within the data root.
+     *
+     * <p>Used to seal an append-only log into a numbered segment. The rename is atomic, so a reader
+     * sees the file under one name or the other and never neither — which matters when the thing
+     * being renamed is the log a crash would be recorded in.</p>
+     *
+     * @param from current file name relative to the data root
+     * @param to new file name relative to the data root, in the same directory
+     * @throws StorageException if the rename cannot be completed
+     */
+    public void rename(String from, String to) {
+        Path source = PathSafety.resolveWithin(root, from);
+        Path target = PathSafety.resolveWithin(root, to);
+        try {
+            move(source, target);
+            forceDirectory(target.getParent());
+        } catch (IOException e) {
+            throw new StorageException("could not rename " + source + " to " + target, e);
+        }
+    }
+
+    /**
+     * Lists files in the data root whose names start and end as given, sorted by name.
+     *
+     * @param prefix required name prefix
+     * @param suffix required name suffix
+     * @return matching file names relative to the data root, sorted
+     */
+    public List<String> namesMatching(String prefix, String suffix) {
+        List<String> names = new ArrayList<>();
+        try (Stream<Path> entries = Files.list(root)) {
+            entries.filter(Files::isRegularFile)
+                    .map(path -> path.getFileName().toString())
+                    .filter(name -> name.startsWith(prefix) && name.endsWith(suffix))
+                    .forEach(names::add);
+        } catch (IOException e) {
+            throw new StorageException("could not list " + root, e);
+        }
+        Collections.sort(names);
+        return names;
     }
 
     /**

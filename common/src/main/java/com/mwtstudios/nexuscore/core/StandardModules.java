@@ -82,6 +82,7 @@ public final class StandardModules {
                 .register(module("audit", true, Set.of("storage", "configuration"), ctx -> {
                     AuditService audit = new AuditService(ctx.service(JsonStore.class), ctx.modVersion());
                     audit.setEnabled(ctx.settings().auditEnabled);
+                    audit.setMaxSegmentBytes(ctx.settings().auditMaxSegmentBytes);
                     ctx.provide(AuditService.class, audit);
                 }))
 

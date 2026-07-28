@@ -25,9 +25,141 @@ Five builds fill a version, then the minor moves up: `1.0.5` is followed by `1.1
 
 ## [1.1.1] — unreleased — pre-release
 
-Work toward the next build. No shipped change yet.
+Work toward the next build.
+
+### Added
+
+- **A write-ahead journal for updates that span more than one file (§11.1)** — the gap M2 left
+  open, and the one this document has listed as "the first thing M6's economy will need" since
+  v1.0.0. `JsonStore.write` makes *one* document's replacement atomic and says nothing about two:
+  writing `accounts.json` and then `ledger.json` is two atomic writes with a window between them,
+  and a crash in that window leaves books that do not balance — money debited and never credited,
+  or credited twice. Nothing in the mod could detect that state afterwards, because both files are
+  individually well-formed.
+
+  `JournalService` closes the window. A transaction stages every document beside its target,
+  writes one record naming each target and its staged file's SHA-256, forces that record to disk —
+  **the commit point** — and only then moves the staged files into place. A record that still
+  exists at startup means the process died mid-transaction, so `replayPending()` finishes it before
+  any module reads data. Replay is idempotent by construction: a staged file that is gone was
+  already moved, so the progress marker and the work it records are the same filesystem operation
+  and cannot disagree.
+
+  Two deliberate refusals. A staged file whose bytes do not match the hash its record committed to
+  is **not** applied — replay throws, naming the file, and leaves the record in place so nothing is
+  lost and the next start retries. And a document name containing the staging marker is rejected,
+  because recovery deletes leftover files by that marker and a target carrying it would be real
+  data caught in the sweep.
+
+  It has **no caller yet.** M6's economy is the intended one and 1.2.2 builds atomic transfer on
+  it; single-document writes should keep using `JsonStore.write`, which is already atomic. Built
+  ahead of its 1.1.4 slot at the owner's direction, because it is a prerequisite under every
+  candidate v1.2.0 design — recorded in
+  [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md#the-road-to-v150) rather than by renumbering
+  the ladder. See [ADR-0013](docs/architecture/ADR-0013.md) for why the design is a journal of
+  intent rather than a lock or a single combined document.
+
+- **`JournalTest` — 34 tests, built around crashing on purpose.** The exit condition for this work
+  is "journal replay verified by a simulated crash mid-transaction", so the tests inject a failure
+  point *inside* the apply loop rather than testing only the happy path.
+  `crashMidTransactionIsRepairedByReplay` updates three files, dies after the first lands, and
+  **asserts the state is genuinely torn** before recovering it — a test that skipped that assertion
+  would still pass if the crash never happened. `crashAtEveryPointIsRecoverable` covers all four
+  crash points, including the one past the last entry where the work is done but the record has not
+  been cleared. `crashDuringReplayIsRecoverable` crashes recovery itself.
+
+  **Proven to fail, reproducibly.** `tools/mutate-journal.sh` breaks the journal four specific ways
+  — record written after applying instead of before, the already-applied skip removed, the
+  quarantining read restored, the post-loop injection point removed — and asserts a named test
+  catches each one, restoring the source and comparing it byte-for-byte afterwards. An earlier
+  version of this entry claimed "proven to fail two ways" with nothing in the repository that
+  reproduced it: the mutations were applied by hand and reverted, so the claim rested on my word.
+  A review declined to accept that and was right to; the script is the artifact that was missing.
+
+  **What the suite cannot prove, stated per §20.4.** Crashes are simulated in-process by throwing
+  at an injected point. That establishes the *order* of operations and that recovery repairs what a
+  stopped process leaves. It does **not** establish durability: deleting any `force()` or
+  `forceDirectory()` call would leave every one of these tests green, because nothing here loses
+  power. The fsync calls are argued for, not demonstrated. Two platform ceilings compound it and are
+  now recorded in the class javadoc rather than left to be discovered — `forceDirectory` swallows
+  its failure at DEBUG and **fails unconditionally on Windows**, making every directory fsync a
+  silent no-op there, and `JsonStore.move` falls back to a **non-atomic** replace on a filesystem
+  refusing `ATOMIC_MOVE`. Both are inherited from the single-document write protocol rather than
+  introduced here. Neither is covered by a test.
+
+`JsonStore`'s `move`, `force` and `forceDirectory` became package-private so the journal reuses
+them instead of carrying a second copy of the atomic-move protocol — including the
+`AtomicMoveNotSupported` fallback and its warning, which is exactly the kind of detail that gets
+fixed in one copy and not the other.
 
 ### Fixed
+
+Six defects in the journal above — three of them serious enough to lose a committed transaction —
+all found by an adversarial review before anything was built on it. None had shipped, and the
+review's verdict was that the design held and the implementation did not yet. The point of finding
+them here is that money and item custody were going to ride on this.
+
+- **The corrupt-record refusal destroyed the transaction it was protecting, on the second start.**
+  `pendingRecords()` read each record through `JsonStore.read`, which moves an unparseable file to
+  `<name>.corrupt-<timestamp>` **before** throwing. That renamed file no longer ends in `.json`, so
+  it stopped matching the listing: the first start refused correctly, and the operator's reflexive
+  restart found zero pending records, concluded nothing was owed, and let the sweep delete that
+  transaction's staged files as ownerless garbage. A committed transaction vanished silently, with
+  no log line connecting the two events — and the refusal's own message had promised the record was
+  left in place. Records are now parsed directly, never quarantined; an unreadable record is a
+  **hard** pending item that refuses at every start; a record quarantined by the older code is still
+  recognised as owed work; and nothing is swept while any record is unreadable.
+
+- **Staged files' directory entries were never fsynced.** `stage()` forced each staged file's
+  contents but not its parent directory, so a power loss could leave the record durable and the
+  staged file's *name* missing. Replay reads a missing staged file as already-applied — the very
+  property that makes it idempotent — so a committed transaction would have silently half-applied.
+  ext4's default ordering usually hides this; XFS and anything journaling dirents separately do not.
+  The staging directories are now forced before the record is written.
+
+- **The fourth crash point was untested, and the seam could not create it.** The injection fired for
+  entries `0..size-1`, so with three entries `crashIndex=3` triggered nothing: `commit()` ran to
+  completion and the case silently re-ran the happy path while its comment claimed to cover the
+  window between the last move and clearing the record. No test ever replayed a record whose staged
+  files were all gone — the exact state escrow will depend on tolerating. The seam now fires after
+  the loop, all four crash points genuinely crash, and `clear()`'s failure branch is covered too.
+
+- **The repair instruction told operators to forge the progress marker.** On a hash mismatch the
+  error said to "repair or remove the staged file" — but a missing staged file *is* the
+  already-applied marker, so removing it makes the next start skip that document and report the
+  transaction complete when that write never happened. Deleting the record instead tears it the
+  other way. Both escapes an operator reaches for first were traps. The message now names them as
+  traps, lists which documents are already applied and which are still owed, and gives two routes
+  that work: restore the staged file to its committed hash, or move the record and every remaining
+  staged file aside **together**, with `<name>.bak` holding the previous contents.
+
+- **`replayPending()` is public, and its "assumes it is alone" contract lived only in a javadoc.** A
+  future admin repair command calling it mid-transfer would have swept an in-flight transaction's
+  staged files, after which its record would point at files that no longer exist and replay would
+  read every one as already-applied — the transfer reporting success having written nothing. The
+  sweep now skips staged files belonging to transactions currently staging.
+
+- **The reserved-name rule was enforced in one of two places.** `Transaction.put` refused a document
+  name containing `.txn-`; `JsonStore.write` did not, so a plain write could still create a file
+  that recovery would later delete as scratch. Both entry points now share one check.
+
+- **The shared test suite ran on one loader of three.** `sourceSets.test.java.srcDirs +=
+  '../common/src/test/java'` existed in `neoforge/build.gradle` only; Fabric and Forge added the
+  shared *main* sources and never the tests. So every common test — storage, permissions, audit,
+  the module manager — executed on NeoForge, while all three loaders compiled the code under test
+  and reported "green". "214 tests, three loaders green" was 208 tests on one loader and 3 on each
+  of the others, which reads like three-way coverage and is not. The same shape as 1.0.4's
+  reproducibility finding, where the enforcing block sat in one build file and §18.5 held for one
+  jar of three.
+
+  Found reviewing the journal, whose crash-recovery proofs made it impossible to ignore: the
+  substrate every future money and item transfer will stand on was exercised on one loader. The
+  shared sources are identical bytes, so the *code* cannot diverge — but each loader supplies its
+  own Gson and its own logging binding, and the storage layer is built on exactly those.
+
+  Now wired into all three. **732 test executions** where there were 214: 242 shared tests on each
+  loader, plus Fabric's and Forge's own 3. No test needed changing — the three that locate source
+  roots already walk up to find `common/src/main/java`, which 1.0.4 fixed for a different reason.
 
 - **Both custom gates now run on all three loaders.** `stubMarkerCheck` and `versionLadderCheck`
   were registered only in `neoforge/build.gradle`. A `./gradlew build` in `fabric/` or `forge/`

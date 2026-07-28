@@ -30,6 +30,20 @@ repositories {
 sourceSets.main.java.srcDirs += sharedSrc
 sourceSets.main.resources.srcDirs += sharedRes
 
+// The shared TESTS run here too, not only on NeoForge.
+//
+// Until 1.1.1 this line did not exist, and neither did Fabric's. Every common test — storage,
+// permissions, audit, the module manager, the journal's crash-recovery proofs — executed on
+// NeoForge alone, while all three loaders compiled the code under test. "Three loaders green,
+// 214 tests" was therefore 208 on one loader and 3 on each of the others, which reads like
+// three-way coverage and is not.
+//
+// The sources are identical bytes, so the code cannot diverge; the runtime around it can. Each
+// loader supplies its own Gson and its own logging binding, and the storage layer is built on
+// exactly those. A serialisation difference between loader-bundled Gson versions is the kind of
+// fault this closes, and it is the substrate every future money and item transfer stands on.
+sourceSets.test.java.srcDirs += file('../common/src/test/java')
+
 
 // Send processed resources into the SAME directory as the compiled classes.
 //

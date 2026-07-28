@@ -20,7 +20,7 @@ fails the build if they do.
 cited. A file that looks finished but has never been compiled is `in progress`, however
 complete it appears.
 
-**Last updated:** 2026-07-26 · **Version:** 1.1.0 (released) ·
+**Last updated:** 2026-07-27 · **Version:** 1.1.1 (in progress) ·
 **Previous version:** 1.0.0 · **Milestones passed:** M0, M1, M2, M3, M4, M5 (partial)
 
 > **v1.0 does not mean feature complete.** The version scheme (ADR-0007) is the owner's
@@ -34,6 +34,20 @@ complete it appears.
 > moved up. Its builds are `1.1.1`–`1.1.5`. What each later build is planned to contain is in
 > [The road to v1.5.0](#the-road-to-v150) below and, per §2.4, only there.
 
+> **The `§` references are being re-derived, and the provenance has changed.** Every `§` citation
+> in this repository — `§11.1` in the storage layer, `§9` in permissions, `§20.4`'s status
+> vocabulary above — points into an external specification **this repository has never contained
+> and cannot recover**. Those citations looked like references and functioned as assertions: no
+> reader could check them. At the owner's ruling (2026-07-27) the sections NexusCore actually
+> depends on are being rewritten as NexusCore's own, in [docs/spec/](docs/spec/), keeping the
+> inherited numbering so existing citations stay valid.
+>
+> **A re-derived section cannot be used to argue the code is correct** — it was derived from the
+> code, so agreement is circular. It fixes the requirement in place for what comes next.
+> [§11 — Storage and persistence](docs/spec/11-storage.md) is written, because the write-ahead
+> journal is built and M6's economy will be measured against it. The remaining sections are not,
+> and their absence is recorded here rather than in a placeholder there.
+
 ---
 
 ## The honest summary
@@ -44,11 +58,26 @@ utilities, moderation with confirmations, and a working admin GUI.
 
 **Two things are true at once, and both matter:**
 
-1. **214 automated tests pass (208 NeoForge + 3 Fabric + 3 Forge)**, and **CI now proves a cold
+1. **248 automated tests pass, and since 1.1.1 the 242 shared ones run on every loader** — 732
+   test executions in total (242 shared × 3, plus 3 Fabric-specific and 3 Forge-specific).
+   **Until 1.1.1 they did not.** The shared suite was wired into `check` for NeoForge only, so
+   "214 tests, three loaders green" was 208 tests on one loader and 3 on each of the others while
+   all three compiled the code under test. The count read like three-way coverage and was not.
+   Found in review of the write-ahead journal, whose crash-recovery proofs were the clearest case:
+   they guard the substrate for every future money and item transfer and were exercised on one
+   loader of three. The sources are identical so the code cannot diverge, but each loader supplies
+   its own Gson and logging binding, and the storage layer is built on exactly those.
+
+   **CI now proves a cold
    build works** — all three loaders build from a bare checkout on a clean runner, which no local
    run had ever actually demonstrated (NeoGradle restores neoForm outputs from a cache outside
    `build/`, so the decompile step had never run cold here). The whole feature set has also been
    exercised end to end on real dedicated servers for all three loaders, with zero errors.
+
+   **34 of those 248 are the write-ahead journal's and postdate the v1.1.0 release**: they pass
+   locally on all three loaders and have **not** yet run in CI, because the branch carrying them is
+   not merged. The journal also has no production caller and so has never run on a real server —
+   unlike everything else in this list, it is proven by tests alone.
 2. **The mod has now been human-tested on a real dedicated server, by one player.** Reported by
    the project owner at the 1.1.0 release: a real player joined a real dedicated server and
    exercised most of the feature set, including the admin panel rendering to an unmodified vanilla
@@ -101,7 +130,7 @@ utilities, moderation with confirmations, and a working admin GUI.
 | `AuditService` with §15.2 fields and hash chaining | `tested` | `AuditServiceTest` — 11 tests including `editedRecordDetected`, `deletedRecordDetected`, `forgedAppendDetected`, `chainContinuesAcrossRestart`. |
 | Write-time redaction | `tested` | `sensitiveParametersRedactedAtWriteTime` — IPs, passwords, tokens never reach the file. |
 | Schema versions on every document | `implemented` | All six documents carry `schemaVersion`. |
-| Write-ahead journal for multi-file transactions | `planned` | Single-document atomic replace is implemented and tested. No operation yet spans two files atomically, so the journal has no caller. **This is a real gap against §11.1** and is the first thing M6's economy will need. |
+| Write-ahead journal for multi-file transactions | `tested` | `JournalTest` — 34 tests on **all three loaders**, including `crashMidTransactionIsRepairedByReplay` (three files, killed after the first is applied; the assertion checks the state really is torn before recovering it), `crashAtEveryPointIsRecoverable` (all four crash points) and `unreadableRecordRefusesEveryTime`. **Proven to fail reproducibly** by `tools/mutate-journal.sh`, which breaks the journal four ways and asserts a named test catches each — the earlier "proven to fail two ways" claim was hand-run and left no artifact, and a review rightly refused it. An adversarial review then found **six defects, three able to lose a committed transaction**; all six are fixed and each has a regression test. **This closes the M2 gap.** **Evidence ceiling (§20.4):** crashes are simulated in-process, so this proves ordering and recovery, **not durability** — deleting any `force()` call would still pass. `forceDirectory` is a silent no-op on Windows and `JsonStore.move` falls back to a non-atomic replace where `ATOMIC_MOVE` is refused; both are recorded in the class javadoc and neither is covered by a test. No production caller yet: M6's economy is the intended one, and 1.2.2 builds atomic transfer on it. |
 | Migration fixtures from a prior version | `blocked` | There is no prior schema version to migrate from — every document is at v1. Fixtures become meaningful at the first bump. |
 | `/nexus doctor storage` | `planned` | M8. `/nexus system status` and `/nexus audit verify` cover part of the ground. |
 
@@ -273,7 +302,8 @@ Each build is built and tested on all three loaders before the next begins. A bu
 "done" because its code exists, but because it meets the exit condition named here.
 
 **The ordering is deliberate.** M6's economy needs the write-ahead journal (§11.1) that M2 left
-`planned` — this document already calls that "the first thing M6's economy will need". Generated
+`planned` — this document already called that "the first thing M6's economy will need", and it is
+now `tested`, built ahead of its slot for the reason recorded under 1.1.4. Generated
 command documentation needs the `ModuleManager` that M4 left `planned`. Those are two separate
 dependencies on two different deliverables, so the sequence closes the M4 and M5 gaps first, then
 adds features.
@@ -308,17 +338,56 @@ sequence is open-ended, so nothing has to be crushed to fit.
 | **1.1.1** | `IdentityService.resolve()` blocking the server thread on a Mojang lookup (`getAsync` exists), the four vanish faults, and the multiple-active-punishments group — the highest-severity items left after 1.1.0's twelve fixes. | Each has a named regression test. The vanish faults need a real client, so any that cannot be reproduced headlessly are recorded as such rather than ticked. |
 | **1.1.2** | GameTests: teleport safety, home/warp persistence, punishment enforcement, permission gating. Plus the missing `AdminMenu` read-only container test. | The four GameTests named in M5 exist and pass, and a test proves items cannot enter or leave the admin menu. |
 | **1.1.3** | Sustained multi-player runtime verification — GUI rendering, vanish (four confirmed faults), chat muting, ban-at-login, teleport safety in practice. | Every item in the "never observed" column has been observed with at least two real players, or is recorded as still unobserved with the reason. |
-| **1.1.4** | Write-ahead journal for multi-file transactions (§11.1). The M2 gap, and M6's prerequisite. | Journal replay verified by a simulated crash mid-transaction. |
+| **1.1.4** | **Storage is trustworthy.** The write-ahead journal (§11.1) — *done*; the four economy-blocking storage defects (`JsonStore` quarantining on `IOException` rather than on bad content, `JsonIOException` escaping that catch entirely, chain-aware audit rotation, `players.json` full-rewrite damping); and the two inherited durability ceilings closed **or ruled** as named platform limitations. | Journal: **met** — `JournalTest`, 34 tests on three loaders, crash at every point, `tools/mutate-journal.sh` proving the suite constrains the protocol. Remaining: each storage fix has a named regression test; each durability ceiling is closed with a test, or appears on the **published** defect list as a named platform limitation — not as a javadoc comment. **Runnable the day the work lands.** |
 | **1.1.5** | Migration fixtures and the schema-bump machinery. The week-long real-player run that is M5's actual exit criterion. | A 1.0.0 data directory loads through the migration path with exact expected results; a week of real-player use with no unrecorded defect. **M5 complete.** |
+
+> **1.1.4's deliverable was built during 1.1.1, out of order.** The owner directed it: v1.2.0's
+> shape was still being decided, and the journal is a prerequisite under every candidate design,
+> so starting it could not be wasted work whichever way that decision went. It is recorded here
+> rather than by quietly renumbering the table, because the table's value is that it says what
+> actually happened — and because "1.1.4 is done" and "the journal is done" are not the same claim.
+> **No 1.1.4 build has been cut.** The journal ships in whichever build is cut next, and what
+> 1.1.4's slot now holds is the owner's call, not this document's.
+
+> **1.1.4 was re-planned on 2026-07-28, and split.** Recorded here under this table's own overflow
+> rule — *"if a version's work needs more than five builds it moves up early and carries the
+> remainder — recorded when it happens"* — rather than edited quietly.
+>
+> The v1.2-line design brief proposed one widened 1.1.4 carrying the journal, a segmented ledger
+> substrate, the four storage fixes and the two durability ceilings, with an exit requiring replay
+> **"for a two-file money commit and an escrow item commit"**. That exit could not be run: escrow
+> is 1.2.3 content, so the gate for 1.1.4 depended on a feature three builds later. A rung whose
+> exit cannot be run until later is not a gate — it is a rung that gets ticked on faith, which
+> `RELEASE_CHECKLIST.md`'s "Milestones say when work landed; content says what to check" forbids in
+> as many words.
+>
+> So the rung is split, and each piece lands where its evidence can exist:
+>
+> - **1.1.4 keeps** the journal, the four storage fixes and the two durability ceilings — one
+>   coherent claim, *storage is trustworthy*, with an exit runnable the day the work lands.
+> - **The segmented ledger substrate moves to 1.2.1**, where the economy skeleton gives it its
+>   first writer. Building a ledger substrate a build before anything writes to it is how the
+>   journal ended up with no caller for a whole version; that is a mistake worth not repeating
+>   immediately after making it.
+> - **The escrow half of the exit moves to 1.2.3**, where escrow exists.
+>
+> The two durability ceilings are the gate before 1.2.2. `JsonStore.forceDirectory` is a silent
+> no-op on Windows and `JsonStore.move` falls back to a non-atomic replace where `ATOMIC_MOVE` is
+> refused, so §11.1-R4 does not hold there — see [the conformance table](docs/spec/11-storage.md).
+> They are inherited from the single-document write protocol and predate the journal, but the
+> journal is what makes them matter, because 1.2.2 is where money starts riding on them. **For
+> money, "we recorded the ceiling" is a weaker position than it sounds.** If one proves genuinely
+> unfixable — Windows directory fsync may be — it ships as a named platform limitation on the
+> published defect list, not as a comment in a javadoc.
 
 ### Version 1.2 — M6 economy
 
 | Build | Contents | Exit condition |
 |---|---|---|
 | **1.2.0** · *version* | The M5-complete milestone. | 1.1.x verified together; the unverified-claims register reflects what the real-player run established. |
-| **1.2.1** | Currency core: fixed-point integer minor units. | No `float` or `double` anywhere in currency code, asserted by a test that scans the sources — not by review. |
+| **1.2.1** | Currency core: fixed-point integer minor units. **Plus the segmented ledger substrate, moved here from 1.1.4** so it lands with its first writer. | No `float` or `double` anywhere in currency code, asserted by a test that scans the sources — not by review. |
 | **1.2.2** | Atomic transfer and idempotency keys, on 1.1.4's journal. | Debit and credit commit in one transaction boundary; an idempotency replay test proves one key yields exactly one committed transaction. |
-| **1.2.3** | Reversal as a compensating entry. | A reversal creates a new entry and no historical row is edited, asserted by a test. |
+| **1.2.3** | Reversal as a compensating entry. **Plus the item escrow vault and claim box** — new scope the printed M6 rows never named, because the journal covers multi-file JSON and items live in vanilla player NBT, outside its boundary. | A reversal creates a new entry and no historical row is edited, asserted by a test. **Plus the escrow custody invariant, moved here from 1.1.4** because it cannot be asserted before escrow exists: an item is in the inventory or in escrow after replay at every kill point — never both, never neither. Three conditions ride on it, recorded under *Confirmed defects* rather than assumed: the forced player-save's per-call cost is **measured** before market listing ships, vanilla's own `.dat_old` rollback is named as a residual duplication vector no custody test can observe, and a decode failure quarantines the item rather than discarding it. |
 | **1.2.4** | Shops. | A shop purchase is all-or-nothing under an injected mid-transaction failure. |
 | **1.2.5** | Economy commands and operator documentation. | All six §10.2 invariants have passing **named** tests; balances and history survive restart. **M6 complete.** |
 

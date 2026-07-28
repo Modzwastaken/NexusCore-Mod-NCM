@@ -15,6 +15,7 @@ import com.mwtstudios.nexuscore.module.ModuleManager;
 import com.mwtstudios.nexuscore.module.NexusModule;
 import com.mwtstudios.nexuscore.permission.PermissionService;
 import com.mwtstudios.nexuscore.player.PlayerUtilityService;
+import com.mwtstudios.nexuscore.storage.JournalService;
 import com.mwtstudios.nexuscore.storage.JsonStore;
 import com.mwtstudios.nexuscore.teleport.TeleportService;
 
@@ -50,8 +51,17 @@ public final class StandardModules {
      */
     public static ModuleManager registerAll(ModuleManager manager) {
         return manager
-                .register(module("storage", true, Set.of(),
-                        ctx -> ctx.provide(JsonStore.class, new JsonStore(ctx.dataRoot()))))
+                // Storage recovers before it publishes. replayPending() finishes any transaction
+                // that committed but did not land before the last shutdown, and it has to happen
+                // here: every module below reads data through this store, and a half-applied
+                // multi-file transaction is exactly the state none of them can detect.
+                .register(module("storage", true, Set.of(), ctx -> {
+                    JsonStore store = new JsonStore(ctx.dataRoot());
+                    JournalService journal = new JournalService(store);
+                    journal.replayPending();
+                    ctx.provide(JsonStore.class, store);
+                    ctx.provide(JournalService.class, journal);
+                }))
 
                 // Configuration publishes the settings snapshot every later module reads, so it is
                 // the one module whose start() does more than construct a service.

@@ -106,6 +106,7 @@ public final class JsonStore {
      * @throws StorageException if the write cannot be completed
      */
     public <T> void write(String name, T document) {
+        JournalService.rejectReservedName(name);
         Path file = PathSafety.resolveWithin(root, name);
         Path temp = file.resolveSibling(file.getFileName() + ".tmp");
 
@@ -186,7 +187,12 @@ public final class JsonStore {
         }
     }
 
-    private static void move(Path from, Path to) throws IOException {
+    // The three primitives below are package-private rather than private so JournalService can
+    // reuse them. A journal that reimplemented the atomic-move protocol would be a second
+    // durability implementation to keep in step with this one — including the
+    // AtomicMoveNotSupported fallback and its warning, which is exactly the sort of detail that
+    // gets fixed in one copy and not the other.
+    static void move(Path from, Path to) throws IOException {
         try {
             Files.move(from, to, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
         } catch (AtomicMoveNotSupportedException e) {
@@ -197,13 +203,13 @@ public final class JsonStore {
         }
     }
 
-    private static void force(Path file) throws IOException {
+    static void force(Path file) throws IOException {
         try (FileChannel channel = FileChannel.open(file, StandardOpenOption.WRITE)) {
             channel.force(true);
         }
     }
 
-    private static void forceDirectory(Path directory) {
+    static void forceDirectory(Path directory) {
         // Directory fsync makes the rename itself durable. It is not supported everywhere,
         // and a failure here weakens durability without corrupting anything, so it is logged
         // rather than thrown.

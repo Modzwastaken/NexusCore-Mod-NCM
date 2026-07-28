@@ -363,7 +363,47 @@ public final class NexusServices {
      * @return the decision
      */
     public PermissionDecision authorise(ServerPlayer player, String node) {
-        PermissionDecision decision = permissions.evaluate(player.getUUID(), node);
+        return applyBootstrap(permissions.evaluate(player.getUUID(), node), node,
+                player.hasPermissions(OPERATOR_LEVEL), "you are");
+    }
+
+    /**
+     * The same decision {@link #authorise(ServerPlayer, String)} would reach, for a subject who
+     * may be offline.
+     *
+     * <p>This exists because {@code /nexus permission check} — the command whose entire job is
+     * explaining a decision — called the evaluator directly, so it could never show the
+     * operator-bootstrap grant and under-reported who could actually do what. An explain command
+     * that disagrees with enforcement is worse than none.</p>
+     *
+     * @param server the running server, for the operator list
+     * @param subject whose permissions
+     * @param name their name, for the profile the operator list is keyed by
+     * @param node the permission node
+     * @return the decision enforcement would reach
+     */
+    public PermissionDecision authorise(MinecraftServer server, UUID subject, String name, String node) {
+        return applyBootstrap(permissions.evaluate(subject, node), node,
+                isOperator(server, subject, name), name + " is");
+    }
+
+    /** Whether the subject holds the vanilla operator level bootstrap keys on, online or not. */
+    private static boolean isOperator(MinecraftServer server, UUID subject, String name) {
+        ServerPlayer online = server.getPlayerList().getPlayer(subject);
+        if (online != null) {
+            return online.hasPermissions(OPERATOR_LEVEL);
+        }
+        // Offline: the operator list is on disk and keyed by profile, so the answer is still
+        // knowable without a network lookup.
+        return server.getPlayerList().isOp(new com.mojang.authlib.GameProfile(subject, name));
+    }
+
+    /**
+     * Applies the operator-bootstrap grant to a raw evaluation. One implementation, so the
+     * explain path and the enforcement path cannot drift apart.
+     */
+    private PermissionDecision applyBootstrap(PermissionDecision decision, String node,
+            boolean operator, String subjectPhrase) {
         if (decision.allowed()) {
             return decision;
         }
@@ -372,10 +412,11 @@ public final class NexusServices {
             // it, or "deny" would not mean anything.
             return decision;
         }
-        if (settings().operatorBootstrap && player.hasPermissions(OPERATOR_LEVEL)) {
+        if (settings().operatorBootstrap && operator) {
             return new PermissionDecision(node, PermissionDecision.Result.ALLOW, "*", "operator-bootstrap",
-                    "granted by operator bootstrap, because you are a level-" + OPERATOR_LEVEL + " operator and "
-                            + "operatorBootstrap is enabled in config.json — turn it off once real groups exist");
+                    "granted by operator bootstrap, because " + subjectPhrase + " a level-" + OPERATOR_LEVEL
+                            + " operator and operatorBootstrap is enabled in config.json — turn it off once "
+                            + "real groups exist");
         }
         return decision;
     }

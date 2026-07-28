@@ -93,6 +93,17 @@ them instead of carrying a second copy of the atomic-move protocol — including
 fixed in one copy and not the other.
 
 ### Fixed
+- `/nexus permission set|unset|check` accept a wildcard pattern. The node argument used
+  Brigadier's `word()`, whose character set excludes `*`, so it silently stopped at the dot and
+  `nexuscore.command.*` — the form operators most often want — could not be typed at all. A
+  `PermissionNodeArgument` reads the pattern whole and validates it with the same
+  `PermissionNode.of()` the engine uses, so an argument that parses is one the permission system
+  accepts, and a mid-pattern wildcard is refused at the keyboard with the engine's own reason.
+- `/nexus permission check` explains the decision enforcement would actually reach. It called the
+  evaluator directly, bypassing `authorise()`, so it could never show the operator-bootstrap
+  grant: the command whose entire job is explaining a decision under-reported who could do what.
+  Bootstrap application is now one implementation shared by the explain and enforcement paths,
+  and it resolves operator level for offline subjects too.
 - `/nexus reload` now applies `commandsPerMinute` and `permissionCacheSize`. Both kept their
   boot-time values while the command reported success — the first is a rate limit, so an operator
   lowering it after abuse was told it had worked when it had not. `ApplySettingsTest` drives the

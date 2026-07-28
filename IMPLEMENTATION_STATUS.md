@@ -239,7 +239,6 @@ the list below and is not yet fixed.
 | `audit.log` never rotates | medium | Fully read into heap and SHA-256'd on the **server thread** at startup, at shutdown, and on every `verify` and `tail`. Unbounded growth plus a synchronous full read. |
 | `config.json` `defaultGroup` is ignored at startup | low | The permissions module reads only `permissionCacheSize` from settings, so a `defaultGroup` set in `config.json` takes effect only after some later mutation rewrites the permissions document. |
 | `/ban` in safe mode stages a confirmation that can never complete | low | The prompt is issued before the module check, and confirming spends the token with no audit record. |
-| `/nexus permission set` cannot express a wildcard | low | `StringArgumentType.word()` rejects `*`, so the one permission form operators most need to grant cannot be typed. |
 | Teleport warmup does not re-check permission at commit | low | The class documents a §19.1 step-5 permission re-check that does not exist; only destination safety is rechecked. |
 | `setHome` leaks an empty entry when refused | low | The per-owner map is inserted before the limit check, so refused `/sethome` calls leave permanent empty entries in `homes.json`. |
 | `JsonStore.read()` quarantines on any `IOException` | medium | A transient read error moves an intact `permissions.json` aside and the next boot starts from defaults. |
@@ -249,7 +248,6 @@ the list below and is not yet fixed.
 | `ban-ip`/`pardon-ip` stay vanilla commands | low | IP bans are now listed by `/banlist`, but their issue and lift still bypass NexusCore, so they are not audited. |
 | Admin GUI acts on a stale `ServerPlayer` | low | A handler captured before the target logged out performs a no-op and audits it as `allowed`. |
 | Death-message edge cases | low | Reload double-broadcasts until restart; the dying player's own screen loses its cause; team `deathMessageVisibility` is ignored. |
-| `/nexus permission check` bypasses `authorise()` | low | It calls the evaluator directly, so it can never show the operator-bootstrap grant — the command whose job is explaining a decision under-reports who can do what. |
 | Gson I/O errors escape the write protocol | low | For documents larger than the writer buffer, Gson wraps the failure in `JsonIOException`, bypassing `catch (IOException)` and leaving the `.tmp`. |
 | One non-UTF-8 byte in `audit.log` prevents startup | low | No recovery path inside the mod. |
 | Fabric login ban screen uses a startup snapshot | low | `/nexus reload` never changes it, unlike the other two loaders. |

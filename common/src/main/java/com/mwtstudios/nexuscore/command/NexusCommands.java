@@ -457,7 +457,7 @@ public final class NexusCommands {
         return Commands.literal("permission")
                 .then(Commands.literal("check")
                         .then(Commands.argument("player", StringArgumentType.word())
-                                .then(Commands.argument("node", StringArgumentType.word())
+                                .then(Commands.argument("node", PermissionNodeArgument.permissionNode())
                                         .executes(context -> run(context, services, "nexuscore.command.permission.check",
                                                 "permission.check",
                                                 source -> permissionCheck(source, services,
@@ -488,7 +488,7 @@ public final class NexusCommands {
                                                                 StringArgumentType.getString(context, "group"), false)))))))
                 .then(Commands.literal("set")
                         .then(Commands.argument("player", StringArgumentType.word())
-                                .then(Commands.argument("node", StringArgumentType.word())
+                                .then(Commands.argument("node", PermissionNodeArgument.permissionNode())
                                         .then(Commands.literal("allow")
                                                 .executes(context -> run(context, services,
                                                         "nexuscore.command.permission.set", "permission.set",
@@ -503,7 +503,7 @@ public final class NexusCommands {
                                                                 StringArgumentType.getString(context, "node"), false)))))))
                 .then(Commands.literal("unset")
                         .then(Commands.argument("player", StringArgumentType.word())
-                                .then(Commands.argument("node", StringArgumentType.word())
+                                .then(Commands.argument("node", PermissionNodeArgument.permissionNode())
                                         .executes(context -> run(context, services,
                                                 "nexuscore.command.permission.set", "permission.unset",
                                                 source -> unsetNode(source, services,
@@ -514,7 +514,9 @@ public final class NexusCommands {
     private static Feedback permissionCheck(CommandSourceStack source, NexusServices services, String name, String node)
             throws Refused {
         UUID target = resolve(source, services, name);
-        PermissionDecision decision = services.permissions().evaluate(target, node);
+        // Through authorise(), not the evaluator: the operator-bootstrap grant lives there, and
+        // an explain command that disagrees with enforcement under-reports who can do what.
+        PermissionDecision decision = services.authorise(source.getServer(), target, name, node);
         return Feedback.of(services.messages().render("permission.check.result",
                         "target", name, "node", node,
                         "result", decision.result().name(),

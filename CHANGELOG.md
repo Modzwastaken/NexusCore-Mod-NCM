@@ -28,6 +28,24 @@ Five builds fill a version, then the minor moves up: `1.0.5` is followed by `1.1
 Work toward the next build.
 
 ### Added
+- **The in-server harness now covers teleport safety, home persistence and the admin panel.**
+  `NexusWorldGameTests` holds the tests that need a real world or a real player: a destination
+  buried in stone and one standing in lava are both refused with a reason, ordinary solid
+  footing is not; homes survive a storage round trip with their coordinates and world intact,
+  the limit is enforced, and deleting frees a slot so the limit counts what exists rather than
+  what was ever created.
+
+  The one the 1.1.2 rung named specifically is `adminMenuRefusesEveryClick`. The panel is a real
+  chest menu on an unmodified client, so the only thing between a decorative icon and a
+  duplicated item is that the container refuses every click — and that could not be tested at
+  all without a player who owns an inventory. It now asserts that a click leaves the panel
+  untouched and the cursor empty, that shift-click moves nothing, and that items cannot be put
+  in from the player's own row.
+
+  Proven to fail, each mutation restored byte-identically: `quickMoveStack` delegating to super
+  fails the panel test; `clicked()` delegating to super fails it with the panel's diamonds
+  actually leaving, 5 → 0, which is the duplication case rather than a proxy for it; and
+  `SafeDestination.find` always reporting safe fails both the suffocation and the lava test.
 - **An in-server test harness.** `runGameTestServer` boots a headless server, runs every
   registered GameTest and exits non-zero on failure. `NexusGameTests` holds the first six,
   reaching the live service registry the server is running on rather than building a second one.

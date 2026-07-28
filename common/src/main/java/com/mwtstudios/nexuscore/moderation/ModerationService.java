@@ -1,8 +1,10 @@
 package com.mwtstudios.nexuscore.moderation;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.Locale;
 import java.util.Optional;
@@ -40,6 +42,22 @@ public final class ModerationService {
     private final Document document;
 
     /**
+     * Active records grouped by {@code TYPE|targetUuid}.
+     *
+     * <p>{@code activeRecord()} runs on the chat path and the login path, and it used to scan every
+     * punishment ever written to find the handful belonging to one player — so the cost of sending a
+     * chat message grew with the total history of the server, which is the one number that only ever
+     * goes up. Records are never deleted here (history that can be erased is not history), so the
+     * scan could not be bounded by pruning; an index over the active subset is what bounds it.</p>
+     *
+     * <p>Holds the same {@link Record} objects as {@code document.records}, never copies, so a flag
+     * flipped through one is visible through the other. Entries leave when a record stops being
+     * active. This is a lookup structure rebuilt from the document, never persisted — the document
+     * remains the only source of truth.</p>
+     */
+    private final Map<String, List<Record>> activeBySubject = new HashMap<>();
+
+    /**
      * @param store the data store
      * @param clock supplies the current time in milliseconds
      */
@@ -50,6 +68,7 @@ public final class ModerationService {
         if (document.records == null) {
             document.records = new ArrayList<>();
         }
+        rebuildActiveIndex();
     }
 
     /** The kinds of punishment NexusCore records. */
@@ -102,6 +121,7 @@ public final class ModerationService {
                         && record.type.equals(existing.type)
                         && record.targetUuid.equals(existing.targetUuid)) {
                     existing.active = false;
+                    dropFromActiveIndex(existing);
                     existing.liftedByUuid = record.actorUuid;
                     existing.liftedByName = actorName;
                     existing.liftedAtEpochMillis = record.issuedAtEpochMillis;
@@ -111,6 +131,9 @@ public final class ModerationService {
         }
 
         document.records.add(record);
+        if (record.active) {
+            addToActiveIndex(record);
+        }
         save();
         return record;
     }
@@ -136,6 +159,7 @@ public final class ModerationService {
         inForce.liftedByUuid = actor == null ? null : actor.toString();
         inForce.liftedByName = actorName;
         inForce.liftedAtEpochMillis = clock.getAsLong();
+        dropFromActiveIndex(inForce);
         save();
         return active;
     }
@@ -185,14 +209,16 @@ public final class ModerationService {
         Record strictest = null;
         List<Record> inForce = new ArrayList<>();
 
-        for (Record record : document.records) {
-            if (!record.active || !kind.equals(record.type) || !id.equals(record.targetUuid)) {
+        // The index, not the whole document: this runs on every chat message and every login.
+        for (Record record : new ArrayList<>(activeBySubject.getOrDefault(subjectKey(kind, id), List.of()))) {
+            if (!record.active) {
                 continue;
             }
             if (record.expiresAtEpochMillis != Long.MAX_VALUE && record.expiresAtEpochMillis <= now) {
                 record.active = false;
                 record.liftedByName = "expiry";
                 record.liftedAtEpochMillis = now;
+                dropFromActiveIndex(record);
                 changed = true;
                 continue;
             }
@@ -208,6 +234,7 @@ public final class ModerationService {
                 loser.liftedByName = "superseded";
                 loser.liftedAtEpochMillis = now;
                 loser.supersededByRecordId = strictest == null ? null : strictest.id;
+                dropFromActiveIndex(loser);
                 changed = true;
             }
         }
@@ -275,17 +302,21 @@ public final class ModerationService {
     /** @return every currently active ban */
     public List<Record> activeBans() {
         List<Record> found = new ArrayList<>();
-        // One entry per player, not per row. Resolving a row reconciles that player's records, but
-        // reconciliation retires the rows it does NOT keep — so when the strictest row sits after a
-        // weaker one, the weaker row resolves to it and the loop then reaches it still active and
-        // resolves it again. Tracking the target is what makes the count independent of file order.
+        // Walks the index rather than every punishment ever written, and one subject key IS one
+        // player, so the deduplication the file order used to require is now structural.
+        // reconcile() mutates the index as it retires records, so iterate a snapshot of the keys.
+        String prefix = Type.BAN.name() + '|';
+        List<String> subjects = new ArrayList<>();
+        for (String key : activeBySubject.keySet()) {
+            if (key.startsWith(prefix)) {
+                subjects.add(key);
+            }
+        }
         Set<UUID> counted = new HashSet<>();
-        for (Record record : new ArrayList<>(document.records)) {
-            if (record.active && Type.BAN.name().equals(record.type)) {
-                UUID target = parseUuid(record.targetUuid);
-                if (target != null && counted.add(target)) {
-                    activeRecord(Type.BAN, target).ifPresent(found::add);
-                }
+        for (String key : subjects) {
+            UUID target = parseUuid(key.substring(prefix.length()));
+            if (target != null && counted.add(target)) {
+                activeRecord(Type.BAN, target).ifPresent(found::add);
             }
         }
         return found;
@@ -294,6 +325,67 @@ public final class ModerationService {
     /** @return how many records exist in total, active or not */
     public int totalRecords() {
         return document.records.size();
+    }
+
+    /**
+     * How many records the active index holds.
+     *
+     * <p>Package-private and test-only: the index's whole purpose is to stay proportional to the
+     * ACTIVE punishments rather than to every punishment ever written, and that property is
+     * invisible through the public API.</p>
+     *
+     * @return the total number of indexed records across every subject
+     */
+    int activeIndexSize() {
+        int total = 0;
+        for (List<Record> bucket : activeBySubject.values()) {
+            total += bucket.size();
+        }
+        return total;
+    }
+
+    /** Key for the active index. */
+    private static String subjectKey(String type, String targetUuid) {
+        return type + '|' + targetUuid;
+    }
+
+    /** Rebuilds the active index from the document. The document stays the only source of truth. */
+    private void rebuildActiveIndex() {
+        activeBySubject.clear();
+        for (Record record : document.records) {
+            if (record.active && record.type != null && record.targetUuid != null) {
+                addToActiveIndex(record);
+            }
+        }
+    }
+
+    private void addToActiveIndex(Record record) {
+        activeBySubject.computeIfAbsent(subjectKey(record.type, record.targetUuid), key -> new ArrayList<>())
+                .add(record);
+    }
+
+    /**
+     * Removes a record that has stopped being active.
+     *
+     * <p><b>This is a space guarantee, not a correctness one</b>, and the distinction is worth
+     * stating because the obvious assumption is the other way round. {@link #reconcile} re-checks
+     * {@code active} on every entry it reads, so a retired record left in the index is skipped and
+     * cannot resurrect a lifted ban. What a missing drop does is let the index accumulate every
+     * record ever written — at which point it is the full scan it was built to replace, wearing a
+     * different name and costing memory as well.</p>
+     *
+     * <p>Verified that way round: removing any single drop call fails no behavioural test, which is
+     * why {@code activeIndexSize()} exists and is asserted directly.</p>
+     */
+    private void dropFromActiveIndex(Record record) {
+        List<Record> bucket = activeBySubject.get(subjectKey(record.type, record.targetUuid));
+        if (bucket == null) {
+            return;
+        }
+        bucket.removeIf(candidate -> candidate == record);
+        if (bucket.isEmpty()) {
+            activeBySubject.remove(subjectKey(record.type, record.targetUuid));
+        }
     }
 
     private static UUID parseUuid(String raw) {

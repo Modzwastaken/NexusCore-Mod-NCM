@@ -198,6 +198,17 @@ public final class AdminGuiService {
             return;
         }
         PlayerUtilityService.Snapshot snapshot = services.players().describe(target);
+        boolean flying = services.players().canFly(target);
+        boolean god = services.players().isGodMode(target);
+        // Everything drawn from the target is read HERE, into values. buildActionTiles then has no
+        // ServerPlayer in scope at all, which is what makes the stale-capture defect unwritable
+        // rather than merely fixed — a body cannot close over a session object that is not there.
+        buildActionTiles(viewer, targetId, snapshot, flying, god);
+    }
+
+    /** Draws the manage-player panel from values only. No {@link ServerPlayer} is in scope. */
+    private void buildActionTiles(ServerPlayer viewer, UUID targetId, PlayerUtilityService.Snapshot snapshot,
+            boolean flying, boolean god) {
         Panel panel = new Panel(3, "Manage " + snapshot.name());
 
         panel.set(0, icon(Items.PLAYER_HEAD, "&f" + snapshot.name(),
@@ -205,40 +216,43 @@ public final class AdminGuiService {
                 "&7Groups: &f" + String.join(", ", services.permissions().groupsOf(targetId))));
 
         panel.set(10, icon(Items.GOLDEN_APPLE, "&aHeal", "&7Full health, food, and effects cleared"),
-                clicker -> act(clicker, target, "nexuscore.command.player.heal", "player.heal", () -> {
-                    services.players().heal(target);
-                    return "healed " + snapshot.name();
-                }));
+                clicker -> act(clicker, targetId, snapshot.name(), "nexuscore.command.player.heal",
+                        "player.heal", fresh -> {
+                        services.players().heal(fresh);
+                        return "healed " + snapshot.name();
+                    }));
 
         panel.set(11, icon(Items.COOKED_BEEF, "&aFeed", "&7Full hunger and saturation"),
-                clicker -> act(clicker, target, "nexuscore.command.player.feed", "player.feed", () -> {
-                    services.players().feed(target);
-                    return "fed " + snapshot.name();
-                }));
+                clicker -> act(clicker, targetId, snapshot.name(), "nexuscore.command.player.feed",
+                        "player.feed", fresh -> {
+                        services.players().feed(fresh);
+                        return "fed " + snapshot.name();
+                    }));
 
-        boolean flying = services.players().canFly(target);
         panel.set(12, icon(Items.FEATHER, flying ? "&eFlight: &aON" : "&eFlight: &cOFF", "&7Click to toggle"),
-                clicker -> act(clicker, target, "nexuscore.command.player.fly", "player.fly", () -> {
-                    services.players().setFlight(target, !flying);
-                    return (flying ? "disabled" : "enabled") + " flight for " + snapshot.name();
-                }));
+                clicker -> act(clicker, targetId, snapshot.name(), "nexuscore.command.player.fly",
+                        "player.fly", fresh -> {
+                        services.players().setFlight(fresh, !flying);
+                        return (flying ? "disabled" : "enabled") + " flight for " + snapshot.name();
+                    }));
 
-        boolean god = services.players().isGodMode(target);
         panel.set(13, icon(Items.TOTEM_OF_UNDYING, god ? "&eGod mode: &aON" : "&eGod mode: &cOFF", "&7Click to toggle"),
-                clicker -> act(clicker, target, "nexuscore.command.player.god", "player.god", () -> {
-                    services.players().setGodMode(target, !god);
-                    return (god ? "disabled" : "enabled") + " god mode for " + snapshot.name();
-                }));
+                clicker -> act(clicker, targetId, snapshot.name(), "nexuscore.command.player.god",
+                        "player.god", fresh -> {
+                        services.players().setGodMode(fresh, !god);
+                        return (god ? "disabled" : "enabled") + " god mode for " + snapshot.name();
+                    }));
 
         panel.set(14, icon(Items.ENDER_PEARL, "&bTeleport to", "&7Move yourself to this player"),
-                clicker -> act(clicker, target, "nexuscore.command.teleport.tp", "teleport.tp", () -> {
-                    TeleportService.Outcome outcome = services.teleport().begin(
-                            clicker, TeleportService.Location.of(target), "to " + snapshot.name(), true);
-                    if (!outcome.moved()) {
-                        throw new ActionRefused(outcome.detail());
-                    }
-                    return "teleported to " + snapshot.name();
-                }));
+                clicker -> act(clicker, targetId, snapshot.name(), "nexuscore.command.teleport.tp",
+                        "teleport.tp", fresh -> {
+                            TeleportService.Outcome outcome = services.teleport().begin(
+                                    clicker, TeleportService.Location.of(fresh), "to " + snapshot.name(), true);
+                            if (!outcome.moved()) {
+                                throw new ActionRefused(outcome.detail());
+                            }
+                            return "teleported to " + snapshot.name();
+                        }));
 
         panel.set(16, icon(Items.BARRIER, "&cKick", "&7Remove from the server",
                 "&8Requires confirmation"),
@@ -425,38 +439,67 @@ public final class AdminGuiService {
         return false;
     }
 
-    /** Runs a guarded action and reports the outcome. */
-    private void act(ServerPlayer viewer, ServerPlayer target, String node, String action, ActionBody body) {
+    /**
+     * Runs a guarded action against the target <em>as they are when the click arrives</em>.
+     *
+     * <p>The panel is built once and then sits open. A {@link ServerPlayer} captured while
+     * building it is a snapshot of a session: if the target logs out before the staff member
+     * clicks, that object is detached from the server, so the action quietly does nothing while
+     * the audit log records it as {@code allowed}. An audit trail that says a heal happened when
+     * it did not is worse than one that says nothing, because the whole point of this mod is that
+     * the trail can be trusted.</p>
+     *
+     * <p>The target is therefore re-resolved from the player list here, by UUID, and a target who
+     * has gone is a refusal that is audited as one — the same shape
+     * {@link #openKickConfirmation} already used.</p>
+     */
+    private void act(ServerPlayer viewer, UUID targetId, String targetName, String node, String action,
+            ActionBody body) {
         if (!guard(viewer, node, action)) {
             return;
         }
         String correlationId = UUID.randomUUID().toString();
-        try {
-            String summary = body.run();
+        ServerPlayer target = viewer.server.getPlayerList().getPlayer(targetId);
+        if (target == null) {
             services.audit().record(viewer.getUUID(), viewer.getGameProfile().getName(), action,
-                    "player", target.getUUID().toString(), "allowed", null,
+                    "player", targetId.toString(), "failed", "target left before the click was handled",
+                    Map.of("via", "gui", "target", targetName), correlationId);
+            viewer.sendSystemMessage(services.messages().render("gui.admin.target-left"));
+            openPlayerList(viewer, 0);
+            return;
+        }
+        try {
+            String summary = body.run(target);
+            services.audit().record(viewer.getUUID(), viewer.getGameProfile().getName(), action,
+                    "player", targetId.toString(), "allowed", null,
                     Map.of("via", "gui", "target", target.getGameProfile().getName()), correlationId);
             viewer.sendSystemMessage(services.messages().render("gui.admin.action-done", "summary", summary));
-            openPlayerActions(viewer, target.getUUID());
+            openPlayerActions(viewer, targetId);
         } catch (ActionRefused refused) {
             services.audit().record(viewer.getUUID(), viewer.getGameProfile().getName(), action,
-                    "player", target.getUUID().toString(), "failed", refused.getMessage(),
+                    "player", targetId.toString(), "failed", refused.getMessage(),
                     Map.of("via", "gui"), correlationId);
             viewer.sendSystemMessage(services.messages().render("gui.admin.action-failed", "reason", refused.getMessage()));
         } catch (ModuleException disabled) {
             // A tile whose module safe mode left out. Audited as a failure like any other refused
             // action, so the attempt is still on the record.
             services.audit().record(viewer.getUUID(), viewer.getGameProfile().getName(), action,
-                    "player", target.getUUID().toString(), "failed", disabled.getMessage(),
+                    "player", targetId.toString(), "failed", disabled.getMessage(),
                     Map.of("via", "gui"), correlationId);
             viewer.sendSystemMessage(services.messages().render("error.module.disabled"));
         }
     }
 
-    /** A GUI action body that may refuse with a reason. */
+    /**
+     * A GUI action body that may refuse with a reason.
+     *
+     * <p>Receives the target resolved at click time. Taking it as a parameter rather than letting
+     * a body close over one is what makes the stale-capture defect unwritable rather than merely
+     * fixed: there is no captured {@code ServerPlayer} in scope to use by mistake.</p>
+     */
     @FunctionalInterface
     private interface ActionBody {
-        String run() throws ActionRefused;
+        String run(ServerPlayer target) throws ActionRefused;
     }
 
     /** Signals that an action could not be carried out, with an operator-readable reason. */

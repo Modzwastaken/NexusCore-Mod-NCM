@@ -93,6 +93,22 @@ them instead of carrying a second copy of the atomic-move protocol — including
 fixed in one copy and not the other.
 
 ### Fixed
+- The admin panel no longer acts on a player who has left. Each tile closed over the `ServerPlayer`
+  resolved while the panel was drawn, so if the target logged out before the click arrived, the
+  action ran against a detached session — doing nothing — and the audit log recorded it as
+  `allowed`. A trail that says a heal happened when it did not is worse than one that says
+  nothing, in a mod whose claim is that the trail can be trusted.
+
+  An action body now **receives** its target, re-resolved by UUID when the click is handled, and a
+  target who has gone is refused and audited as a failure. The tiles are drawn by a method that
+  takes only values — a snapshot, a UUID, two booleans — so no session object is in scope for a
+  body to capture by mistake. That is the part worth keeping: reverting the body signature does
+  not fail a test, it **fails to compile**, at all five call sites. The defect is unwritable
+  rather than merely fixed. `AdminGuiActionShapeTest` pins both shapes by reflection.
+
+  The refusal path itself — that a departed target is audited as `failed` rather than `allowed` —
+  needs a live player to exercise and is recorded against 1.1.2, with the two command refusal
+  paths from earlier in this build.
 - A confirmation is no longer staged for an action that cannot run. `/ban` in safe mode issued its
   prompt happily, because the only thing reaching the moderation module was the token's *body* —
   and a body does not run until the operator confirms. `/nexus confirm` then spent the token, the

@@ -28,6 +28,12 @@ Five builds fill a version, then the minor moves up: `1.0.5` is followed by `1.1
 Work toward the next build.
 
 ### Added
+- **An in-server test harness.** `runGameTestServer` boots a headless server, runs every
+  registered GameTest and exits non-zero on failure. `NexusGameTests` holds the first six,
+  reaching the live service registry the server is running on rather than building a second one.
+  This exists because `common/src/test` cannot construct a `ServerPlayer` or a
+  `CommandSourceStack`, so several refusal paths were fixed but verified only by reading. The
+  harness earned itself immediately by catching the argument-type defect above.
 
 - **A write-ahead journal for updates that span more than one file (§11.1)** — the gap M2 left
   open, and the one this document has listed as "the first thing M6's economy will need" since
@@ -93,6 +99,22 @@ them instead of carrying a second copy of the atomic-move protocol — including
 fixed in one copy and not the other.
 
 ### Fixed
+- **A custom command argument type broke the command tree sent to joining players, and the new
+  in-server test harness caught it within minutes of existing.** The wildcard fix earlier in this
+  build introduced `PermissionNodeArgument` so `nexuscore.command.*` could be typed unquoted.
+  Every custom Brigadier argument type must be registered in the command-argument registry, or
+  the server cannot serialise its command tree — the first GameTest to create a player failed
+  with `Unrecognized argument type`. That serialisation happens on every join, so the defect was
+  strictly worse than the one it fixed.
+
+  Registering it would mean per-loader registry wiring in a mod that deliberately registers
+  nothing, and could only be runtime-verified on one of the three loaders from here. The node
+  argument is instead a plain greedy string, which reads `*` unquoted and needs no registration:
+  `/nexus permission set <player> <allow|deny> <node>` puts the verb before the node so the node
+  is last. The argument order changed; the wildcard is still typable, which was the point.
+
+  Proven to fail: reintroducing an unregistered argument type makes the harness report
+  `Unrecognized argument type` instead of passing.
 - The admin panel no longer acts on a player who has left. Each tile closed over the `ServerPlayer`
   resolved while the panel was drawn, so if the target logged out before the click arrived, the
   action ran against a detached session — doing nothing — and the audit log recorded it as

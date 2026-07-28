@@ -470,7 +470,7 @@ public final class NexusCommands {
         return Commands.literal("permission")
                 .then(Commands.literal("check")
                         .then(Commands.argument("player", StringArgumentType.word())
-                                .then(Commands.argument("node", PermissionNodeArgument.permissionNode())
+                                .then(Commands.argument("node", StringArgumentType.greedyString())
                                         .executes(context -> run(context, services, "nexuscore.command.permission.check",
                                                 "permission.check",
                                                 source -> permissionCheck(source, services,
@@ -499,16 +499,24 @@ public final class NexusCommands {
                                                         source -> groupChange(source, services,
                                                                 StringArgumentType.getString(context, "player"),
                                                                 StringArgumentType.getString(context, "group"), false)))))))
+                // The VERB comes before the node, so the node is the LAST argument and can be a
+                // greedy vanilla string that reads `*` without quoting. A custom ArgumentType read
+                // it too, but every custom type must be registered in the command-argument registry
+                // or the server cannot serialise its command tree to a joining client — a GameTest
+                // caught exactly that, after the custom type had already merged. Vanilla types need
+                // no registration and behave identically on all three loaders, which is worth more
+                // than keeping the original argument order.
                 .then(Commands.literal("set")
                         .then(Commands.argument("player", StringArgumentType.word())
-                                .then(Commands.argument("node", PermissionNodeArgument.permissionNode())
-                                        .then(Commands.literal("allow")
+                                .then(Commands.literal("allow")
+                                        .then(Commands.argument("node", StringArgumentType.greedyString())
                                                 .executes(context -> run(context, services,
                                                         "nexuscore.command.permission.set", "permission.set",
                                                         source -> setNode(source, services,
                                                                 StringArgumentType.getString(context, "player"),
-                                                                StringArgumentType.getString(context, "node"), true))))
-                                        .then(Commands.literal("deny")
+                                                                StringArgumentType.getString(context, "node"), true)))))
+                                .then(Commands.literal("deny")
+                                        .then(Commands.argument("node", StringArgumentType.greedyString())
                                                 .executes(context -> run(context, services,
                                                         "nexuscore.command.permission.set", "permission.set",
                                                         source -> setNode(source, services,
@@ -516,7 +524,7 @@ public final class NexusCommands {
                                                                 StringArgumentType.getString(context, "node"), false)))))))
                 .then(Commands.literal("unset")
                         .then(Commands.argument("player", StringArgumentType.word())
-                                .then(Commands.argument("node", PermissionNodeArgument.permissionNode())
+                                .then(Commands.argument("node", StringArgumentType.greedyString())
                                         .executes(context -> run(context, services,
                                                 "nexuscore.command.permission.set", "permission.unset",
                                                 source -> unsetNode(source, services,

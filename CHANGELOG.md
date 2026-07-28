@@ -285,6 +285,13 @@ weaker position than it sounds once a balance depends on it.
   The difference is whether the server can start without it. **Proven to fail**: restoring strict
   decoding fails all three new tests.
 
+  **This makes a damaged log startable and reportable. It does not repair one**, and that gap is now
+  its own defect row rather than absorbed into this fix. The consequence worth naming is not the
+  corrupt line: it is that `verify` stays red forever afterwards, and a signal that is always red
+  stops being read — tamper-evidence turned off by attrition rather than by failure. A repair path
+  needs its own design, because anything that re-anchors a hash chain is indistinguishable from
+  tampering unless it records what it changed and why.
+
 - **`players.json` was rewritten in full on every join and every leave.** A rejoining player moves
   one timestamp; paying a whole-document serialise, a `.bak` copy and an fsync for that — twice per
   session, per player, forever — is the amplification. Last-seen updates are now damped behind a

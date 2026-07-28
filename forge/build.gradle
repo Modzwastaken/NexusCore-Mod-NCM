@@ -105,6 +105,14 @@ minecraft {
             workingDirectory project.file('run/server')
             args '--nogui'
         }
+
+        // The shared GameTests, run headlessly on Forge. Did not exist before 1.1.2 — the tests
+        // were compiled here and executed only on NeoForge. forge.enabledGameTestNamespaces is
+        // the switch a production server never sets, so these cannot run by accident.
+        gameTestServer {
+            workingDirectory project.file('run/gametest')
+            property 'forge.enabledGameTestNamespaces', shared.mod_id
+        }
     }
 }
 

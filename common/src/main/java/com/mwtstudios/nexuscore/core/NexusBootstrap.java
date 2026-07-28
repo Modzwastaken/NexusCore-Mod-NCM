@@ -35,6 +35,12 @@ import org.slf4j.Logger;
  */
 public final class NexusBootstrap {
 
+    /**
+     * Set by {@link #start} so the in-server test harness can reach the live services.
+     * Volatile because the harness runs on the server thread while start ran on the mod thread.
+     */
+    private static volatile NexusServices running;
+
     private static final Logger LOGGER = LogUtils.getLogger();
 
     private NexusBootstrap() {
@@ -75,7 +81,28 @@ public final class NexusBootstrap {
                 modVersion);
 
         report(platform, services);
+        running = services;
         return new Started(services, manager);
+    }
+
+    /**
+     * The services from the most recent successful start, or null before one has happened.
+     *
+     * <p><b>Why a static exists here at all.</b> GameTest instantiates a test class reflectively
+     * with a no-argument constructor and invokes its methods statically — there is no injection
+     * point, so a test cannot be handed the services it needs to assert against. NeoForge's
+     * entrypoint already carried exactly this accessor for exactly this reason; this is the same
+     * seam moved into shared code so Fabric and Forge can use it too, rather than a third pattern.</p>
+     *
+     * <p>Deliberately <b>not</b> a general-purpose service locator. Production code receives its
+     * services through {@link ModuleContext} and the constructor graph, which is what keeps the
+     * module contract honest and what makes safe mode's missing services a compile-time shape rather
+     * than a runtime surprise. Reaching for this from a service would be a defect.</p>
+     *
+     * @return the live services, or null before {@link #start} has completed
+     */
+    public static NexusServices runningServices() {
+        return running;
     }
 
     /**

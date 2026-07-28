@@ -2,7 +2,7 @@ package com.mwtstudios.nexuscore.gametest;
 
 import java.util.UUID;
 
-import com.mwtstudios.nexuscore.NexusCore;
+import com.mwtstudios.nexuscore.core.NexusBootstrap;
 import com.mwtstudios.nexuscore.core.NexusServices;
 import com.mwtstudios.nexuscore.gui.AdminMenu;
 import com.mwtstudios.nexuscore.teleport.SafeDestination;
@@ -20,8 +20,6 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
 
-import net.neoforged.neoforge.gametest.GameTestHolder;
-import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 /**
  * In-server tests that need a real world or a real player.
@@ -30,20 +28,14 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
  * places blocks, moves a player, or opens a container — the things a unit test cannot do at all,
  * and the reason several 1.1.1 fixes were correct in code but verified only by reading.</p>
  */
-@GameTestHolder("nexuscore")
-@PrefixGameTestTemplate(false)
 public final class NexusWorldGameTests {
 
-    private NexusWorldGameTests() {
-        // Static holder.
-    }
-
     private static NexusServices services() {
-        NexusCore mod = NexusCore.instance();
-        if (mod == null) {
+        NexusServices services = NexusBootstrap.runningServices();
+        if (services == null) {
             throw new IllegalStateException("NexusCore is not loaded");
         }
-        return mod.services();
+        return services;
     }
 
     // ---- teleport safety (M5) -----------------------------------------------------------
@@ -53,8 +45,8 @@ public final class NexusWorldGameTests {
      *
      * @param helper the running test
      */
-    @GameTest(template = "empty")
-    public static void teleportRefusesASuffocatingDestination(GameTestHelper helper) {
+    @GameTest(template = "nexuscore:empty")
+    public void teleportRefusesASuffocatingDestination(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         BlockPos base = helper.absolutePos(new BlockPos(1, 1, 1));
 
@@ -80,8 +72,8 @@ public final class NexusWorldGameTests {
      *
      * @param helper the running test
      */
-    @GameTest(template = "empty")
-    public static void teleportAcceptsSolidGroundWithHeadroom(GameTestHelper helper) {
+    @GameTest(template = "nexuscore:empty")
+    public void teleportAcceptsSolidGroundWithHeadroom(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         BlockPos floor = helper.absolutePos(new BlockPos(1, 1, 1));
         level.setBlockAndUpdate(floor, Blocks.STONE.defaultBlockState());
@@ -103,8 +95,8 @@ public final class NexusWorldGameTests {
      *
      * @param helper the running test
      */
-    @GameTest(template = "empty")
-    public static void teleportRefusesLava(GameTestHelper helper) {
+    @GameTest(template = "nexuscore:empty")
+    public void teleportRefusesLava(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         BlockPos floor = helper.absolutePos(new BlockPos(1, 1, 1));
         level.setBlockAndUpdate(floor, Blocks.LAVA.defaultBlockState());
@@ -124,8 +116,8 @@ public final class NexusWorldGameTests {
      *
      * @param helper the running test
      */
-    @GameTest(template = "empty")
-    public static void homesPersistWithTheirCoordinates(GameTestHelper helper) {
+    @GameTest(template = "nexuscore:empty")
+    public void homesPersistWithTheirCoordinates(GameTestHelper helper) {
         NexusServices services = services();
         UUID owner = UUID.randomUUID();
         ServerPlayer player = helper.makeMockServerPlayerInLevel();
@@ -151,8 +143,8 @@ public final class NexusWorldGameTests {
      *
      * @param helper the running test
      */
-    @GameTest(template = "empty")
-    public static void homeLimitIsEnforcedAndDeletingFreesASlot(GameTestHelper helper) {
+    @GameTest(template = "nexuscore:empty")
+    public void homeLimitIsEnforcedAndDeletingFreesASlot(GameTestHelper helper) {
         NexusServices services = services();
         UUID owner = UUID.randomUUID();
         TeleportService.Location where = TeleportService.Location.of(helper.makeMockServerPlayerInLevel());
@@ -180,8 +172,8 @@ public final class NexusWorldGameTests {
      *
      * @param helper the running test
      */
-    @GameTest(template = "empty")
-    public static void adminMenuRefusesEveryClick(GameTestHelper helper) {
+    @GameTest(template = "nexuscore:empty")
+    public void adminMenuRefusesEveryClick(GameTestHelper helper) {
         ServerPlayer player = helper.makeMockServerPlayerInLevel();
         SimpleContainer contents = new SimpleContainer(27);
         contents.setItem(0, new ItemStack(Items.DIAMOND, 5));

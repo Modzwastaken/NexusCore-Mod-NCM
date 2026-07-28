@@ -2,7 +2,7 @@ package com.mwtstudios.nexuscore.gametest;
 
 import java.util.UUID;
 
-import com.mwtstudios.nexuscore.NexusCore;
+import com.mwtstudios.nexuscore.core.NexusBootstrap;
 import com.mwtstudios.nexuscore.core.NexusServices;
 import com.mwtstudios.nexuscore.moderation.ModerationService;
 import com.mwtstudios.nexuscore.permission.PermissionDecision;
@@ -11,8 +11,6 @@ import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.server.level.ServerPlayer;
 
-import net.neoforged.neoforge.gametest.GameTestHolder;
-import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 /**
  * In-server tests for the paths no unit test can reach.
@@ -26,22 +24,16 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
  * <p>These run only when {@code neoforge.enabledGameTestNamespaces} names this mod, which the
  * {@code runGameTestServer} task sets and a production server never does.</p>
  */
-@GameTestHolder("nexuscore")
-@PrefixGameTestTemplate(false)
 public final class NexusGameTests {
-
-    private NexusGameTests() {
-        // Static holder; GameTest instantiates nothing.
-    }
 
     /** The live registry the running server is using — not a second copy built for the test. */
     private static NexusServices services() {
-        NexusCore mod = NexusCore.instance();
-        if (mod == null) {
+        NexusServices services = NexusBootstrap.runningServices();
+        if (services == null) {
             throw new IllegalStateException(
                     "NexusCore is not loaded, so these tests would be asserting about nothing");
         }
-        return mod.services();
+        return services;
     }
 
     /**
@@ -49,8 +41,8 @@ public final class NexusGameTests {
      *
      * @param helper the running test
      */
-    @GameTest(template = "empty")
-    public static void harnessRuns(GameTestHelper helper) {
+    @GameTest(template = "nexuscore:empty")
+    public void harnessRuns(GameTestHelper helper) {
         helper.assertTrue(services() != null, "the running server should expose its service registry");
         helper.succeed();
     }
@@ -62,8 +54,8 @@ public final class NexusGameTests {
      *
      * @param helper the running test
      */
-    @GameTest(template = "empty")
-    public static void permissionGatingRefusesByDefault(GameTestHelper helper) {
+    @GameTest(template = "nexuscore:empty")
+    public void permissionGatingRefusesByDefault(GameTestHelper helper) {
         NexusServices services = services();
         UUID stranger = UUID.randomUUID();
 
@@ -83,8 +75,8 @@ public final class NexusGameTests {
      *
      * @param helper the running test
      */
-    @GameTest(template = "empty")
-    public static void explainPathSeesTheSameGrantAsEnforcement(GameTestHelper helper) {
+    @GameTest(template = "nexuscore:empty")
+    public void explainPathSeesTheSameGrantAsEnforcement(GameTestHelper helper) {
         NexusServices services = services();
         ServerPlayer player = helper.makeMockServerPlayerInLevel();
         String node = "nexuscore.command.moderation.ban";
@@ -113,8 +105,8 @@ public final class NexusGameTests {
      *
      * @param helper the running test
      */
-    @GameTest(template = "empty")
-    public static void punishmentEnforcementIsPerPlayer(GameTestHelper helper) {
+    @GameTest(template = "nexuscore:empty")
+    public void punishmentEnforcementIsPerPlayer(GameTestHelper helper) {
         NexusServices services = services();
         UUID banned = UUID.randomUUID();
         UUID bystander = UUID.randomUUID();
@@ -143,8 +135,8 @@ public final class NexusGameTests {
      *
      * @param helper the running test
      */
-    @GameTest(template = "empty")
-    public static void oneLiftClearsASupersededBan(GameTestHelper helper) {
+    @GameTest(template = "nexuscore:empty")
+    public void oneLiftClearsASupersededBan(GameTestHelper helper) {
         NexusServices services = services();
         UUID target = UUID.randomUUID();
 
@@ -175,8 +167,8 @@ public final class NexusGameTests {
      *
      * @param helper the running test
      */
-    @GameTest(template = "empty")
-    public static void unknownNameResolutionDoesNotBlock(GameTestHelper helper) {
+    @GameTest(template = "nexuscore:empty")
+    public void unknownNameResolutionDoesNotBlock(GameTestHelper helper) {
         NexusServices services = services();
         long before = System.nanoTime();
 

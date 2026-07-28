@@ -440,9 +440,22 @@ public final class NexusCommands {
             throw new Refused(services.messages().raw("confirm.rejected",
                     "reason", taken.outcome().name().toLowerCase(Locale.ROOT)));
         }
-        taken.body().run();
+        try {
+            taken.body().run();
+        } catch (RuntimeException e) {
+            // The token is already spent, and it stays spent: single use is a security property,
+            // and handing it back would let a partially applied action be retried. But a token
+            // consumed by an action that did not happen is exactly what an operator needs a
+            // record of — the module-disabled path in the command wrapper deliberately writes no
+            // audit record, which is right for a refusal and wrong for a spent token.
+            services.audit(source, "core.confirm", "confirmation", taken.description(),
+                    "failed", e.getMessage(), Map.of(), UUID.randomUUID().toString());
+            throw new Refused(services.messages().raw("confirm.failed",
+                    "action", taken.description(), "reason", String.valueOf(e.getMessage())));
+        }
         return Feedback.of(services.messages().render("confirm.done", "action", taken.description()));
     }
+
 
     private static Feedback openGui(NexusServices services, CommandSourceStack source, AdminGuiService gui)
             throws Refused {
@@ -1004,6 +1017,12 @@ public final class NexusCommands {
      */
     private static Feedback proposeBan(NexusServices services, CommandSourceStack source, String name, String rawReason)
             throws Refused {
+        // Touch the module BEFORE staging anything. The confirmation body is what used to reach
+        // moderation first, and it does not run until the operator confirms — so in safe mode the
+        // prompt was issued happily, the token was then spent by /nexus confirm, and the action
+        // failed with the token already gone. Failing here throws the same ModuleException the
+        // command wrapper reports cleanly, and no token is ever staged for work that cannot run.
+        services.moderation();
         UUID target = resolve(source, services, name);
         String reason = ModerationService.sanitiseReason(rawReason, services.settings().maxReasonLength);
         UUID actor = source.getEntity() instanceof ServerPlayer player ? player.getUUID() : null;

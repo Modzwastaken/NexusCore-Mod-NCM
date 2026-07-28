@@ -93,6 +93,20 @@ them instead of carrying a second copy of the atomic-move protocol — including
 fixed in one copy and not the other.
 
 ### Fixed
+- A confirmation is no longer staged for an action that cannot run. `/ban` in safe mode issued its
+  prompt happily, because the only thing reaching the moderation module was the token's *body* —
+  and a body does not run until the operator confirms. `/nexus confirm` then spent the token, the
+  action failed, and the operator was left with no ban, no token, and no record of either.
+  `proposeBan()` now reaches the module first, so the refusal happens before anything is staged;
+  and a body that throws after its token is spent is audited and reported, because the token
+  stays spent — single use is a security property, and returning it would let a partially applied
+  action be retried.
+
+  **Recorded honestly: this fix is not closed by a test.** Both changes sit at command call sites,
+  which nothing can invoke without a `CommandSourceStack` harness; removing either leaves all 289
+  tests green, which was verified by mutation rather than assumed. `SafeModeConfirmationTest`
+  pins the mechanisms it can reach. The row stays in the defect table until 1.1.2's command tests
+  can drive the propose and confirm paths.
 - `/nexus permission set|unset|check` accept a wildcard pattern. The node argument used
   Brigadier's `word()`, whose character set excludes `*`, so it silently stopped at the dot and
   `nexuscore.command.*` — the form operators most often want — could not be typed at all. A

@@ -6,6 +6,7 @@
   "error.unknown-player": "&c&lNEXUS &c» &7No player named &f{name}&7 is known to this server.",
   "confirm.rejected": "&c&lCONFIRM &c» &7That confirmation is not valid &8({reason})&7. Run the command again to get a new one.",
   "confirm.done": "&a&lCONFIRM &a» &7Confirmed: &f{action}",
+  "confirm.failed": "&c&lNEXUS &c» &7{action} &cdid not complete&7: {reason} &8— the confirmation has been used up; the failure is recorded in the audit log.",
   "player.heal.success": "&a&lHEAL &a» &7Healed &f{target}&7.",
   "player.feed.success": "&a&lFEED &a» &7Fed &f{target}&7.",
   "player.fly.enabled": "&b&lFLY &b» &7Flight for &f{target}&7: &aenabled",

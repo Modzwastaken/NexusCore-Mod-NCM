@@ -58,6 +58,19 @@ Any build another person is asked to install, whichever number it carries.
 
 `1.1.0`, `1.5.0`, `2.0.0`. The whole document, plus the sign-off table at the end.
 
+### Milestones say when work landed; content says what to check
+
+The milestone headings below record where a section came from, not when it applies.
+A section applies if the release **contains** the thing it protects, whatever
+milestone that thing was planned under. §7 is the worked example: a release that
+moves value between players runs it in full, even if the economy milestone is
+untouched.
+
+The converse holds too, and matters just as much: a section is **not** run to look
+thorough. Ticking value-moving boxes for a release that moves no value asserts
+invariants about a feature that does not exist, which is a false claim like any
+other. v1.2.0 is a stability release and does not run §7; v1.3.0 does.
+
 ---
 
 ## 0. Applies to every version (`x.y.0`)
@@ -96,6 +109,11 @@ Any build another person is asked to install, whichever number it carries.
 - [ ] No `ERROR` log caused by NexusCore during normal startup and use
 - [ ] Dedicated server loads **zero** client classes
 - [ ] Vanilla client joins a server-only install; everything works, no client-side error
+- [ ] `./verify-release-jar.sh <loader> <version>` passes on **all three** loaders.
+      It refuses to run unless the installed jar's SHA-256 equals `archived/v<version>/`,
+      so this box cannot be ticked against anything but the released bytes. Console
+      evidence: version reported, `/execute as` against a summoned armor stand refused,
+      audit chain intact, no NexusCore error.
 
 ## 2. From M1 — configuration and messages
 
@@ -150,7 +168,21 @@ Any build another person is asked to install, whichever number it carries.
 - [ ] Non-operator player has no admin command access by default
 - [ ] Operator bootstrap can grant native groups, then be disabled
 
-## 7. From M6 — economy
+## 7. Value-moving features — applies to any release that moves value
+
+Keyed to what the release **contains**, not to a milestone label. If a release adds
+any feature in which an item, a balance, or an ownership record moves between two
+players — an economy, a shop, an auction house, player-to-player trade, a bounty, a
+wager — every box below applies. It applies whether or not the release is called an
+economy release, and whether or not M6 is otherwise complete. A feature that moves
+value inherits these invariants on the day it ships, not on the day its milestone does.
+
+Per the ladder (ADR-0007), this section is **not exercised by v1.2.0**, which is a
+stability release — M5 completion, the write-ahead journal, and the defect backlog.
+It is the acceptance gate for **v1.3.0**, which carries the economy and a
+**fixed-price** market. Timed auction bidding is deferred to 1.3.x, so the boxes
+below are keyed to the mechanism that actually ships; the bidding forms are parked
+at the end of this section until it does.
 
 - [ ] Fixed-point integer minor units; no `float` or `double` anywhere in currency code
 - [ ] Atomic transfer: debit and credit in one transaction boundary
@@ -159,6 +191,30 @@ Any build another person is asked to install, whichever number it carries.
 - [ ] Shop purchase is all-or-nothing
 - [ ] All six §10.2 invariants have passing **named** tests
 - [ ] Restart persistence for balances and history
+- [ ] A listing, purchase and settlement are one transaction boundary; a failed
+      settlement returns the lot and the buyer's funds, with no partial state
+- [ ] **Two players cannot both buy the same listing** — proven by a concurrent-
+      **purchase** test, not by argument. This is the primary form of this invariant:
+      a fixed-price buy is a plain check-then-act race with no auction clock to
+      serialise it, so it is easier to write wrong and easier to miss in review than
+      the bidding form — and its failure mode duplicates items rather than merely
+      mis-awarding them
+- [ ] An expired or cancelled listing returns the item **exactly once**; replay of the
+      expiry job does not duplicate it
+- [ ] **Conditional — assert only if trade survives the cut order.** Trade is
+      all-or-nothing across both inventories, and a disconnect or crash mid-trade
+      loses nothing and duplicates nothing, tested by killing the server inside the
+      transaction. Trade is in scope but explicitly cuttable (kits first, then market
+      GUI to commands-only, then trade). Do not silently skip or tick this box —
+      record which of the two happened
+
+**Parked until timed bidding ships (1.3.x).** These activate when bidding lands, and
+must not be run before it — an invariant asserted about an absent mechanism is a
+false claim like any other:
+
+- [ ] An auction listing, **bid**, and settlement are one transaction boundary; a
+      failed settlement returns the lot and **every losing bid**, with no partial state
+- [ ] Two players cannot **win** the same lot — proven by a concurrent-**bid** test
 
 ## 7a. From M7 — moderation depth and chat
 
@@ -185,9 +241,8 @@ than renumbering sections 8 to 11, which are referenced by number elsewhere.
       system
 - [ ] Support bundle contains no secrets — verified by test
 - [ ] Benchmark harness produces JSON; baseline committed; a local run compares against it
-- [ ] CI comparison — **NOT MET while no git remote is configured** (see the M0 table in
-      `IMPLEMENTATION_STATUS.md`). Recorded rather than dropped; it is not a v1.5.0 exit
-      condition.
+- [ ] CI builds all three loaders from a bare checkout on the release commit
+      (`.github/workflows/build.yml`), green on the tagged commit
 - [ ] **§16 budget numbers are now measured**, and every document updated to say so
 
 ## 9. From M9 — networking and client
@@ -217,6 +272,63 @@ than renumbering sections 8 to 11, which are referenced by number elsewhere.
 - [ ] Every box in §22 checked with evidence, **or removed by a written and signed release
       decision**
 
+## 12. Surface sign-off — applies to every version (`x.y.0`)
+
+A version is not out when the jars are built. It is out when six surfaces agree:
+the archived bytes, the mod repo's docs, GitHub Releases, mwtstudios.net, Modrinth,
+and Discord. Run from `~/Documents/Projects/studio-control`.
+
+- [ ] `manifest/releases/<version>.json` exists, and `studio.json` `currentRelease`
+      points at it; the previous release's `latest` is cleared in the same change
+- [ ] `published_defects` **re-derived** from IMPLEMENTATION_STATUS.md, never copied
+      from the previous release — fixes that landed change the list
+- [ ] `./studio stability` passes, and the check count did not **fall**
+- [ ] `./studio sync` reports no `DRIFT`, `MISSING` or `ERROR`
+- [ ] `./studio sync --deep` — the bytes GitHub actually serves hash to the archived values
+- [ ] Modrinth and Discord published, then attested — see "Who may attest" below
+- [ ] No surface left `UNVERIFIABLE` without the human route named in the sign-off table
+- [ ] **No surface advertises a capability whose evidence does not yet exist.** This
+      binds all six — the archived bytes, repo docs, GitHub Releases, mwtstudios.net,
+      Modrinth and Discord — and the manifests that render them. Code present in the
+      tree is not a claim that may be published: a capability ships outwardly when its
+      exit condition is met, not when its code lands. Worked example: economy code is
+      built across `1.2.1`–`1.2.5`, and no surface says NexusCore has an economy until
+      `1.2.5`'s exit is met.
+
+### Who may attest, and what makes an attestation count
+
+`attest` records the SHA-256 of the **rendered** payload at the moment somebody says
+they published. It does not read the live surface — there is no Modrinth or Discord
+token on this machine — so it answers one narrow question: *has the manifest changed
+since the publication was claimed?* An attestation is never observation, and
+`SYNCED (attested, not observed)` must never be read as `SYNCED (observed)`.
+
+Two parties may attest:
+
+- **A human who published it.**
+      `./studio attest <surface> <version> --by <name>`
+
+- **An agent that performed the publication itself**, in the browser, in that session.
+      `./studio attest <surface> <version> --by claude:<session> --note "<evidence ref>"`
+
+  An agent attestation is **provisional until all three hold**:
+  1. the agent performed the publication itself — never attesting someone else's work,
+     and never attesting a surface it only inspected;
+  2. **byte-equality evidence** was produced at publish time — the text committed to the
+     live surface compared against `render/<version>/<artifact>`, character for character,
+     read back from the live editor rather than from what was sent;
+  3. that evidence was **delivered to Master Mode** and acknowledged. Until it is, the
+     record does not count toward this checklist.
+
+  The `--by` value must name the session, not merely say "claude". An agent that
+  publishes and then reports its own success is the weakest link in this document, and
+  the record must make that visible to whoever reads it later rather than hiding it
+  behind a status that looks identical to human sign-off.
+
+- [ ] Every agent attestation for this version names its session in `--by` and has its
+      byte-equality evidence acknowledged by Master Mode
+- [ ] Any attestation superseded by a later one records what it supersedes, in `--note`
+
 ---
 
 ## Sign-off
@@ -231,3 +343,7 @@ than renumbering sections 8 to 11, which are referenced by number elsewhere.
 | Checked by | |
 | Date | |
 | Items NOT MET (with reasons) | |
+| `./studio sync` verdict | |
+| Attested surfaces (surface, by whom, human or agent, when) | |
+| Agent attestations — evidence acknowledged by | |
+| Items UNVERIFIABLE, with the human route for each | |

@@ -1,6 +1,9 @@
 package com.mwtstudios.nexuscore.audit;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -270,5 +273,66 @@ class AuditServiceTest {
 
         assertEquals(List.of(), audit.sealedSegments());
         assertTrue(audit.verify().intact());
+    }
+
+    // ---- a damaged log must not stop the server (1.1.4) ---------------------------------
+
+    @Test
+    @DisplayName("one byte that is not UTF-8 no longer stops the mod from starting")
+    void malformedByteDoesNotPreventStartup() throws IOException {
+        write("first", "target");
+        write("second", "target");
+
+        // A torn final append from a power loss is enough to produce this. Before 1.1.4
+        // Files.readAllLines threw MalformedInputException, which reached the audit module's
+        // constructor — and audit is a CORE module, so one bad byte stopped the whole mod from
+        // starting, with no recovery path inside it.
+        byte[] good = Files.readAllBytes(directory.resolve(AuditService.FILE));
+        byte[] damaged = new byte[good.length + 1];
+        System.arraycopy(good, 0, damaged, 0, good.length);
+        damaged[good.length] = (byte) 0xC3;    // a lead byte with nothing following it
+        Files.write(directory.resolve(AuditService.FILE), damaged);
+
+        AuditService reopened = assertDoesNotThrow(() -> new AuditService(store, "0.2.0"),
+                "a damaged audit log must not prevent startup — audit is a core module");
+        assertNotNull(reopened);
+    }
+
+    @Test
+    @DisplayName("the damaged record fails verification rather than being silently accepted")
+    void malformedByteBreaksVerificationNotStartup() throws IOException {
+        write("first", "target");
+        write("second", "target");
+        assertTrue(audit.verify().intact(), "precondition: the chain starts intact");
+
+        // Corrupt a byte INSIDE the first record rather than appending one, so the line still
+        // parses as a record but no longer hashes to what its successor recorded.
+        byte[] bytes = Files.readAllBytes(directory.resolve(AuditService.FILE));
+        int at = new String(bytes, StandardCharsets.UTF_8).indexOf("first");
+        bytes[at] = (byte) 0xFF;
+        Files.write(directory.resolve(AuditService.FILE), bytes);
+
+        AuditService reopened = new AuditService(store, "0.2.0");
+        AuditService.Verification result = reopened.verify();
+
+        // Replacement is not repair. The substituted character changes the line, so its SHA-256
+        // changes, so the chain breaks exactly there — which is TRUE, and is what an operator needs
+        // to be told. The damage is surfaced by the tool built to surface it, not by a dead server.
+        assertFalse(result.intact(), "a corrupted record must break the chain, not pass quietly");
+    }
+
+    @Test
+    @DisplayName("the file on disk is never rewritten by a lenient read")
+    void lenientReadDoesNotRepairTheFile() throws IOException {
+        write("first", "target");
+        byte[] before = Files.readAllBytes(directory.resolve(AuditService.FILE));
+        before[before.length / 2] = (byte) 0xFE;
+        Files.write(directory.resolve(AuditService.FILE), before);
+        byte[] damaged = Files.readAllBytes(directory.resolve(AuditService.FILE));
+
+        new AuditService(store, "0.2.0").verify();
+
+        assertArrayEquals(damaged, Files.readAllBytes(directory.resolve(AuditService.FILE)),
+                "reading leniently must not touch the bytes — the operator's evidence stays intact");
     }
 }

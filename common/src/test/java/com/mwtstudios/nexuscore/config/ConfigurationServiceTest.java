@@ -163,4 +163,38 @@ class ConfigurationServiceTest {
     void cleanReportSaysSo() {
         assertTrue(new NexusSettings().validate(NexusSettings.FILE).render().contains("no problems found"));
     }
+
+    @Test
+    @DisplayName("auditMaxSegmentBytes accepts zero, which means never rotate")
+    void auditRotationCanBeDisabledByZero() {
+        NexusSettings settings = new NexusSettings();
+        settings.auditMaxSegmentBytes = 0L;
+
+        ValidationReport report = settings.validate("config.json");
+
+        // Zero cannot go through clamp(), which would read it as out of range and correct it back
+        // to the default — quietly turning rotation on for an operator who deliberately turned it off.
+        assertEquals(0L, settings.auditMaxSegmentBytes);
+        assertTrue(report.findings().stream().noneMatch(f -> f.key().equals("auditMaxSegmentBytes")),
+                "0 is a legal value and must not be reported as corrected");
+    }
+
+    @Test
+    @DisplayName("an out-of-range auditMaxSegmentBytes is rejected with all five report fields")
+    void auditSegmentSizeOutOfRangeIsReported() {
+        NexusSettings settings = new NexusSettings();
+        settings.auditMaxSegmentBytes = 12L;
+
+        ValidationReport report = settings.validate("config.json");
+
+        ValidationReport.Finding finding = report.findings().stream()
+                .filter(f -> f.key().equals("auditMaxSegmentBytes"))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("config.json", finding.file());
+        assertEquals("12", finding.invalidValue());
+        assertTrue(finding.expected().contains("0 to disable"), "got: " + finding.expected());
+        assertEquals("8388608", finding.fallback());
+        assertEquals(8L * 1024L * 1024L, settings.auditMaxSegmentBytes);
+    }
 }

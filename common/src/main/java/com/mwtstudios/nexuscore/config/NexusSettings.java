@@ -20,6 +20,15 @@ public final class NexusSettings {
     /** File name under the NexusCore data directory. */
     public static final String FILE = "config.json";
 
+    /** Default size at which {@code audit.log} is sealed into a segment. */
+    private static final long DEFAULT_AUDIT_SEGMENT_BYTES = 8L * 1024L * 1024L;
+
+    /** Below this a segment holds too few records to be worth sealing. */
+    private static final long MIN_AUDIT_SEGMENT_BYTES = 64L * 1024L;
+
+    /** Above this the startup read this rotation exists to bound stops being bounded. */
+    private static final long MAX_AUDIT_SEGMENT_BYTES = 1024L * 1024L * 1024L;
+
     // ---- document metadata -------------------------------------------------------------
 
     public int schemaVersion = CURRENT_SCHEMA_VERSION;
@@ -110,6 +119,13 @@ public final class NexusSettings {
     public boolean auditEnabled = true;
 
     /**
+     * Size in bytes at which {@code audit.log} is sealed into a numbered segment. Zero disables
+     * rotation, which is how the log behaved before 1.1.4 — unbounded, and fully re-read on every
+     * start. The hash chain crosses a rotation untouched, so sealing costs no verifiability.
+     */
+    public long auditMaxSegmentBytes = DEFAULT_AUDIT_SEGMENT_BYTES;
+
+    /**
      * Clamps every field into its supported range.
      *
      * @param file the file name to attribute findings to
@@ -138,6 +154,17 @@ public final class NexusSettings {
         confirmationTimeoutSeconds = clamp(report, "confirmationTimeoutSeconds", confirmationTimeoutSeconds, 5, 600, 30);
         commandsPerMinute = clamp(report, "commandsPerMinute", commandsPerMinute, 10, 6000, 120);
         adminGuiPageSize = clamp(report, "adminGuiPageSize", adminGuiPageSize, 7, 45, 28);
+        // Zero is legal and means "never rotate", so it cannot go through clamp() — which would
+        // read it as out of range and correct it to the default, quietly turning a deliberate
+        // choice back on.
+        if (auditMaxSegmentBytes != 0L
+                && (auditMaxSegmentBytes < MIN_AUDIT_SEGMENT_BYTES || auditMaxSegmentBytes > MAX_AUDIT_SEGMENT_BYTES)) {
+            report.reject("auditMaxSegmentBytes", auditMaxSegmentBytes,
+                    "0 to disable rotation, or a whole number of bytes between " + MIN_AUDIT_SEGMENT_BYTES
+                            + " and " + MAX_AUDIT_SEGMENT_BYTES,
+                    DEFAULT_AUDIT_SEGMENT_BYTES);
+            auditMaxSegmentBytes = DEFAULT_AUDIT_SEGMENT_BYTES;
+        }
 
         if (banAppealMessage == null) {
             report.reject("banAppealMessage", null, "a string", "\"\"");

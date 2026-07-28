@@ -103,6 +103,97 @@ class StorageTest {
     }
 
     @Test
+    @DisplayName("a file that cannot be READ is reported without being quarantined")
+    void unreadableFileIsNotQuarantined() throws IOException {
+        JsonStore store = new JsonStore(directory);
+        store.write("permissions.json", new Sample());
+        Path file = directory.resolve("permissions.json");
+        String before = Files.readString(file, StandardCharsets.UTF_8);
+
+        if (!file.toFile().setReadable(false)) {
+            return;    // root, or a filesystem ignoring the permission; nothing to assert
+        }
+        try {
+            if (Files.isReadable(file)) {
+                return;    // the permission did not take effect
+            }
+            StorageException error = assertThrows(StorageException.class,
+                    () -> store.read("permissions.json", Sample.class, Sample::new));
+
+            // Until 1.1.4 an IOException was caught alongside the parse failures, so a full disk or a
+            // changed permission renamed an operator's INTACT file to .corrupt-<ts> and told them it
+            // could not be parsed. The data was fine and NexusCore moved it out from under them.
+            assertTrue(error.getMessage().contains("could not read"),
+                    "a failed read must not be reported as a parse failure, got: " + error.getMessage());
+            assertTrue(error.getMessage().contains("NOT been moved"), "got: " + error.getMessage());
+            try (var entries = Files.list(directory)) {
+                assertTrue(entries.noneMatch(p -> p.getFileName().toString().contains(".corrupt-")),
+                        "an unreadable file must be left exactly where it is");
+            }
+        } finally {
+            file.toFile().setReadable(true);
+        }
+        assertEquals(before, Files.readString(file, StandardCharsets.UTF_8), "the file's bytes must be untouched");
+    }
+
+    /**
+     * A document Gson refuses to serialise.
+     *
+     * <p>Gson declines {@link Class} outright rather than reflecting over it, which makes this a
+     * deterministic mid-write failure with no timing or filesystem dependence. An earlier attempt
+     * used a {@code Number} whose {@code toString} threw; Gson reflected over the anonymous subclass
+     * instead of calling it, serialised {@code {}}, and the test passed against broken code — which
+     * is the failure mode these tests exist to catch, met while writing one.</p>
+     */
+    static final class Unserialisable {
+        @SuppressWarnings("unused")
+        final Object boom = String.class;
+    }
+
+    @Test
+    @DisplayName("a write that fails mid-serialisation leaves no .tmp behind")
+    void failedSerialisationCleansUpAfterItself() throws IOException {
+        JsonStore store = new JsonStore(directory);
+
+        // Until 1.1.4 the only cleanup was inside `catch (IOException)`. A serialisation failure is
+        // not an IOException — and Gson only wraps writer failures in JsonIOException, so naming
+        // that type alone would not have caught this one either. The `.tmp` survived, and the next
+        // write found stale scratch while `noTemporaryFileLeftBehind` went on passing. Cleaning up
+        // in a finally is what actually closes it.
+        assertThrows(RuntimeException.class, () -> store.write("doomed.json", new Unserialisable()));
+
+        try (var entries = Files.list(directory)) {
+            assertTrue(entries.noneMatch(p -> p.getFileName().toString().endsWith(".tmp")),
+                    "a failed write must not leave scratch behind for the next write to find");
+        }
+    }
+
+    @Test
+    @DisplayName("a cross-directory atomic move is refused rather than attempted")
+    void crossDirectoryMoveRefused() throws IOException {
+        Path from = Files.writeString(directory.resolve("a.json"), "{}", StandardCharsets.UTF_8);
+        Path elsewhere = Files.createDirectories(directory.resolve("sub"));
+
+        // Same-directory is what makes the move a rename, and a rename is the only thing a filesystem
+        // does atomically. Enforcing the precondition is how the atomic-move guarantee becomes
+        // testable at all — the "filesystem cannot do this" branch is not reachable from a test.
+        assertThrows(StorageException.class, () -> JsonStore.move(from, elsewhere.resolve("a.json")));
+        assertTrue(Files.isRegularFile(from), "the refusal must not have moved anything");
+    }
+
+    @Test
+    @DisplayName("a same-directory replacement still works, and is atomic")
+    void sameDirectoryMoveWorks() throws IOException {
+        Path from = Files.writeString(directory.resolve("a.json.tmp"), "new", StandardCharsets.UTF_8);
+        Path to = Files.writeString(directory.resolve("a.json"), "old", StandardCharsets.UTF_8);
+
+        JsonStore.move(from, to);
+
+        assertEquals("new", Files.readString(to, StandardCharsets.UTF_8));
+        assertFalse(Files.exists(from));
+    }
+
+    @Test
     @DisplayName("an empty file is treated as corrupt rather than as an empty document")
     void emptyFileIsCorrupt() throws IOException {
         JsonStore store = new JsonStore(directory);

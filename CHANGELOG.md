@@ -86,12 +86,15 @@ Work toward the next build.
   at an injected point. That establishes the *order* of operations and that recovery repairs what a
   stopped process leaves. It does **not** establish durability: deleting any `force()` or
   `forceDirectory()` call would leave every one of these tests green, because nothing here loses
-  power. The fsync calls are argued for, not demonstrated. Two platform ceilings compound it and are
-  now recorded in the class javadoc rather than left to be discovered — `forceDirectory` swallows
-  its failure at DEBUG and **fails unconditionally on Windows**, making every directory fsync a
-  silent no-op there, and `JsonStore.move` falls back to a **non-atomic** replace on a filesystem
-  refusing `ATOMIC_MOVE`. Both are inherited from the single-document write protocol rather than
-  introduced here. Neither is covered by a test.
+  power. The fsync calls are argued for, not demonstrated, and that is still true at the end of this
+  build.
+
+  Two inherited platform ceilings compounded it when the journal landed — `forceDirectory`'s silent
+  Windows no-op, and a non-atomic fallback in `JsonStore.move`. **Both were resolved later in this
+  same build**, one closed and one ruled, under *Fixed* below. This paragraph is left describing the
+  state the journal landed in rather than rewritten to look tidier, because "the ceilings were
+  identified when the journal shipped and closed before anything rode on it" is the true sequence
+  and a reader following the 1.2.2 gate needs it.
 
 `JsonStore`'s `move`, `force` and `forceDirectory` became package-private so the journal reuses
 them instead of carrying a second copy of the atomic-move protocol — including the
@@ -172,6 +175,113 @@ Six defects in the journal above — three of them serious enough to lose a comm
 all found by an adversarial review before anything was built on it. None had shipped, and the
 review's verdict was that the design held and the implementation did not yet. The point of finding
 them here is that money and item custody were going to ride on this.
+
+**The two durability ceilings are resolved — one closed, one ruled.** They are the gate before
+1.2.2, because 1.2.2 is where money starts riding on this layer, and "we recorded the ceiling" is a
+weaker position than it sounds once a balance depends on it.
+
+- **`JsonStore.move` no longer completes a write it cannot make atomic.** Where `ATOMIC_MOVE` was
+  refused it logged a warning and did a plain replace — so §11.1-R4, *"a reader after a crash sees
+  the complete previous document or the complete new one, never a partial write"*, was quietly false
+  on that filesystem while every javadoc, spec row and status line went on claiming it. A torn
+  `permissions.json` is indistinguishable from a good one. The fallback is gone: the write fails,
+  the caller cleans up its temporary file and reports, and R4 holds or nothing happens.
+
+  A **same-directory precondition** is enforced first, and that is the part a test can reach. Both
+  callers already satisfied it — `write()`'s `.tmp` and the journal's staging file are each a
+  `resolveSibling` of their target — and it is what makes the move a rename, which is the only
+  operation a filesystem performs atomically. The refusal branch itself cannot be produced portably,
+  so it is argued rather than demonstrated, and `tools/mutate-storage.sh` says so in its header
+  instead of letting a green run imply otherwise.
+
+- **A rename is not flushed to disk on Windows, and that is now published rather than whispered.**
+  `forceDirectory` opens the directory as a channel; Windows cannot open a directory as a channel at
+  all, so every directory fsync NexusCore performs is a no-op there. The failure was logged at
+  DEBUG — which nobody runs — so the weakening was invisible on the one platform where it always
+  happens. It is now reported **once per run at WARN** and carries a named row on the published
+  defect list. **Ruled, not fixed**: there is no directory-fsync equivalent to reach for. Documents
+  are still replaced atomically; what is weakened is surviving a power loss immediately afterwards.
+  Linux and macOS are unaffected.
+
+- **`audit.log` grew without bound, and every start re-read all of it.** It is now sealed into
+  numbered segments — `audit-000001.log`, oldest first — at `auditMaxSegmentBytes`, default 8 MiB,
+  configurable and honoured on `/nexus reload`. Zero disables rotation, which is deliberately *not*
+  routed through `clamp()`: clamp would read zero as out of range and correct it back to the
+  default, quietly turning rotation on for an operator who turned it off.
+
+  **The chain crosses a rotation untouched, which is the whole difficulty.** Rotation only renames
+  a file: the next record's `previous_hash` is still the in-memory hash of the record before it, so
+  the chain does not know a rotation happened. Nothing is rewritten, so nothing can be rewritten
+  *wrongly* — a rotation that re-hashed or re-numbered anything would be indistinguishable from
+  tampering, in the one file whose entire purpose is being tamper-evident.
+
+  `verify()` now walks every sealed segment oldest-first and then the live log, and names the
+  segment a break is in. Verifying only the live log would report *chain intact* over a history
+  whose older half had been edited — answering the question wrongly, which is worse than not
+  answering it. **Proven to fail two ways**: restricting `verify()` to the live log fails 2 tests,
+  and resetting the chain on seal fails 3, including the restart case.
+
+  Startup no longer re-reads the whole history: the resume point comes from the last record's own
+  `sequence` field, so one bounded segment is read instead of everything ever written. `tail()`
+  reads back from the newest log and stops as soon as it has enough.
+
+- **`players.json` was rewritten in full on every join and every leave.** A rejoining player moves
+  one timestamp; paying a whole-document serialise, a `.bak` copy and an fsync for that — twice per
+  session, per player, forever — is the amplification. Last-seen updates are now damped behind a
+  30-second window and flushed when the identity module stops.
+
+  **Damping may cost a timestamp's precision. It must never cost a fact.** A player the document has
+  never held, and a name change the index resolves by, are written through immediately; only pure
+  observation waits. And the flush on shutdown is what makes any of it safe — without it, damping
+  would trade a real write-amplification problem for a quiet data-loss one on every clean stop.
+
+  **Two bounds, and neither alone is sufficient.** A shutdown flush does not fire on a crash, an
+  OOM kill, or a host losing power — the cases an operator actually worries about. And the time
+  bound never fires on an idle server, because damping runs on player events rather than on a
+  ticking clock: with no further joins or leaves, "30 seconds have elapsed" is never checked. So a
+  second bound caps the count: at most **20** damped updates may be outstanding, whatever the clock
+  does. The residual is stated with its numbers on the 1.1.4 row rather than left for a reader to
+  infer from the word "damped".
+
+  The service also had **two clocks**: the damping window ran on the injected one while the
+  timestamps it damped ran on `System.currentTimeMillis()`. That is now one clock throughout, and it
+  is not a tidiness change — see below.
+
+  **A test of mine passed against a no-op `flush()`.** The first version asserted the persisted
+  timestamp was `>=` its previous value; when the damped write never landed, the old value satisfied
+  that comparison and the suite stayed green. The two clocks are why it could not have caught it —
+  no test could observe a damped write landing while the value being damped came from wall-clock.
+  Fixing the clock made the assertion expressible as an exact value, and the injection now fails as
+  it should. **A fix whose removal no test notices is not a closed defect** — the standard Master
+  Mode applied to its own safe-mode row this session, met here by failing it first.
+
+**And two read/write-path defects, which turned out to be one mistake wearing two hats:**
+
+- **An unreadable file was treated as a corrupt one.** `read()` caught `IOException` alongside the
+  parse failures, so a full disk, a changed permission, an interrupted read or an NFS blip renamed
+  an operator's **intact** `permissions.json` to `.corrupt-<timestamp>`, told them it "could not be
+  parsed", and refused to start until they put it back. The data was never bad. Quarantine now means
+  what it says — bytes that were read and are not a document — and a failure to *read* reports and
+  leaves the file exactly where it is.
+
+  This is the same shape as the journal defect found in review a few hours earlier: both quarantined
+  on the wrong signal. Twice in one layer makes it a pattern rather than a slip, so it is named as
+  one: **quarantine is a judgement about content, and must never be reached by a path that never saw
+  the content.**
+
+- **A failed write left its scratch behind.** Cleanup lived inside `catch (IOException)`, and a
+  serialisation failure is not an `IOException` — so the `.tmp` survived, the next write found stale
+  scratch, and `noTemporaryFileLeftBehind` went on passing while being untrue. `JsonIOException` is
+  now named in the catch, because Gson wraps writer failures in it and it extends
+  `JsonParseException` rather than `IOException`, so it had been walking past untouched and reaching
+  callers as a raw `RuntimeException`. But naming it only fixes the *reported type* — the cleanup
+  moved to a `finally`, which is what actually closes it, because Gson only wraps failures coming
+  from the writer and a serialisation error raised anywhere else matches no catch clause here at all.
+
+  Worth recording how that was found: the first version of the test used a `Number` whose
+  `toString` threw. Gson reflected over the anonymous subclass instead of calling it, serialised
+  `{}`, and the test passed against code that still leaked. A test that passes against broken code is
+  the exact failure these tests exist to catch, met while writing one.
 
 - **The corrupt-record refusal destroyed the transaction it was protecting, on the second start.**
   `pendingRecords()` read each record through `JsonStore.read`, which moves an unparseable file to

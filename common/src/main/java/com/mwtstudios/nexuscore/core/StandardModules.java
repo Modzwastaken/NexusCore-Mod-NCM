@@ -76,12 +76,17 @@ public final class StandardModules {
                 .register(module("messages", true, Set.of("storage"),
                         ctx -> ctx.provide(MessageService.class, new MessageService(ctx.service(JsonStore.class)))))
 
+                // Identity damps its last-seen writes, so it needs a teardown: without the flush a
+                // clean shutdown would discard whatever had not reached disk, trading a write
+                // amplification problem for a quiet data-loss one.
                 .register(module("identity", true, Set.of("storage"),
-                        ctx -> ctx.provide(IdentityService.class, new IdentityService(ctx.service(JsonStore.class)))))
+                        ctx -> ctx.provide(IdentityService.class, new IdentityService(ctx.service(JsonStore.class))),
+                        ctx -> ctx.service(IdentityService.class).flush()))
 
                 .register(module("audit", true, Set.of("storage", "configuration"), ctx -> {
                     AuditService audit = new AuditService(ctx.service(JsonStore.class), ctx.modVersion());
                     audit.setEnabled(ctx.settings().auditEnabled);
+                    audit.setMaxSegmentBytes(ctx.settings().auditMaxSegmentBytes);
                     ctx.provide(AuditService.class, audit);
                 }))
 
@@ -127,16 +132,78 @@ public final class StandardModules {
      * @return the module
      */
     private static NexusModule module(String id, boolean core, Set<String> dependsOn, Consumer<ModuleContext> start) {
-        return new Declared(id, core, dependsOn, start);
+        return new Declared(id, core, dependsOn, start, context -> { });
     }
 
-    /** A module declared inline. See {@link #module}. */
-    private record Declared(String id, boolean core, Set<String> dependsOn, Consumer<ModuleContext> starter)
-            implements NexusModule {
+    /**
+     * Builds a module that also needs tearing down.
+     *
+     * @param id the module id
+     * @param core whether the mod is unusable without it
+     * @param dependsOn ids that must start first
+     * @param start builds and publishes the service
+     * @param stop runs at shutdown, with the same context the module started from
+     * @return the module
+     */
+    private static NexusModule module(String id, boolean core, Set<String> dependsOn,
+            Consumer<ModuleContext> start, Consumer<ModuleContext> stop) {
+        return new Declared(id, core, dependsOn, start, stop);
+    }
+
+    /**
+     * A module declared inline. See {@link #module}.
+     *
+     * <p>A class rather than a record because {@link NexusModule#stop()} takes no argument, so the
+     * context a module started from has to be held until shutdown. That is the only mutable state
+     * here, it is written once by {@code start}, and {@link ModuleManager} starts and stops modules
+     * on one thread.</p>
+     */
+    private static final class Declared implements NexusModule {
+
+        private final String id;
+        private final boolean core;
+        private final Set<String> dependsOn;
+        private final Consumer<ModuleContext> starter;
+        private final Consumer<ModuleContext> stopper;
+        private ModuleContext started;
+
+        Declared(String id, boolean core, Set<String> dependsOn, Consumer<ModuleContext> starter,
+                Consumer<ModuleContext> stopper) {
+            this.id = id;
+            this.core = core;
+            this.dependsOn = dependsOn;
+            this.starter = starter;
+            this.stopper = stopper;
+        }
+
+        @Override
+        public String id() {
+            return id;
+        }
+
+        @Override
+        public boolean core() {
+            return core;
+        }
+
+        @Override
+        public Set<String> dependsOn() {
+            return dependsOn;
+        }
 
         @Override
         public void start(ModuleContext context) {
+            started = context;
             starter.accept(context);
+        }
+
+        @Override
+        public void stop() {
+            // A module that never started has nothing to tear down, and safe mode leaves several
+            // in exactly that state.
+            if (started != null) {
+                stopper.accept(started);
+            }
         }
     }
 }

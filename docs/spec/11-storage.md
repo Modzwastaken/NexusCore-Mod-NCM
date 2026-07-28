@@ -128,8 +128,8 @@ correctness — both were derived from the same implementation. This table exist
 | Requirement | Met | Evidence, or why not |
 |---|---|---|
 | R1–R3 | yes | `JsonStore`, ADR-0006. `StorageTest.roundTrip`. |
-| R4–R7 | yes | `StorageTest.noTemporaryFileLeftBehind`, `overwriteKeepsBackup`. **Subject to R22 below.** |
-| R8, R9 | yes | `StorageTest.corruptFileIsQuarantinedNotDiscarded`, `emptyFileIsCorrupt`. |
+| R4–R7 | yes | `StorageTest.noTemporaryFileLeftBehind`, `overwriteKeepsBackup`, `sameDirectoryMoveWorks`. **No longer subject to R22** — since 1.1.4 there is no non-atomic fallback, so R4 holds or the write fails. |
+| R8, R9 | yes | `StorageTest.corruptFileIsQuarantinedNotDiscarded`, `emptyFileIsCorrupt`. **Quarantine now requires bytes that were read and are not a document**: a failure to *read* reports and leaves the file alone (`unreadableFileIsNotQuarantined`). Before 1.1.4 an `IOException` quarantined an intact file. |
 | R10, R11 | yes | `StorageTest.traversalRefused` (4 cases), `absolutePathRefused`, `symlinkEscapeRefused`, `storeRefusesEscape`. |
 | R12, R14 | yes | `JournalService`, ADR-0013. `JournalTest.crashMidTransactionIsRepairedByReplay`, `crashAtEveryPointIsRecoverable` (4 cases). |
 | R13 | yes | One mechanism. `Transaction.put` takes any document, so item-custody records and balances commit through the same boundary. **No caller yet** — the requirement is met by construction, not by exercise. |
@@ -139,8 +139,8 @@ correctness — both were derived from the same implementation. This table exist
 | R18 | yes | `JournalTest.unreadableRecordRefusesEveryTime` — three consecutive starts. Violated in the first implementation: records were read through the quarantining reader, so the second start saw no pending work at all. |
 | R19 | yes | `JournalTest.quarantinedRecordIsStillPending`, `abandonedStagingFilesAreSwept`, and the in-flight guard on the sweep. |
 | R20 | yes | `JournalTest.repairGuidanceDoesNotForgeTheMarker`. |
-| R21 | **partial** | Recorded in `JournalService`'s class javadoc and here — **not fixed.** `JsonStore.forceDirectory` logs at DEBUG and continues when a directory fsync fails, and opening a directory as a channel fails unconditionally on **Windows**, so every directory fsync is a silent no-op there. R21's recording duty is met; the underlying weakness is not. |
-| R22 | **partial** | `JsonStore.move` falls back to a non-atomic replace with a logged warning where `ATOMIC_MOVE` is refused. The fallback is reported, so R22 is met — but on such a filesystem **R4 does not hold**, and no test covers it. |
+| R21 | yes, **by ruling** | `JsonStore.forceDirectory` cannot work on **Windows** — a directory cannot be opened as a channel there — and there is no directory-fsync equivalent to reach for, so this one is ruled rather than closed. Since 1.1.4 it reports **once per run at WARN** instead of per-call at DEBUG, which no operator runs, and it is named on the published defect list rather than living in a javadoc. What is weakened is the durability of a rename across a power loss; documents are still replaced atomically. |
+| R22 | yes, **by closing** | There is no fallback any more. `JsonStore.move` refuses when `ATOMIC_MOVE` is unavailable, so R4 holds or the write fails loudly — the caller cleans up its temporary file and reports. A same-directory precondition is enforced first (`crossDirectoryMoveRefused`), because that is the property making the move a rename and it is the only part a test can reach; the refusal itself is argued, not demonstrated, and `tools/mutate-storage.sh` says so in its header. |
 
 ### The evidence ceiling on R12–R20
 

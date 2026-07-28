@@ -175,4 +175,100 @@ class AuditServiceTest {
         assertTrue(tail.get(0).contains("target4"));
         assertTrue(tail.get(1).contains("target3"));
     }
+
+    // ---- rotation (1.1.4) --------------------------------------------------------------
+
+    /** Writes until the log has been sealed {@code segments} times. */
+    private void writeUntilRotated(int segments) {
+        audit.setMaxSegmentBytes(1024L);
+        for (int i = 0; i < 400 && audit.sealedSegments().size() < segments; i++) {
+            write("action-" + i, "target-" + i);
+        }
+        assertTrue(audit.sealedSegments().size() >= segments,
+                "the log should have rotated; got " + audit.sealedSegments().size() + " segment(s)");
+    }
+
+    @Test
+    @DisplayName("the hash chain survives rotation and verifies across every segment")
+    void chainSurvivesRotation() {
+        writeUntilRotated(2);
+        write("after", "rotation");
+
+        AuditService.Verification result = audit.verify();
+
+        assertTrue(result.intact(), "the chain must cross the segment boundary: " + result.detail());
+        assertTrue(result.detail().contains("log file(s)"), "got: " + result.detail());
+    }
+
+    @Test
+    @DisplayName("a record edited inside a SEALED segment is still detected")
+    void tamperingInASealedSegmentIsDetected() throws IOException {
+        writeUntilRotated(1);
+        write("after", "rotation");
+        assertTrue(audit.verify().intact(), "precondition: the chain starts intact");
+
+        // The whole point of the word chain-aware. Verifying only the live log would report
+        // "chain intact" over a history whose older half had been rewritten — answering the
+        // question wrongly, which is worse than not answering it.
+        String sealed = audit.sealedSegments().get(0);
+        List<String> lines = Files.readAllLines(directory.resolve(sealed), StandardCharsets.UTF_8);
+        lines.set(0, lines.get(0).replace("\"allowed\"", "\"denied\""));
+        Files.write(directory.resolve(sealed), lines, StandardCharsets.UTF_8);
+
+        AuditService.Verification result = audit.verify();
+
+        assertFalse(result.intact(), "an edit inside a sealed segment must break verification");
+        assertTrue(result.detail().contains(sealed), "the report must name the segment: " + result.detail());
+    }
+
+    @Test
+    @DisplayName("a deleted sealed segment is detected, not skipped over")
+    void deletedSegmentIsDetected() throws IOException {
+        writeUntilRotated(2);
+        write("after", "rotation");
+
+        Files.delete(directory.resolve(audit.sealedSegments().get(0)));
+
+        assertFalse(audit.verify().intact(), "removing a whole segment must break the chain");
+    }
+
+    @Test
+    @DisplayName("a restart after rotation resumes the chain rather than starting a new one")
+    void restartAfterRotationResumesTheChain() {
+        writeUntilRotated(1);
+        write("before", "restart");
+        long sequenceBefore = audit.count();
+
+        AuditService reopened = new AuditService(store, "0.2.0");
+        reopened.setMaxSegmentBytes(1024L);
+        reopened.record(UUID.randomUUID(), "Tester", "after", "player", "restart", "allowed", "because",
+                Map.of(), UUID.randomUUID().toString());
+
+        assertTrue(reopened.verify().intact(), "a reopened service must chain onto the existing log");
+        assertEquals(sequenceBefore + 1, reopened.count(), "numbering must continue, not restart");
+    }
+
+    @Test
+    @DisplayName("tail reads back across a segment boundary")
+    void tailSpansSegments() {
+        writeUntilRotated(1);
+        write("newest", "record");
+
+        List<String> recent = audit.tail(200);
+
+        assertTrue(recent.size() > 1, "tail must reach past the live log into the sealed segment");
+        assertTrue(recent.get(0).contains("newest"), "newest first");
+    }
+
+    @Test
+    @DisplayName("rotation is off when the limit is zero, so an operator can turn it off")
+    void rotationCanBeDisabled() {
+        audit.setMaxSegmentBytes(0L);
+        for (int i = 0; i < 200; i++) {
+            write("action-" + i, "target-" + i);
+        }
+
+        assertEquals(List.of(), audit.sealedSegments());
+        assertTrue(audit.verify().intact());
+    }
 }

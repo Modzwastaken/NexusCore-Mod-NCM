@@ -43,6 +43,15 @@ public final class AuditService {
     /** Hash recorded for the very first entry, which has no predecessor. */
     public static final String GENESIS_HASH = "0".repeat(64);
 
+    /** Sealed segments are {@code audit-<zero-padded number>.log}, oldest number first. */
+    static final String SEGMENT_PREFIX = "audit-";
+
+    /** @see #SEGMENT_PREFIX */
+    static final String SEGMENT_SUFFIX = ".log";
+
+    /** Default size at which the live log is sealed into a segment. */
+    private static final long DEFAULT_MAX_SEGMENT_BYTES = 8L * 1024L * 1024L;
+
     /** Parameter names whose values never reach the log. */
     private static final List<String> REDACTED_KEYS = List.of("ip", "address", "password", "token", "secret");
 
@@ -53,6 +62,7 @@ public final class AuditService {
     private final AtomicLong sequence = new AtomicLong();
     private volatile String lastHash = GENESIS_HASH;
     private volatile boolean enabled = true;
+    private volatile long maxSegmentBytes = DEFAULT_MAX_SEGMENT_BYTES;
 
     /**
      * @param store the data store the log lives in
@@ -61,11 +71,86 @@ public final class AuditService {
     public AuditService(JsonStore store, String modVersion) {
         this.store = store;
         this.modVersion = modVersion;
-        List<String> existing = store.readLines(FILE);
-        sequence.set(existing.size());
-        if (!existing.isEmpty()) {
-            lastHash = hashOf(existing.get(existing.size() - 1));
+
+        // Resume from the newest record that exists, wherever it lives. Before rotation this read
+        // the whole log to count it; the count now comes from the last record's own `sequence`
+        // field, so startup reads one segment rather than the entire history. That is the half of
+        // the "unbounded growth plus a synchronous full read" defect that startup owns.
+        String last = lastLineOf(FILE);
+        if (last == null) {
+            List<String> sealed = sealedSegments();
+            if (!sealed.isEmpty()) {
+                last = lastLineOf(sealed.get(sealed.size() - 1));
+            }
         }
+        if (last != null) {
+            lastHash = hashOf(last);
+            sequence.set(sequenceOf(last) + 1);
+        }
+    }
+
+    /**
+     * Sealed segments, oldest first.
+     *
+     * <p>Zero-padded so that sorting by name is sorting by age — {@code audit-000010.log} after
+     * {@code audit-000009.log} rather than before it, which is what an unpadded number would do
+     * and what would silently reorder the chain at the tenth rotation.</p>
+     */
+    List<String> sealedSegments() {
+        return store.namesMatching(SEGMENT_PREFIX, SEGMENT_SUFFIX);
+    }
+
+    /** @return the last line of a log, or null if it is missing or empty */
+    private String lastLineOf(String name) {
+        List<String> lines = store.readLines(name);
+        return lines.isEmpty() ? null : lines.get(lines.size() - 1);
+    }
+
+    private static long sequenceOf(String line) {
+        try {
+            return JsonParser.parseString(line).getAsJsonObject().get("sequence").getAsLong();
+        } catch (RuntimeException e) {
+            // A damaged last record must not silently restart numbering at zero, because duplicate
+            // sequence numbers are exactly what an attacker rewriting history would produce.
+            LOGGER.warn("the newest audit record does not carry a readable sequence number; "
+                    + "numbering continues from 0 and `/nexus audit verify` will report the break", e);
+            return -1L;
+        }
+    }
+
+    /**
+     * Seals the current log into a numbered segment once it grows past the limit.
+     *
+     * <p><b>The chain crosses the boundary untouched</b>, which is the whole difficulty. Rotation
+     * only renames a file: the next record's {@code previous_hash} is still the in-memory hash of
+     * the record before it, so the chain does not know a rotation happened and verification walks
+     * straight through. Nothing is rewritten, so nothing can be rewritten <em>wrongly</em> — a
+     * rotation that re-hashed or re-numbered anything would be indistinguishable from tampering,
+     * in the one file whose entire purpose is being tamper-evident.</p>
+     */
+    private void rotateIfFull() {
+        if (maxSegmentBytes <= 0 || store.sizeOf(FILE) < maxSegmentBytes) {
+            return;
+        }
+        List<String> sealed = sealedSegments();
+        int next = sealed.size() + 1;
+        String name = SEGMENT_PREFIX + String.format("%06d", next) + SEGMENT_SUFFIX;
+        if (store.exists(name)) {
+            LOGGER.error("refusing to rotate the audit log: {} already exists. The log will keep growing "
+                    + "rather than overwrite a sealed segment.", name);
+            return;
+        }
+        store.rename(FILE, name);
+        LOGGER.info("audit log sealed as {}; the hash chain continues unbroken into the new log", name);
+    }
+
+    /**
+     * Sets the size at which the log is sealed into a segment.
+     *
+     * @param bytes the limit; zero or less disables rotation
+     */
+    public void setMaxSegmentBytes(long bytes) {
+        this.maxSegmentBytes = bytes;
     }
 
     /** Enables or disables writing. Verification and reading remain available either way. */
@@ -126,6 +211,8 @@ public final class AuditService {
             store.appendLine(FILE, line);
             lastHash = hashOf(line);
             sequence.incrementAndGet();
+            // After the append, never before: a record must reach the log it was chained into.
+            rotateIfFull();
         } catch (StorageException e) {
             // An audit write that fails must be visible. It is not swallowed, and it does not
             // abort the action that was already performed — that would be worse.
@@ -141,25 +228,42 @@ public final class AuditService {
      * @return the verification outcome
      */
     public Verification verify() {
-        List<String> lines = store.readLines(FILE);
         String expected = GENESIS_HASH;
-        for (int i = 0; i < lines.size(); i++) {
-            String line = lines.get(i);
-            String recorded;
-            try {
-                recorded = JsonParser.parseString(line).getAsJsonObject().get("previous_hash").getAsString();
-            } catch (RuntimeException e) {
-                return new Verification(false, i, "record " + i + " is not a readable audit entry");
+        int index = 0;
+
+        // Every sealed segment oldest-first, then the live log. Verifying only the live log would
+        // report "chain intact" over a history whose older half had been edited — which is worse
+        // than no verification, because it answers the question wrongly rather than not at all.
+        for (String segment : logsOldestFirst()) {
+            List<String> lines = store.readLines(segment);
+            for (String line : lines) {
+                String recorded;
+                try {
+                    recorded = JsonParser.parseString(line).getAsJsonObject().get("previous_hash").getAsString();
+                } catch (RuntimeException e) {
+                    return new Verification(false, index, "record " + index + " (" + segment
+                            + ") is not a readable audit entry");
+                }
+                if (!expected.equals(recorded)) {
+                    return new Verification(false, index,
+                            "record " + index + " (" + segment + ") claims a predecessor hash of "
+                                    + shorten(recorded) + " but the actual predecessor hashes to "
+                                    + shorten(expected)
+                                    + " — a record before this point was altered or removed");
+                }
+                expected = hashOf(line);
+                index++;
             }
-            if (!expected.equals(recorded)) {
-                return new Verification(false, i,
-                        "record " + i + " claims a predecessor hash of " + shorten(recorded)
-                                + " but the actual predecessor hashes to " + shorten(expected)
-                                + " — a record before this point was altered or removed");
-            }
-            expected = hashOf(line);
         }
-        return new Verification(true, -1, lines.size() + " record(s) verified, chain intact");
+        return new Verification(true, -1, index + " record(s) verified across "
+                + logsOldestFirst().size() + " log file(s), chain intact");
+    }
+
+    /** Sealed segments oldest first, then the live log. The chain's order on disk. */
+    private List<String> logsOldestFirst() {
+        List<String> logs = new ArrayList<>(sealedSegments());
+        logs.add(FILE);
+        return logs;
     }
 
     /**
@@ -169,10 +273,15 @@ public final class AuditService {
      * @return the records, newest first
      */
     public List<String> tail(int limit) {
-        List<String> lines = store.readLines(FILE);
         List<String> out = new ArrayList<>();
-        for (int i = lines.size() - 1; i >= 0 && out.size() < limit; i--) {
-            out.add(lines.get(i));
+        List<String> logs = logsOldestFirst();
+        // Newest log first, and stop as soon as the limit is filled — a tail must not read the
+        // whole history to show the last twenty lines.
+        for (int log = logs.size() - 1; log >= 0 && out.size() < limit; log--) {
+            List<String> lines = store.readLines(logs.get(log));
+            for (int i = lines.size() - 1; i >= 0 && out.size() < limit; i--) {
+                out.add(lines.get(i));
+            }
         }
         return out;
     }

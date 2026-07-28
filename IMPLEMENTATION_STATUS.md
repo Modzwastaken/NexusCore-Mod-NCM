@@ -20,7 +20,7 @@ fails the build if they do.
 cited. A file that looks finished but has never been compiled is `in progress`, however
 complete it appears.
 
-**Last updated:** 2026-07-27 · **Version:** 1.1.1 (in progress) ·
+**Last updated:** 2026-07-28 · **Version:** 1.1.1 (in progress) ·
 **Previous version:** 1.0.0 · **Milestones passed:** M0, M1, M2, M3, M4, M5 (partial)
 
 > **v1.0 does not mean feature complete.** The version scheme (ADR-0007) is the owner's
@@ -58,8 +58,8 @@ utilities, moderation with confirmations, and a working admin GUI.
 
 **Two things are true at once, and both matter:**
 
-1. **248 automated tests pass, and since 1.1.1 the 242 shared ones run on every loader** — 732
-   test executions in total (242 shared × 3, plus 3 Fabric-specific and 3 Forge-specific).
+1. **314 automated tests pass, and since 1.1.1 the 308 shared ones run on every loader** — 930
+   test executions in total (308 shared × 3, plus 3 Fabric-specific and 3 Forge-specific).
    **Until 1.1.1 they did not.** The shared suite was wired into `check` for NeoForge only, so
    "214 tests, three loaders green" was 208 tests on one loader and 3 on each of the others while
    all three compiled the code under test. The count read like three-way coverage and was not.
@@ -74,10 +74,9 @@ utilities, moderation with confirmations, and a working admin GUI.
    `build/`, so the decompile step had never run cold here). The whole feature set has also been
    exercised end to end on real dedicated servers for all three loaders, with zero errors.
 
-   **34 of those 248 are the write-ahead journal's and postdate the v1.1.0 release**: they pass
-   locally on all three loaders and have **not** yet run in CI, because the branch carrying them is
-   not merged. The journal also has no production caller and so has never run on a real server —
-   unlike everything else in this list, it is proven by tests alone.
+   **34 of those are the write-ahead journal's**, and the journal has **no production caller** — so
+   unlike everything else in this list it has never run on a real server and is proven by tests
+   alone. M6's economy is the intended first caller.
 2. **The mod has now been human-tested on a real dedicated server, by one player.** Reported by
    the project owner at the 1.1.0 release: a real player joined a real dedicated server and
    exercised most of the feature set, including the admin panel rendering to an unmodified vanilla
@@ -130,7 +129,7 @@ utilities, moderation with confirmations, and a working admin GUI.
 | `AuditService` with §15.2 fields and hash chaining | `tested` | `AuditServiceTest` — 11 tests including `editedRecordDetected`, `deletedRecordDetected`, `forgedAppendDetected`, `chainContinuesAcrossRestart`. |
 | Write-time redaction | `tested` | `sensitiveParametersRedactedAtWriteTime` — IPs, passwords, tokens never reach the file. |
 | Schema versions on every document | `implemented` | All six documents carry `schemaVersion`. |
-| Write-ahead journal for multi-file transactions | `tested` | `JournalTest` — 34 tests on **all three loaders**, including `crashMidTransactionIsRepairedByReplay` (three files, killed after the first is applied; the assertion checks the state really is torn before recovering it), `crashAtEveryPointIsRecoverable` (all four crash points) and `unreadableRecordRefusesEveryTime`. **Proven to fail reproducibly** by `tools/mutate-journal.sh`, which breaks the journal four ways and asserts a named test catches each — the earlier "proven to fail two ways" claim was hand-run and left no artifact, and a review rightly refused it. An adversarial review then found **six defects, three able to lose a committed transaction**; all six are fixed and each has a regression test. **This closes the M2 gap.** **Evidence ceiling (§20.4):** crashes are simulated in-process, so this proves ordering and recovery, **not durability** — deleting any `force()` call would still pass. `forceDirectory` is a silent no-op on Windows and `JsonStore.move` falls back to a non-atomic replace where `ATOMIC_MOVE` is refused; both are recorded in the class javadoc and neither is covered by a test. No production caller yet: M6's economy is the intended one, and 1.2.2 builds atomic transfer on it. |
+| Write-ahead journal for multi-file transactions | `tested` | `JournalTest` — 34 tests on **all three loaders**, including `crashMidTransactionIsRepairedByReplay` (three files, killed after the first is applied; the assertion checks the state really is torn before recovering it), `crashAtEveryPointIsRecoverable` (all four crash points) and `unreadableRecordRefusesEveryTime`. **Proven to fail reproducibly** by `tools/mutate-journal.sh`, which breaks the journal four ways and asserts a named test catches each — the earlier "proven to fail two ways" claim was hand-run and left no artifact, and a review rightly refused it. An adversarial review then found **six defects, three able to lose a committed transaction**; all six are fixed and each has a regression test. **This closes the M2 gap.** **Evidence ceiling (§20.4):** crashes are simulated in-process, so this proves ordering and recovery, **not durability** — deleting any `force()` call would still pass. **Both durability ceilings this row used to carry were resolved at 1.1.4** and no longer qualify it: `JsonStore.move` has no non-atomic fallback — it refuses, so §11.1-R4 holds or the write fails — and `forceDirectory`'s Windows no-op is now a named row on the published defect list, reported once per run at WARN rather than at DEBUG. What remains true is only the first sentence of this ceiling: the crashes are simulated in-process, so **durability itself is still argued rather than demonstrated**. No production caller yet: M6's economy is the intended one, and 1.2.2 builds atomic transfer on it. |
 | Migration fixtures from a prior version | `blocked` | There is no prior schema version to migrate from — every document is at v1. Fixtures become meaningful at the first bump. |
 | `/nexus doctor storage` | `planned` | M8. `/nexus system status` and `/nexus audit verify` cover part of the ground. |
 
@@ -236,18 +235,15 @@ the list below and is not yet fixed.
 | Defect | Severity | Detail |
 |---|---|---|
 | Vanish: two client-rendering faults **awaiting the 1.1.3 sweep** | medium | **Two of the original four are fixed** and covered by `VanishParityTest` on all three loaders: vanish is now applied to players who join later (`hideVanishedFrom`), and it survives death (`reapplyVanish`), which previously left NexusCore reporting a staff member hidden while every client could see them. **Two remain, both client-rendering and neither guessed at:** removing the staff member's `PlayerInfo` makes their chat render as a red chat-validation error for everyone else, and un-vanishing does not restore the entity for clients that received `AddEntity` while vanished. Fixing the first changes how staff chat is delivered, which is a product decision rather than a defect fix, so it is **not** being made unilaterally. Both are scheduled for the 1.1.3 two-real-players sweep with the owner's second account — awaiting that sweep, not unreproducible. |
-| `audit.log` never rotates | medium | Fully read into heap and SHA-256'd on the **server thread** at startup, at shutdown, and on every `verify` and `tail`. Unbounded growth plus a synchronous full read. |
 | `config.json` `defaultGroup` is ignored at startup | low | The permissions module reads only `permissionCacheSize` from settings, so a `defaultGroup` set in `config.json` takes effect only after some later mutation rewrites the permissions document. |
 | `/ban` in safe mode stages a confirmation that can never complete | low | **Fixed in code, not yet closed by test.** `proposeBan()` now calls `services.moderation()` before staging, so the refusal happens before a token exists; `confirm()` audits a token spent on a body that threw and tells the operator the token is gone. Both changes are at command call sites, which no test can invoke without a `CommandSourceStack` harness — removing either leaves all tests green, verified by mutation. `SafeModeConfirmationTest` pins the mechanisms (the module throws in safe mode, a failed body does not return the token, audit survives safe mode) but not the ordering. Closes when 1.1.2's command tests can drive the propose/confirm path. |
 | Teleport warmup does not re-check permission at commit | low | The class documents a §19.1 step-5 permission re-check that does not exist; only destination safety is rechecked. |
 | `setHome` leaks an empty entry when refused | low | The per-owner map is inserted before the limit check, so refused `/sethome` calls leave permanent empty entries in `homes.json`. |
-| `JsonStore.read()` quarantines on any `IOException` | medium | A transient read error moves an intact `permissions.json` aside and the next boot starts from defaults. |
+| **A rename is not flushed to disk on Windows** | medium | `JsonStore.forceDirectory` opens the directory as a channel and forces it. **Windows cannot open a directory as a channel at all**, so every directory fsync NexusCore performs is a no-op there, and a completed rename is durable only once the filesystem writes its own metadata on its own schedule. Documents are still *replaced* atomically — what is weakened is surviving a power loss in the moments after. **Ruled rather than fixed at 1.1.4**: there is no directory-fsync equivalent to reach for on that platform. Reported once per run at WARN since 1.1.4; before that it was logged at DEBUG, which nobody runs, so the weakening was invisible on the one platform where it always happens. Linux and macOS are unaffected. |
 | `config.json` silently loses operator keys | medium | `load()` rewrites the file from the typed object, deleting any key the schema does not know, while reporting `no problems found`. |
-| `players.json` rewritten in full on every login and logout | medium | Never pruned; each write copies a full `.bak` and fsyncs twice. |
 | Fabric death messages lose their cause | medium | Every styled death reads `<Player> died` on Fabric only. |
 | `ban-ip`/`pardon-ip` stay vanilla commands | low | IP bans are now listed by `/banlist`, but their issue and lift still bypass NexusCore, so they are not audited. |
 | Death-message edge cases | low | Reload double-broadcasts until restart; the dying player's own screen loses its cause; team `deathMessageVisibility` is ignored. |
-| Gson I/O errors escape the write protocol | low | For documents larger than the writer buffer, Gson wraps the failure in `JsonIOException`, bypassing `catch (IOException)` and leaving the `.tmp`. |
 | One non-UTF-8 byte in `audit.log` prevents startup | low | No recovery path inside the mod. |
 | Fabric login ban screen uses a startup snapshot | low | `/nexus reload` never changes it, unlike the other two loaders. |
 
@@ -335,7 +331,7 @@ sequence is open-ended, so nothing has to be crushed to fit.
 | **1.1.1** | `IdentityService.resolve()` blocking the server thread on a Mojang lookup (`getAsync` exists), the four vanish faults, and the multiple-active-punishments group — the highest-severity items left after 1.1.0's twelve fixes. | Each has a named regression test. The vanish faults need a real client, so any that cannot be reproduced headlessly are recorded as such rather than ticked. |
 | **1.1.2** | **In-server test harness — started.** `runGameTestServer` runs registered GameTests headlessly on NeoForge and exits non-zero on failure; `NexusGameTests` holds the first six, against the live service registry the server is actually running on. **Still to do:** teleport safety and home/warp persistence GameTests, the `AdminMenu` read-only container test, the three 1.1.1 refusal paths (`/ban`'s propose-time module check, `confirm()`'s spent-token audit, the admin panel's departed-target refusal — the first needs a safe-mode run configuration, which the harness does not yet have), and Fabric/Forge GameTest wiring, which does not exist. | Six GameTests pass today, including one proving local name resolution never reaches the network. Each remaining item above lands with a named test, and the harness itself is proven to fail: reintroducing an unregistered custom argument type makes a GameTest report `Unrecognized argument type` rather than passing. |
 | **1.1.3** | Sustained multi-player runtime verification — GUI rendering, vanish (four confirmed faults), chat muting, ban-at-login, teleport safety in practice. | Every item in the "never observed" column has been observed with at least two real players, or is recorded as still unobserved with the reason. |
-| **1.1.4** | **Storage is trustworthy.** The write-ahead journal (§11.1) — *done*; the four economy-blocking storage defects (`JsonStore` quarantining on `IOException` rather than on bad content, `JsonIOException` escaping that catch entirely, chain-aware audit rotation, `players.json` full-rewrite damping); and the two inherited durability ceilings closed **or ruled** as named platform limitations. | Journal: **met** — `JournalTest`, 34 tests on three loaders, crash at every point, `tools/mutate-journal.sh` proving the suite constrains the protocol. Remaining: each storage fix has a named regression test; each durability ceiling is closed with a test, or appears on the **published** defect list as a named platform limitation — not as a javadoc comment. **Runnable the day the work lands.** |
+| **1.1.4** | **Storage is trustworthy.** The write-ahead journal (§11.1) — *done*; the four economy-blocking storage defects (`JsonStore` quarantining on `IOException` rather than on bad content, `JsonIOException` escaping that catch entirely, chain-aware audit rotation, `players.json` full-rewrite damping); and the two inherited durability ceilings closed **or ruled** as named platform limitations. | Journal: **met** — `JournalTest`, 34 tests on three loaders, crash at every point, `tools/mutate-journal.sh` proving the suite constrains the protocol. Remaining: each storage fix has a named regression test; each durability ceiling is closed with a test, or appears on the **published** defect list as a named platform limitation — not as a javadoc comment. **Runnable the day the work lands.** **Residual, stated rather than implied (§20.4):** damping `players.json` means an **unclean** stop — a crash, an OOM kill, a host losing power — loses at most **20 last-seen updates** or one 30-second window of activity, whichever comes first. A clean stop loses nothing, because the identity module flushes at shutdown. Both bounds are needed and neither is sufficient: `ServerStoppingEvent` does not fire on a crash, and the time bound never fires on an idle server because damping runs on player events rather than on a ticking clock. Nothing that changes what the document *means* is damped at all — a new player or a rename writes through immediately. The trade is deliberate and is against a full-document rewrite, a backup copy and an fsync on every join and every leave. |
 | **1.1.5** | Migration fixtures and the schema-bump machinery. The week-long real-player run that is M5's actual exit criterion. | A 1.0.0 data directory loads through the migration path with exact expected results; a week of real-player use with no unrecorded defect. **M5 complete.** |
 
 > **1.1.4's deliverable was built during 1.1.1, out of order.** The owner directed it: v1.2.0's
@@ -368,25 +364,52 @@ sequence is open-ended, so nothing has to be crushed to fit.
 >   immediately after making it.
 > - **The escrow half of the exit moves to 1.2.3**, where escrow exists.
 >
-> The two durability ceilings are the gate before 1.2.2. `JsonStore.forceDirectory` is a silent
-> no-op on Windows and `JsonStore.move` falls back to a non-atomic replace where `ATOMIC_MOVE` is
-> refused, so §11.1-R4 does not hold there — see [the conformance table](docs/spec/11-storage.md).
-> They are inherited from the single-document write protocol and predate the journal, but the
-> journal is what makes them matter, because 1.2.2 is where money starts riding on them. **For
-> money, "we recorded the ceiling" is a weaker position than it sounds.** If one proves genuinely
-> unfixable — Windows directory fsync may be — it ships as a named platform limitation on the
-> published defect list, not as a comment in a javadoc.
+> **The two durability ceilings were the gate before 1.2.2, and both are now resolved** — one
+> closed, one ruled. They were inherited from the single-document write protocol and predated the
+> journal, but the journal is what made them matter, because 1.2.2 is where money starts riding on
+> them. **For money, "we recorded the ceiling" is a weaker position than it sounds.**
+>
+> - **`JsonStore.move` — closed.** The non-atomic fallback is gone; the write refuses instead, so
+>   §11.1-R4 holds or nothing happens. It could be closed rather than ruled because every atomic
+>   move in the codebase is same-directory, which made the fallback unreachable for NexusCore's own
+>   writes while still carrying the risk of silently weakening the guarantee.
+> - **`forceDirectory` — ruled.** Windows cannot open a directory as a channel and there is no
+>   equivalent to reach for, so it ships as a **named platform limitation on the published defect
+>   list**, reported once per run at WARN. Not a comment in a javadoc, which is what the ruling
+>   required.
+>
+> See [the conformance table](docs/spec/11-storage.md): R22 met by closing, R21 met by ruling. What
+> is *not* resolved, and is recorded on the journal row above rather than here, is that the crash
+> tests are in-process — so durability remains argued rather than demonstrated.
 
 ### Version 1.2 — M6 economy
 
 | Build | Contents | Exit condition |
 |---|---|---|
 | **1.2.0** · *version* | The M5-complete milestone. | 1.1.x verified together; the unverified-claims register reflects what the real-player run established. |
-| **1.2.1** | Currency core: fixed-point integer minor units. **Plus the segmented ledger substrate, moved here from 1.1.4** so it lands with its first writer. | No `float` or `double` anywhere in currency code, asserted by a test that scans the sources — not by review. |
-| **1.2.2** | Atomic transfer and idempotency keys, on 1.1.4's journal. | Debit and credit commit in one transaction boundary; an idempotency replay test proves one key yields exactly one committed transaction. |
+| **1.2.1** | Currency core: fixed-point integer minor units. **Plus the segmented ledger substrate, moved here from 1.1.4** so it lands with its first writer; the economy module skeleton with all four safe-mode touch points; and the batch-3 command hygiene rows. | No `float` or `double` anywhere in currency code, asserted by a test that scans the sources — not by review. **Added:** every new setting is reload-honoured with a test, and a safe-mode boot proves the economy module drops cleanly. The four touch points are asserted together, because 1.0.5 shipped a regression by wiring three of them. |
+| **1.2.2** | Atomic transfer and idempotency keys, on 1.1.4's journal. **Kept verbatim** — the design brief proposed no change and none is made. | Debit and credit commit in one transaction boundary; an idempotency replay test proves one key yields exactly one committed transaction. **Gated on 1.1.4's two durability ceilings being resolved first**, which they now are: this is the build where money starts riding on the storage layer. |
 | **1.2.3** | Reversal as a compensating entry. **Plus the item escrow vault and claim box** — new scope the printed M6 rows never named, because the journal covers multi-file JSON and items live in vanilla player NBT, outside its boundary. | A reversal creates a new entry and no historical row is edited, asserted by a test. **Plus the escrow custody invariant, moved here from 1.1.4** because it cannot be asserted before escrow exists: an item is in the inventory or in escrow after replay at every kill point — never both, never neither. Three conditions ride on it, recorded under *Confirmed defects* rather than assumed: the forced player-save's per-call cost is **measured** before market listing ships, vanilla's own `.dat_old` rollback is named as a residual duplication vector no custody test can observe, and a decode failure quarantines the item rather than discarding it. |
-| **1.2.4** | Shops. | A shop purchase is all-or-nothing under an injected mid-transaction failure. |
-| **1.2.5** | Economy commands and operator documentation. | All six §10.2 invariants have passing **named** tests; balances and history survive restart. **M6 complete.** |
+| **1.2.4** | Shops — the economy's faucet and sink. **Plus fixed-price market listings** (list, browse, buy-now, cancel, claim) with the incident levers: market freeze, inspect, remove. Timed bidding is **not** here; it is deferred to 1.3.x. | A shop purchase is all-or-nothing under an injected mid-transaction failure. **Added, same shape:** a market purchase is too, and **two players cannot both buy one listing**, proven by a concurrent-purchase test rather than by argument — a fixed-price buy is a check-then-act race with no auction clock to serialise it, and its failure mode duplicates items rather than merely mis-awarding them. An expired or cancelled listing returns the item **exactly once** under a replayed expiry sweep. |
+| **1.2.5** | Economy commands and operator documentation. **Plus player-to-player trade and kits** — both explicitly cuttable, in that order, under the pre-agreed cut order (kits first, then the market GUI drops to commands-only, then trade). **Plus the second two-real-players sweep**, covering trade, market and the freeze levers. | All six §10.2 invariants have passing **named** tests; balances and history survive restart. **M6 complete.** The §10.2 invariants are **written, not recovered**: the owner's re-derive ruling makes them NexusCore's own, in `docs/spec/`, alongside [§11](docs/spec/11-storage.md). An earlier note recorded this exit as `blocked` if the external specification could not be found — **that is superseded**; it is not blocked, it is unwritten, and the difference matters because one waits on the world and the other waits on us. The sweep needs a second real player the owner supplies; if it cannot be scheduled it is recorded NOT MET with that reason, never reworded. |
+
+> **Every exit condition above must answer one question: if this check could not run, would
+> anything say so?**
+>
+> Recorded here on 2026-07-28 because the studio hit it three times in one day, in three costumes.
+> A tripwire that pinned a *spelling* rather than a property fired on a legitimate refactor. A
+> mutation round proved nothing because Gradle served `:test` from cache for mutated source, so a
+> harness whose whole job is failing reported success without executing. And a token-gated check
+> **vanished** instead of reporting `UNVERIFIABLE`, so a rule that never ran once read as healthy.
+>
+> The first two are wrong answers. The third is worse: **no answer, presented as a good one.** A
+> check that cannot run and says nothing is indistinguishable from a check that passed, and it stays
+> that way until somebody goes looking for a reason no reason exists.
+>
+> So an exit condition here is not met by a green result. It is met by a green result that *could
+> have been red* — which is why the mutation harnesses run with `--rerun-tasks`, why the journal's
+> crash tests assert the state is genuinely torn before recovering it, and why a row whose fix no
+> test can exercise stays open with that named as the obstacle rather than being retired.
 
 ### Version 1.3 — M7 chat and moderation depth
 

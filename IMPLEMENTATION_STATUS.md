@@ -44,8 +44,8 @@ utilities, moderation with confirmations, and a working admin GUI.
 
 **Two things are true at once, and both matter:**
 
-1. **242 automated tests pass, and since 1.1.1 the 236 shared ones run on every loader** — 714
-   test executions in total (236 shared × 3, plus 3 Fabric-specific and 3 Forge-specific).
+1. **248 automated tests pass, and since 1.1.1 the 242 shared ones run on every loader** — 732
+   test executions in total (242 shared × 3, plus 3 Fabric-specific and 3 Forge-specific).
    **Until 1.1.1 they did not.** The shared suite was wired into `check` for NeoForge only, so
    "214 tests, three loaders green" was 208 tests on one loader and 3 on each of the others while
    all three compiled the code under test. The count read like three-way coverage and was not.
@@ -60,7 +60,7 @@ utilities, moderation with confirmations, and a working admin GUI.
    `build/`, so the decompile step had never run cold here). The whole feature set has also been
    exercised end to end on real dedicated servers for all three loaders, with zero errors.
 
-   **28 of those 242 are the write-ahead journal's and postdate the v1.1.0 release**: they pass
+   **34 of those 248 are the write-ahead journal's and postdate the v1.1.0 release**: they pass
    locally on all three loaders and have **not** yet run in CI, because the branch carrying them is
    not merged. The journal also has no production caller and so has never run on a real server —
    unlike everything else in this list, it is proven by tests alone.
@@ -116,7 +116,7 @@ utilities, moderation with confirmations, and a working admin GUI.
 | `AuditService` with §15.2 fields and hash chaining | `tested` | `AuditServiceTest` — 11 tests including `editedRecordDetected`, `deletedRecordDetected`, `forgedAppendDetected`, `chainContinuesAcrossRestart`. |
 | Write-time redaction | `tested` | `sensitiveParametersRedactedAtWriteTime` — IPs, passwords, tokens never reach the file. |
 | Schema versions on every document | `implemented` | All six documents carry `schemaVersion`. |
-| Write-ahead journal for multi-file transactions | `tested` | `JournalTest` — 28 tests, including `crashMidTransactionIsRepairedByReplay` (three files, killed after the first is applied: the assertion checks the state really is torn before recovering it) and `crashAtEveryPointIsRecoverable` (all four crash points, including the one past the last entry where the work is done but still owed). **Proven to fail two ways**: applying before writing the record instead of after — the write-ahead property itself — fails 9 tests; dropping the already-applied skip that makes replay idempotent fails 4. All 28 run on **all three loaders**, which took wiring the shared suite into Fabric's and Forge's `check` — before 1.1.1 they ran on NeoForge alone. **This closes the M2 gap.** It has no production caller yet: M6's economy is the intended one, and 1.2.2 builds atomic transfer on it. |
+| Write-ahead journal for multi-file transactions | `tested` | `JournalTest` — 34 tests on **all three loaders**, including `crashMidTransactionIsRepairedByReplay` (three files, killed after the first is applied; the assertion checks the state really is torn before recovering it), `crashAtEveryPointIsRecoverable` (all four crash points) and `unreadableRecordRefusesEveryTime`. **Proven to fail reproducibly** by `tools/mutate-journal.sh`, which breaks the journal four ways and asserts a named test catches each — the earlier "proven to fail two ways" claim was hand-run and left no artifact, and a review rightly refused it. An adversarial review then found **six defects, three able to lose a committed transaction**; all six are fixed and each has a regression test. **This closes the M2 gap.** **Evidence ceiling (§20.4):** crashes are simulated in-process, so this proves ordering and recovery, **not durability** — deleting any `force()` call would still pass. `forceDirectory` is a silent no-op on Windows and `JsonStore.move` falls back to a non-atomic replace where `ATOMIC_MOVE` is refused; both are recorded in the class javadoc and neither is covered by a test. No production caller yet: M6's economy is the intended one, and 1.2.2 builds atomic transfer on it. |
 | Migration fixtures from a prior version | `blocked` | There is no prior schema version to migrate from — every document is at v1. Fixtures become meaningful at the first bump. |
 | `/nexus doctor storage` | `planned` | M8. `/nexus system status` and `/nexus audit verify` cover part of the ground. |
 

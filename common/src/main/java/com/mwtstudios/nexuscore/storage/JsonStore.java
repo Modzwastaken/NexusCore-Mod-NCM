@@ -106,6 +106,7 @@ public final class JsonStore {
      * @throws StorageException if the write cannot be completed
      */
     public <T> void write(String name, T document) {
+        JournalService.rejectReservedName(name);
         Path file = PathSafety.resolveWithin(root, name);
         Path temp = file.resolveSibling(file.getFileName() + ".tmp");
 

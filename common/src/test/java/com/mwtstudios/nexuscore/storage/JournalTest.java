@@ -188,24 +188,72 @@ class JournalTest {
         store.write("b.json", Doc.of("old"));
         store.write("c.json", Doc.of("old"));
 
-        // Index 3 is past the last entry, so the transaction fully applies and only the record
-        // removal is missed — the one crash window that leaves work already done but still owed.
-        Runnable attempt = () -> crashingBefore(crashIndex).begin("txn-" + crashIndex)
+        // Index 3 is past the last entry: every file is in place and the record still says the work
+        // is owed. Until the seam fired after the loop this case could not happen — the injection
+        // never triggered, commit() ran to completion, and the case silently re-ran the happy path
+        // while its comment claimed to cover the hardest window. Found in review.
+        assertThrows(SimulatedCrash.class, () -> crashingBefore(crashIndex).begin("txn-" + crashIndex)
                 .put("a.json", Doc.of("new"))
                 .put("b.json", Doc.of("new"))
                 .put("c.json", Doc.of("new"))
-                .commit();
-        if (crashIndex < 3) {
-            assertThrows(SimulatedCrash.class, attempt::run);
-            assertEquals(1, journal().replayPending());
-        } else {
-            attempt.run();
-            assertEquals(0, journal().replayPending());
-        }
+                .commit());
+
+        assertTrue(Files.isRegularFile(
+                        directory.resolve(JournalService.JOURNAL_DIRECTORY).resolve("txn-" + crashIndex + ".json")),
+                "the record must outlive the crash at every point, including after the last move");
+        assertEquals(1, journal().replayPending());
 
         assertEquals("new", valueOf("a.json"));
         assertEquals("new", valueOf("b.json"));
         assertEquals("new", valueOf("c.json"));
+    }
+
+    @Test
+    @DisplayName("a record whose files are all applied is completed, not mistaken for damage")
+    void recordWithNoStagingFilesLeftIsCleared() throws IOException {
+        store.write("a.json", Doc.of("old"));
+
+        // The crash between the last move and clear(). Replay must find a record with nothing left
+        // to move and treat that as finished — the state escrow depends on tolerating.
+        assertThrows(SimulatedCrash.class, () -> crashingBefore(1).begin("txn-1")
+                .put("a.json", Doc.of("new"))
+                .commit());
+
+        assertEquals(List.of(), filesMatching(JournalService.STAGING_INFIX), "every file was already moved");
+        assertEquals(1, journal().replayPending());
+        assertEquals("new", valueOf("a.json"));
+        assertEquals(0, journal().replayPending());
+    }
+
+    @Test
+    @DisplayName("a record that cannot be deleted is tolerated, and replays harmlessly")
+    void undeletableRecordDoesNotFailTheTransaction() throws IOException {
+        Path journalDirectory = directory.resolve(JournalService.JOURNAL_DIRECTORY);
+
+        // The directory has to become unwritable AFTER the record is written and before clear()
+        // deletes it — locking it up front would only stop the record being created at all. The
+        // seam fires in exactly that window, so it is what puts the filesystem into the state.
+        IntConsumer lockTheJournalDirectory = index -> {
+            if (index == 1) {
+                journalDirectory.toFile().setWritable(false);
+            }
+        };
+
+        try {
+            new JournalService(store, clock::get, lockTheJournalDirectory)
+                    .begin("txn-1").put("a.json", Doc.of("v")).commit();
+
+            if (!Files.isRegularFile(journalDirectory.resolve("txn-1.json"))) {
+                return;    // root, or a filesystem ignoring the permission: the branch was never reached
+            }
+            assertEquals("v", valueOf("a.json"),
+                    "the transaction is applied; failing to remove its record must not fail the caller");
+        } finally {
+            journalDirectory.toFile().setWritable(true);
+        }
+
+        assertEquals(1, journal().replayPending(), "the leftover record replays");
+        assertEquals("v", valueOf("a.json"), "and replaying an already-applied record changes nothing");
     }
 
     @Test
@@ -330,7 +378,83 @@ class JournalTest {
 
         StorageException error = assertThrows(StorageException.class, () -> journal().replayPending());
 
-        assertTrue(error.getMessage().contains("preserved"), "got: " + error.getMessage());
+        assertTrue(error.getMessage().contains("cannot be read"), "got: " + error.getMessage());
+    }
+
+    @Test
+    @DisplayName("the refusal survives a restart: an unreadable record is never quarantined out of sight")
+    void unreadableRecordRefusesEveryTime() throws IOException {
+        store.write("a.json", Doc.of("old"));
+        assertThrows(SimulatedCrash.class, () -> crashingBefore(0).begin("txn-1")
+                .put("a.json", Doc.of("new"))
+                .put("b.json", Doc.of("new"))
+                .commit());
+
+        Path record = directory.resolve(JournalService.JOURNAL_DIRECTORY).resolve("txn-1.json");
+        Files.writeString(record, "{ truncated", StandardCharsets.UTF_8);
+
+        // First start refuses. So must the operator's reflexive restart, and every one after it.
+        // Reading the record through JsonStore.read quarantined it to <name>.corrupt-<ts> BEFORE
+        // throwing; that name no longer matched the *.json listing, so the SECOND start saw no
+        // pending work and the sweep deleted the staged files as ownerless. A committed transaction
+        // vanished silently, on the most ordinary operator action there is. Found in review.
+        for (int start = 1; start <= 3; start++) {
+            StorageException error = assertThrows(StorageException.class, () -> journal().replayPending(),
+                    "start " + start + " must refuse; a refusal that only holds once is not a refusal");
+            assertTrue(error.getMessage().contains("cannot be read"), "got: " + error.getMessage());
+            assertTrue(Files.isRegularFile(record), "the record must stay put, under its own name, at start " + start);
+            assertEquals(2, filesMatching(JournalService.STAGING_INFIX).size(),
+                    "staged files are owed work while a record is unreadable, and must never be swept at start "
+                            + start);
+        }
+
+        assertEquals("old", valueOf("a.json"), "nothing may be applied while the record cannot be read");
+    }
+
+    @Test
+    @DisplayName("a record quarantined by an older build is still treated as owed work")
+    void quarantinedRecordIsStillPending() throws IOException {
+        Path journalDirectory = directory.resolve(JournalService.JOURNAL_DIRECTORY);
+        Files.createDirectories(journalDirectory);
+        Files.writeString(journalDirectory.resolve("txn-1.json" + JournalService.QUARANTINE_INFIX + "1700000000000"),
+                "{ not json", StandardCharsets.UTF_8);
+        Files.writeString(directory.resolve("a.json" + JournalService.STAGING_INFIX + "txn-1"),
+                "{\"value\":\"new\"}\n", StandardCharsets.UTF_8);
+
+        StorageException error = assertThrows(StorageException.class, () -> journal().replayPending());
+
+        assertTrue(error.getMessage().contains("cannot be read"), "got: " + error.getMessage());
+        assertEquals(1, filesMatching(JournalService.STAGING_INFIX).size(),
+                "a quarantined record's staged files are owed work, not garbage");
+    }
+
+    @Test
+    @DisplayName("the hash-mismatch message does not tell the operator to forge the progress marker")
+    void repairGuidanceDoesNotForgeTheMarker() throws IOException {
+        store.write("a.json", Doc.of("old"));
+        assertThrows(SimulatedCrash.class, () -> crashingBefore(0).begin("txn-1")
+                .put("a.json", Doc.of("new"))
+                .commit());
+
+        List<Path> staged = filesMatching(JournalService.STAGING_INFIX);
+        Files.writeString(staged.get(0), "{\"value\":\"tampered\"}\n", StandardCharsets.UTF_8);
+
+        String message = assertThrows(StorageException.class, () -> journal().replayPending()).getMessage();
+
+        // "Remove the staged file" was the original advice, and it IS the already-applied marker:
+        // an operator following it would make the next start skip that document and report the
+        // transaction complete when that write never happened.
+        assertTrue(message.contains("DO NOT delete the staged file"), "got: " + message);
+        assertTrue(message.contains("DO NOT delete the record"), "got: " + message);
+        assertTrue(message.contains("TOGETHER"), "the safe route is moving record and staged files as a set: " + message);
+        assertTrue(message.contains(".bak"), "the operator needs to know where the previous contents are: " + message);
+    }
+
+    @Test
+    @DisplayName("a plain write cannot create a file that recovery would later delete")
+    void storeWriteRefusesTheStagingMarker() {
+        assertThrows(StorageException.class,
+                () -> store.write("ledger" + JournalService.STAGING_INFIX + "x.json", Doc.of("1")));
     }
 
     // ---- Caller mistakes ---------------------------------------------------------------

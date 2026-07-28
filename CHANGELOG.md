@@ -59,7 +59,7 @@ Work toward the next build.
   the ladder. See [ADR-0013](docs/architecture/ADR-0013.md) for why the design is a journal of
   intent rather than a lock or a single combined document.
 
-- **`JournalTest` — 28 tests, built around crashing on purpose.** The exit condition for this work
+- **`JournalTest` — 34 tests, built around crashing on purpose.** The exit condition for this work
   is "journal replay verified by a simulated crash mid-transaction", so the tests inject a failure
   point *inside* the apply loop rather than testing only the happy path.
   `crashMidTransactionIsRepairedByReplay` updates three files, dies after the first lands, and
@@ -68,9 +68,24 @@ Work toward the next build.
   crash points, including the one past the last entry where the work is done but the record has not
   been cleared. `crashDuringReplayIsRecoverable` crashes recovery itself.
 
-  **Proven to fail two ways.** Swapping the commit so the record is written *after* the files are
-  applied — removing the write-ahead property while leaving every other line intact — fails 9 of
-  the 28. Dropping the already-applied skip that makes replay idempotent fails 4.
+  **Proven to fail, reproducibly.** `tools/mutate-journal.sh` breaks the journal four specific ways
+  — record written after applying instead of before, the already-applied skip removed, the
+  quarantining read restored, the post-loop injection point removed — and asserts a named test
+  catches each one, restoring the source and comparing it byte-for-byte afterwards. An earlier
+  version of this entry claimed "proven to fail two ways" with nothing in the repository that
+  reproduced it: the mutations were applied by hand and reverted, so the claim rested on my word.
+  A review declined to accept that and was right to; the script is the artifact that was missing.
+
+  **What the suite cannot prove, stated per §20.4.** Crashes are simulated in-process by throwing
+  at an injected point. That establishes the *order* of operations and that recovery repairs what a
+  stopped process leaves. It does **not** establish durability: deleting any `force()` or
+  `forceDirectory()` call would leave every one of these tests green, because nothing here loses
+  power. The fsync calls are argued for, not demonstrated. Two platform ceilings compound it and are
+  now recorded in the class javadoc rather than left to be discovered — `forceDirectory` swallows
+  its failure at DEBUG and **fails unconditionally on Windows**, making every directory fsync a
+  silent no-op there, and `JsonStore.move` falls back to a **non-atomic** replace on a filesystem
+  refusing `ATOMIC_MOVE`. Both are inherited from the single-document write protocol rather than
+  introduced here. Neither is covered by a test.
 
 `JsonStore`'s `move`, `force` and `forceDirectory` became package-private so the journal reuses
 them instead of carrying a second copy of the atomic-move protocol — including the
@@ -78,6 +93,55 @@ them instead of carrying a second copy of the atomic-move protocol — including
 fixed in one copy and not the other.
 
 ### Fixed
+
+Six defects in the journal above — three of them serious enough to lose a committed transaction —
+all found by an adversarial review before anything was built on it. None had shipped, and the
+review's verdict was that the design held and the implementation did not yet. The point of finding
+them here is that money and item custody were going to ride on this.
+
+- **The corrupt-record refusal destroyed the transaction it was protecting, on the second start.**
+  `pendingRecords()` read each record through `JsonStore.read`, which moves an unparseable file to
+  `<name>.corrupt-<timestamp>` **before** throwing. That renamed file no longer ends in `.json`, so
+  it stopped matching the listing: the first start refused correctly, and the operator's reflexive
+  restart found zero pending records, concluded nothing was owed, and let the sweep delete that
+  transaction's staged files as ownerless garbage. A committed transaction vanished silently, with
+  no log line connecting the two events — and the refusal's own message had promised the record was
+  left in place. Records are now parsed directly, never quarantined; an unreadable record is a
+  **hard** pending item that refuses at every start; a record quarantined by the older code is still
+  recognised as owed work; and nothing is swept while any record is unreadable.
+
+- **Staged files' directory entries were never fsynced.** `stage()` forced each staged file's
+  contents but not its parent directory, so a power loss could leave the record durable and the
+  staged file's *name* missing. Replay reads a missing staged file as already-applied — the very
+  property that makes it idempotent — so a committed transaction would have silently half-applied.
+  ext4's default ordering usually hides this; XFS and anything journaling dirents separately do not.
+  The staging directories are now forced before the record is written.
+
+- **The fourth crash point was untested, and the seam could not create it.** The injection fired for
+  entries `0..size-1`, so with three entries `crashIndex=3` triggered nothing: `commit()` ran to
+  completion and the case silently re-ran the happy path while its comment claimed to cover the
+  window between the last move and clearing the record. No test ever replayed a record whose staged
+  files were all gone — the exact state escrow will depend on tolerating. The seam now fires after
+  the loop, all four crash points genuinely crash, and `clear()`'s failure branch is covered too.
+
+- **The repair instruction told operators to forge the progress marker.** On a hash mismatch the
+  error said to "repair or remove the staged file" — but a missing staged file *is* the
+  already-applied marker, so removing it makes the next start skip that document and report the
+  transaction complete when that write never happened. Deleting the record instead tears it the
+  other way. Both escapes an operator reaches for first were traps. The message now names them as
+  traps, lists which documents are already applied and which are still owed, and gives two routes
+  that work: restore the staged file to its committed hash, or move the record and every remaining
+  staged file aside **together**, with `<name>.bak` holding the previous contents.
+
+- **`replayPending()` is public, and its "assumes it is alone" contract lived only in a javadoc.** A
+  future admin repair command calling it mid-transfer would have swept an in-flight transaction's
+  staged files, after which its record would point at files that no longer exist and replay would
+  read every one as already-applied — the transfer reporting success having written nothing. The
+  sweep now skips staged files belonging to transactions currently staging.
+
+- **The reserved-name rule was enforced in one of two places.** `Transaction.put` refused a document
+  name containing `.txn-`; `JsonStore.write` did not, so a plain write could still create a file
+  that recovery would later delete as scratch. Both entry points now share one check.
 
 - **The shared test suite ran on one loader of three.** `sourceSets.test.java.srcDirs +=
   '../common/src/test/java'` existed in `neoforge/build.gradle` only; Fabric and Forge added the
@@ -93,7 +157,7 @@ fixed in one copy and not the other.
   shared sources are identical bytes, so the *code* cannot diverge — but each loader supplies its
   own Gson and its own logging binding, and the storage layer is built on exactly those.
 
-  Now wired into all three. **714 test executions** where there were 214: 236 shared tests on each
+  Now wired into all three. **732 test executions** where there were 214: 242 shared tests on each
   loader, plus Fabric's and Forge's own 3. No test needed changing — the three that locate source
   roots already walk up to find `common/src/main/java`, which 1.0.4 fixed for a different reason.
 

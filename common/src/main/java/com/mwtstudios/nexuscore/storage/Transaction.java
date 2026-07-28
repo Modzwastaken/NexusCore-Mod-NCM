@@ -53,14 +53,7 @@ public final class Transaction {
         if (committed) {
             throw new StorageException("transaction " + id + " is already committed and cannot be added to");
         }
-        if (name != null && name.contains(JournalService.STAGING_INFIX)) {
-            // Recovery deletes every leftover file whose name contains this marker, on the
-            // reasoning that it is scratch nobody owns. A target carrying the marker would be
-            // real data caught by that sweep, so the name is refused rather than the sweep
-            // weakened — the marker is an internal detail and no caller needs it in a file name.
-            throw new StorageException("a document name may not contain '" + JournalService.STAGING_INFIX
-                    + "', which is reserved for journal staging files, got: " + name);
-        }
+        JournalService.rejectReservedName(name);
         if (targets.contains(name)) {
             // Silently keeping the last value would make which write survives depend on call
             // order in a way no caller could see. A transaction that writes one file twice is a

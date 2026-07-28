@@ -1,6 +1,7 @@
 package com.mwtstudios.nexuscore.storage;
 
 import java.io.IOException;
+import java.io.Reader;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -12,13 +13,17 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HexFormat;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.IntConsumer;
 import java.util.function.LongSupplier;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
+import com.google.gson.JsonParseException;
 import com.mojang.logging.LogUtils;
 
 import org.slf4j.Logger;
@@ -61,6 +66,25 @@ import org.slf4j.Logger;
  * the same reasoning that makes {@link JsonStore} quarantine a corrupt document rather than
  * replace it with defaults).</p>
  *
+ * <p><b>What this does not guarantee, on the platforms where it does not.</b> The protocol above is
+ * only as strong as the two primitives underneath it, and both degrade quietly rather than fail:</p>
+ *
+ * <ul>
+ *   <li>{@link JsonStore#forceDirectory} logs at DEBUG and carries on when a directory fsync fails,
+ *       and opening a directory as a channel <b>fails unconditionally on Windows</b>. Every
+ *       directory fsync in this class is therefore a no-op on a common server platform, which
+ *       weakens the commit point to "the record's bytes are durable" rather than "the record is
+ *       durably findable".</li>
+ *   <li>{@link JsonStore#move} falls back to a non-atomic replace, with a warning, on a filesystem
+ *       that refuses {@code ATOMIC_MOVE}. On such a filesystem a crash can be seen mid-move, and
+ *       "the old file or the new file, never a half-written one" stops holding.</li>
+ * </ul>
+ *
+ * <p>Both are inherited from the single-document write protocol rather than introduced here; the
+ * journal is what makes them consequential, because money is what will ride on them. Neither is
+ * covered by a test. They are stated here rather than left to be discovered because a durability
+ * claim that is false on one platform is worse than one that is qualified on all of them.</p>
+ *
  * <p><b>Threading.</b> Concurrent transactions over distinct targets are safe: each one's staging
  * files and record carry its own id. Two transactions writing the same target race exactly as two
  * {@link JsonStore#write} calls would, and are the caller's problem. {@link #replayPending()}
@@ -76,6 +100,9 @@ public final class JournalService {
     /** Marks a staging file. Chosen so it cannot collide with {@code .tmp}, {@code .bak} or a target. */
     static final String STAGING_INFIX = ".txn-";
 
+    /** How {@link JsonStore} names a file it has moved aside. A record must never become invisible this way. */
+    static final String QUARANTINE_INFIX = ".corrupt-";
+
     private static final int RECORD_SCHEMA_VERSION = 1;
 
     /**
@@ -88,6 +115,18 @@ public final class JournalService {
     private final JsonStore store;
     private final LongSupplier clock;
     private final IntConsumer beforeEachEntry;
+
+    /**
+     * Ids of transactions between their first staged file and their last. The sweep skips their
+     * staging files.
+     *
+     * <p>Without this, {@link #replayPending()} is safe only because of a comment. It is public, so
+     * an admin repair command calling it while a transfer is staging would delete that transfer's
+     * staged files as ownerless — the transaction then commits a record pointing at files that no
+     * longer exist, and replay reads every one of them as already-applied. The whole transfer would
+     * report success having written nothing.</p>
+     */
+    private final Set<String> inFlight = ConcurrentHashMap.newKeySet();
 
     /**
      * @param store the store whose data root this journal protects
@@ -185,6 +224,7 @@ public final class JournalService {
         record.id = id;
         record.committedAtEpochMilli = clock.getAsLong();
 
+        inFlight.add(id);
         try {
             for (int i = 0; i < targets.size(); i++) {
                 record.entries.add(stage(id, targets.get(i), documents.get(i)));
@@ -194,15 +234,44 @@ public final class JournalService {
             // staging files would work too — replay sweeps them — but cleaning up here keeps a
             // repeatedly failing caller from filling the data directory.
             discardStaging(record);
+            inFlight.remove(id);
             throw e;
+        }
+
+        // Every staged file's DIRECTORY ENTRY must reach disk before the record does.
+        //
+        // stage() forces each staged file's contents, which persists the bytes but not necessarily
+        // the name that finds them. Lose power with the record durable and a dirent not yet
+        // written, and replay sees a staging file that is gone — which this protocol reads as
+        // "already applied" and skips. A committed transaction would silently half-apply, and the
+        // skip that makes replay idempotent is exactly what turns the missing name into data loss.
+        // ext4's default ordering usually hides this; XFS and anything journaling dirents
+        // separately do not.
+        for (Path parent : stagingDirectories(record)) {
+            JsonStore.forceDirectory(parent);
         }
 
         // The commit point. Everything before this is invisible and discardable; everything after
         // it is owed, and replayPending() will deliver it if this process does not.
         store.write(recordName(id), record);
 
-        apply(record);
-        clear(id);
+        try {
+            apply(record);
+            clear(id);
+        } finally {
+            // Only after the record exists. Until then the id is what keeps a concurrent sweep off
+            // these staging files; afterwards the record itself does.
+            inFlight.remove(id);
+        }
+    }
+
+    /** The distinct directories holding a record's staged files, in first-seen order. */
+    private Set<Path> stagingDirectories(Record record) {
+        Set<Path> directories = new LinkedHashSet<>();
+        for (Entry entry : record.entries) {
+            directories.add(PathSafety.resolveWithin(store.root(), entry.staging).getParent());
+        }
+        return directories;
     }
 
     /** Serialises one document to its staging file, forces it, and describes it for the record. */
@@ -247,11 +316,7 @@ public final class JournalService {
 
             String actual = hash(staging);
             if (!actual.equals(entry.sha256)) {
-                throw new StorageException("transaction " + record.id + " cannot be completed: the staged file "
-                        + staging + " does not match the hash committed for it (expected " + entry.sha256
-                        + ", found " + actual + "). The journal record has been left in place, so nothing has been "
-                        + "lost and the transaction will be retried on the next start; repair or remove the staged "
-                        + "file first");
+                throw new StorageException(repairGuidance(record, entry, staging, actual));
             }
 
             Path target = PathSafety.resolveWithin(store.root(), entry.target);
@@ -269,6 +334,54 @@ public final class JournalService {
                         + "next start", e);
             }
         }
+
+        // The last crash window, and the one a counter-based marker would get wrong: every file is
+        // in place and the record still says the work is owed. Replay must find a record whose
+        // staging files are ALL gone and treat that as complete rather than as damage — the state
+        // escrow depends on tolerating. The seam fires here with the entry count precisely so a
+        // test can stop the process in it; the loop above can only reach the windows before each
+        // move, so index == size() was previously unreachable and the case that claimed to cover
+        // it silently re-ran the happy path.
+        beforeEachEntry.accept(record.entries.size());
+    }
+
+    /**
+     * Explains a hash mismatch, and gives a repair route that does not corrupt anything.
+     *
+     * <p>The obvious advice — "remove the bad staged file" — is <em>wrong here</em>, and wrong in a
+     * way that produces exactly the damage this refusal prevents. An absent staged file is this
+     * protocol's already-applied marker, so deleting one makes the next start skip that document,
+     * apply its siblings and clear the record: the transaction reports success having never written
+     * that file. Deleting the record instead tears it the other way, leaving the applied entries in
+     * place with nothing recording that the rest were owed. Both of the escapes an operator would
+     * reach for first are traps, so the message names them as traps and says what to do instead.</p>
+     */
+    private String repairGuidance(Record record, Entry failed, Path staging, String actual) {
+        List<String> applied = new ArrayList<>();
+        List<String> outstanding = new ArrayList<>();
+        for (Entry entry : record.entries) {
+            Path other = PathSafety.resolveWithin(store.root(), entry.staging);
+            if (Files.isRegularFile(other)) {
+                outstanding.add(entry.target);
+            } else {
+                applied.add(entry.target);
+            }
+        }
+
+        return "transaction " + record.id + " cannot be completed: the staged file " + staging
+                + " does not match the hash committed for it (expected " + failed.sha256 + ", found " + actual + ")."
+                + " Nothing has been lost and the journal record is left in place, so this start refuses rather than"
+                + " writing bytes it cannot vouch for."
+                + " Already applied, now holding their new contents: " + (applied.isEmpty() ? "none" : applied) + "."
+                + " Still owed: " + outstanding + "."
+                + " DO NOT delete the staged file on its own, and DO NOT delete the record on its own — a missing"
+                + " staged file is this protocol's already-applied marker, so removing it makes the next start skip"
+                + " that document and report the transaction complete when that write never happened, and removing"
+                + " the record alone abandons the outstanding entries with no trace that they were owed."
+                + " Either restore " + staging + " to contents whose SHA-256 is " + failed.sha256
+                + ", after which the next start completes the transaction; or abandon it deliberately by moving the"
+                + " record " + recordName(record.id) + " and every remaining staged file aside TOGETHER, which leaves"
+                + " the already-applied documents applied — each one's previous contents are in <name>.bak.";
     }
 
     /** Deletes a completed record and forces the directory, so the deletion itself is durable. */
@@ -292,25 +405,74 @@ public final class JournalService {
             return List.of();
         }
 
-        List<String> names = new ArrayList<>();
+        List<Path> files = new ArrayList<>();
         try (Stream<Path> entries = Files.list(directory)) {
-            entries.filter(Files::isRegularFile)
-                    .map(path -> path.getFileName().toString())
-                    .filter(name -> name.endsWith(".json"))
-                    .forEach(names::add);
+            entries.filter(Files::isRegularFile).forEach(files::add);
         } catch (IOException e) {
             throw new StorageException("could not read the journal directory " + directory, e);
         }
 
         List<Record> records = new ArrayList<>();
-        for (String name : names) {
-            // A record that will not parse is reported by JsonStore, which quarantines it first.
-            // Starting anyway would mean starting on data a committed transaction was mid-way
-            // through changing, with no way to know what it had already done.
-            records.add(store.read(JOURNAL_DIRECTORY + "/" + name, Record.class, Record::new));
+        List<Path> unreadable = new ArrayList<>();
+        for (Path file : files) {
+            String name = file.getFileName().toString();
+            if (name.contains(QUARANTINE_INFIX)) {
+                // A record an earlier run moved aside. The work it describes is still owed, and a
+                // name that no longer ends in .json must not make it invisible.
+                unreadable.add(file);
+            } else if (name.endsWith(".json")) {
+                try {
+                    records.add(parseRecord(file));
+                } catch (StorageException e) {
+                    LOGGER.error("journal record {} cannot be read", file, e);
+                    unreadable.add(file);
+                }
+            }
         }
+
+        if (!unreadable.isEmpty()) {
+            // Hard stop, and deliberately BEFORE the sweep. An unreadable record still describes a
+            // committed transaction, so its staged files are owed work rather than litter — and the
+            // sweep would delete them as ownerless. Every later start must reach this same refusal.
+            throw new StorageException("the journal holds " + unreadable.size() + " record(s) that cannot be read: "
+                    + unreadable + ". Each one is a transaction that committed and may be part-applied, so starting"
+                    + " would mean starting on data some transaction was mid-way through changing with no way to know"
+                    + " how far it got. The records and every staged file have been left exactly as they are — nothing"
+                    + " is swept while any record is unreadable. Repair or move the named record(s) aside together"
+                    + " with the staged files belonging to them.");
+        }
+
         records.sort(Comparator.comparingLong((Record r) -> r.committedAtEpochMilli).thenComparing(r -> r.id));
         return records;
+    }
+
+    /**
+     * Parses a record without quarantining it.
+     *
+     * <p>Deliberately not {@link JsonStore#read}. That method moves an unparseable file to
+     * {@code <name>.corrupt-<timestamp>} <em>before</em> throwing, which is right for a data
+     * document and catastrophic for a journal record: the renamed file no longer ends in
+     * {@code .json}, so the very next start would list zero pending records, conclude nothing was
+     * owed, and let the sweep delete that transaction's staged files as garbage. The first start
+     * refused correctly and the second silently destroyed a committed transaction — with the
+     * operator's reflexive restart as the trigger. A record is evidence of owed work, so it stays
+     * exactly where it is.</p>
+     */
+    private static Record parseRecord(Path file) {
+        try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+            Record record = JsonStore.gson().fromJson(reader, Record.class);
+            if (record == null || record.id == null || record.id.isBlank() || record.entries == null) {
+                throw new StorageException("journal record " + file + " is empty or missing required fields");
+            }
+            for (Entry entry : record.entries) {
+                if (entry == null || entry.target == null || entry.staging == null || entry.sha256 == null) {
+                    throw new StorageException("journal record " + file + " has an incomplete entry");
+                }
+            }
+            return record;
+        } catch (IOException | JsonParseException e) {
+            throw new StorageException("could not parse journal record " + file, e);
+        }
     }
 
     /**
@@ -325,6 +487,7 @@ public final class JournalService {
         try (Stream<Path> tree = Files.walk(store.root())) {
             tree.filter(Files::isRegularFile)
                     .filter(path -> path.getFileName().toString().contains(STAGING_INFIX))
+                    .filter(path -> !belongsToInFlightTransaction(path))
                     .forEach(abandoned::add);
         } catch (IOException e) {
             // Nothing is wrong with the data; there is just leftover scratch that could not be
@@ -345,6 +508,17 @@ public final class JournalService {
         return removed;
     }
 
+    /** True if this staged file belongs to a transaction that is staging right now. */
+    private boolean belongsToInFlightTransaction(Path path) {
+        String name = path.getFileName().toString();
+        for (String id : inFlight) {
+            if (name.endsWith(STAGING_INFIX + id)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void discardStaging(Record record) {
         for (Entry entry : record.entries) {
             try {
@@ -352,6 +526,26 @@ public final class JournalService {
             } catch (IOException | StorageException e) {
                 LOGGER.debug("could not remove the staging file for {}", entry.target, e);
             }
+        }
+    }
+
+    /**
+     * Refuses a document name that would collide with the journal's own scratch files.
+     *
+     * <p>Recovery deletes every leftover file whose name carries {@link #STAGING_INFIX}, on the
+     * reasoning that it is scratch nobody owns. A real document carrying that marker would be data
+     * caught in that sweep, so the name is refused rather than the sweep weakened. Enforced at
+     * <em>every</em> way in — {@link Transaction#put} and {@link JsonStore#write} both — because a
+     * rule that only one of two writers checks is not a rule, and the sweep does not care which
+     * call created the file.</p>
+     *
+     * @param name the caller's document name
+     * @throws StorageException if it carries the staging marker
+     */
+    static void rejectReservedName(String name) {
+        if (name != null && name.contains(STAGING_INFIX)) {
+            throw new StorageException("a document name may not contain '" + STAGING_INFIX
+                    + "', which is reserved for journal staging files and is deleted by recovery, got: " + name);
         }
     }
 

@@ -388,11 +388,29 @@ sequence is open-ended, so nothing has to be crushed to fit.
 | Build | Contents | Exit condition |
 |---|---|---|
 | **1.2.0** · *version* | The M5-complete milestone. | 1.1.x verified together; the unverified-claims register reflects what the real-player run established. |
-| **1.2.1** | Currency core: fixed-point integer minor units. **Plus the segmented ledger substrate, moved here from 1.1.4** so it lands with its first writer. | No `float` or `double` anywhere in currency code, asserted by a test that scans the sources — not by review. |
-| **1.2.2** | Atomic transfer and idempotency keys, on 1.1.4's journal. | Debit and credit commit in one transaction boundary; an idempotency replay test proves one key yields exactly one committed transaction. |
+| **1.2.1** | Currency core: fixed-point integer minor units. **Plus the segmented ledger substrate, moved here from 1.1.4** so it lands with its first writer; the economy module skeleton with all four safe-mode touch points; and the batch-3 command hygiene rows. | No `float` or `double` anywhere in currency code, asserted by a test that scans the sources — not by review. **Added:** every new setting is reload-honoured with a test, and a safe-mode boot proves the economy module drops cleanly. The four touch points are asserted together, because 1.0.5 shipped a regression by wiring three of them. |
+| **1.2.2** | Atomic transfer and idempotency keys, on 1.1.4's journal. **Kept verbatim** — the design brief proposed no change and none is made. | Debit and credit commit in one transaction boundary; an idempotency replay test proves one key yields exactly one committed transaction. **Gated on 1.1.4's two durability ceilings being resolved first**, which they now are: this is the build where money starts riding on the storage layer. |
 | **1.2.3** | Reversal as a compensating entry. **Plus the item escrow vault and claim box** — new scope the printed M6 rows never named, because the journal covers multi-file JSON and items live in vanilla player NBT, outside its boundary. | A reversal creates a new entry and no historical row is edited, asserted by a test. **Plus the escrow custody invariant, moved here from 1.1.4** because it cannot be asserted before escrow exists: an item is in the inventory or in escrow after replay at every kill point — never both, never neither. Three conditions ride on it, recorded under *Confirmed defects* rather than assumed: the forced player-save's per-call cost is **measured** before market listing ships, vanilla's own `.dat_old` rollback is named as a residual duplication vector no custody test can observe, and a decode failure quarantines the item rather than discarding it. |
-| **1.2.4** | Shops. | A shop purchase is all-or-nothing under an injected mid-transaction failure. |
-| **1.2.5** | Economy commands and operator documentation. | All six §10.2 invariants have passing **named** tests; balances and history survive restart. **M6 complete.** |
+| **1.2.4** | Shops — the economy's faucet and sink. **Plus fixed-price market listings** (list, browse, buy-now, cancel, claim) with the incident levers: market freeze, inspect, remove. Timed bidding is **not** here; it is deferred to 1.3.x. | A shop purchase is all-or-nothing under an injected mid-transaction failure. **Added, same shape:** a market purchase is too, and **two players cannot both buy one listing**, proven by a concurrent-purchase test rather than by argument — a fixed-price buy is a check-then-act race with no auction clock to serialise it, and its failure mode duplicates items rather than merely mis-awarding them. An expired or cancelled listing returns the item **exactly once** under a replayed expiry sweep. |
+| **1.2.5** | Economy commands and operator documentation. **Plus player-to-player trade and kits** — both explicitly cuttable, in that order, under the pre-agreed cut order (kits first, then the market GUI drops to commands-only, then trade). **Plus the second two-real-players sweep**, covering trade, market and the freeze levers. | All six §10.2 invariants have passing **named** tests; balances and history survive restart. **M6 complete.** The §10.2 invariants are **written, not recovered**: the owner's re-derive ruling makes them NexusCore's own, in `docs/spec/`, alongside [§11](docs/spec/11-storage.md). An earlier note recorded this exit as `blocked` if the external specification could not be found — **that is superseded**; it is not blocked, it is unwritten, and the difference matters because one waits on the world and the other waits on us. The sweep needs a second real player the owner supplies; if it cannot be scheduled it is recorded NOT MET with that reason, never reworded. |
+
+> **Every exit condition above must answer one question: if this check could not run, would
+> anything say so?**
+>
+> Recorded here on 2026-07-28 because the studio hit it three times in one day, in three costumes.
+> A tripwire that pinned a *spelling* rather than a property fired on a legitimate refactor. A
+> mutation round proved nothing because Gradle served `:test` from cache for mutated source, so a
+> harness whose whole job is failing reported success without executing. And a token-gated check
+> **vanished** instead of reporting `UNVERIFIABLE`, so a rule that never ran once read as healthy.
+>
+> The first two are wrong answers. The third is worse: **no answer, presented as a good one.** A
+> check that cannot run and says nothing is indistinguishable from a check that passed, and it stays
+> that way until somebody goes looking for a reason no reason exists.
+>
+> So an exit condition here is not met by a green result. It is met by a green result that *could
+> have been red* — which is why the mutation harnesses run with `--rerun-tasks`, why the journal's
+> crash tests assert the state is genuinely torn before recovering it, and why a row whose fix no
+> test can exercise stays open with that named as the obstacle rather than being retired.
 
 ### Version 1.3 — M7 chat and moderation depth
 

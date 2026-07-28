@@ -99,8 +99,12 @@ run_one() {
         return 1
     fi
 
+    # --rerun-tasks is load-bearing. Gradle can serve :test from cache for mutated source,
+    # and a cached PASS against broken code is a mutation harness reporting a gap that is not
+    # there — or worse, a green it did not earn. Reported by the Master Mode session after it
+    # lost a whole mutation round to exactly this.
     local output failures
-    output="$(cd "$GRADLE_DIR" && ./gradlew --offline --console=plain test --tests '*StorageTest*' 2>&1)"
+    output="$(cd "$GRADLE_DIR" && ./gradlew --offline --console=plain --rerun-tasks test --tests '*StorageTest*' 2>&1)"
     failures="$(printf '%s' "$output" | grep -cE '^StorageTest > .* FAILED')"
 
     if [ "$failures" -eq 0 ]; then

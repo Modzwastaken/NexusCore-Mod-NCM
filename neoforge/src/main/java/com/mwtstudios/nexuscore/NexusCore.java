@@ -64,6 +64,17 @@ public final class NexusCore {
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
+    /**
+     * The single loaded instance, for the in-server test harness.
+     *
+     * <p>GameTest methods are static by the framework's design and NeoForge 21.1 exposes no route
+     * from a {@code ModContainer} back to the mod object, so this is the only way for a test to
+     * reach the registry the server is actually running on. It holds a REFERENCE to the same
+     * services every command and listener uses — not a second registry — so there is nothing here
+     * for the live state to drift against. Written once during construction and never reassigned.</p>
+     */
+    private static volatile NexusCore instance;
+
     private final String displayName;
     private final String version;
 
@@ -95,7 +106,38 @@ public final class NexusCore {
         NeoForge.EVENT_BUS.addListener(this::onServerChat);
         NeoForge.EVENT_BUS.addListener(this::onPlayerDeath);
 
+        instance = this;
         LOGGER.info("{} {} bootstrapped on the {} event bus", displayName, version, modEventBus.getClass().getSimpleName());
+    }
+
+    /**
+     * @return the loaded instance, or null before mod construction has run
+     */
+    public static NexusCore instance() {
+        return instance;
+    }
+
+    /**
+     * The live service registry this mod is running on.
+     *
+     * <p>Exists for the in-server test harness, which is static by GameTest's design and therefore
+     * cannot be handed the instance. Reached through {@code ModList.getModObjectById}, which is the
+     * supported route to a mod instance — deliberately an instance accessor rather than a static
+     * field, so there is no second, mutable copy of the registry for anything to drift against.</p>
+     *
+     * @return the services built during construction
+     */
+    public NexusServices services() {
+        return services;
+    }
+
+    /**
+     * The admin panel this mod registered.
+     *
+     * @return the GUI service
+     */
+    public AdminGuiService gui() {
+        return gui;
     }
 
     // ---- lifecycle ---------------------------------------------------------------------

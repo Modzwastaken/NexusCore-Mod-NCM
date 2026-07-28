@@ -41,7 +41,7 @@ public final class CommandCatalogue {
             // ---- permissions ---------------------------------------------------------------
             d("/nexus permission check <player> <node>", "nexuscore.command.permission.check",
                     "explain why a player does or does not have a node", "core"),
-            d("/nexus permission set <player> <node> <allow|deny>", "nexuscore.command.permission.set",
+            d("/nexus permission set <player> <allow|deny> <node>", "nexuscore.command.permission.set",
                     "grant or deny a node directly on a player", "core"),
             d("/nexus permission group <...>", "nexuscore.command.permission.group",
                     "inspect and edit groups and their inheritance", "core"),

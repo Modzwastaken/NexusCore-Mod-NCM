@@ -69,7 +69,7 @@ Commands belonging to them refuse with an explanation rather than disappearing:
 | Command | Alias | Permission | Module |
 |---|---|---|---|
 | `/nexus permission check <player> <node>` — explain why a player does or does not have a node | — | `nexuscore.command.permission.check` | core |
-| `/nexus permission set <player> <node> <allow|deny>` — grant or deny a node directly on a player | — | `nexuscore.command.permission.set` | core |
+| `/nexus permission set <player> <allow|deny> <node>` — grant or deny a node directly on a player | — | `nexuscore.command.permission.set` | core |
 | `/nexus permission group <...>` — inspect and edit groups and their inheritance | — | `nexuscore.command.permission.group` | core |
 
 ## Teleport

@@ -369,4 +369,48 @@ class IdentityServiceTest {
         assertEquals(1_001L, persistedLastSeen(directory, uuid), "a zero window writes through at once");
         assertEquals(1_000L, first);
     }
+
+    @Test
+    @DisplayName("the count bound forces a write even when the clock never moves")
+    void countBoundHoldsOnAnIdleServer() throws java.io.IOException {
+        java.util.concurrent.atomic.AtomicLong frozen = new java.util.concurrent.atomic.AtomicLong(1_000L);
+        JsonStore store = new JsonStore(directory);
+        IdentityService service = new IdentityService(store, frozen::get);
+        java.util.UUID uuid = java.util.UUID.randomUUID();
+        service.observe(uuid, "Alice");
+
+        // The clock NEVER advances, so the time bound can never fire. Damping runs on player events
+        // rather than on a ticking clock, so without a second bound a pending change would sit
+        // indefinitely on a quiet server — which is exactly the unclean-stop case an operator cares
+        // about. The count bound is what caps the loss when time cannot.
+        for (int i = 0; i < IdentityService.MAX_DAMPED_CHANGES - 1; i++) {
+            service.observeDeparture(uuid);
+        }
+        assertTrue(service.hasUnwrittenChanges(), "below the bound, changes are still being held");
+
+        service.observeDeparture(uuid);
+
+        assertEquals(1_000L, frozen.get(), "precondition: the clock never moved, so the time bound cannot fire");
+        assertFalse(service.hasUnwrittenChanges(),
+                "reaching the count bound must force a write with no help from the clock — this is the "
+                        + "bound that holds on an idle server, where the time bound never fires because "
+                        + "damping runs on player events rather than on a ticking clock");
+    }
+
+    @Test
+    @DisplayName("a lookup that learns nothing does not schedule a write of nothing")
+    void unchangedLookupDoesNotDirtyTheDocument() {
+        java.util.concurrent.atomic.AtomicLong clock = new java.util.concurrent.atomic.AtomicLong(1_000L);
+        IdentityService service = new IdentityService(new JsonStore(directory), clock::get);
+        java.util.UUID uuid = java.util.UUID.randomUUID();
+        service.observeLookup(uuid, "Alice");
+        assertFalse(service.hasUnwrittenChanges(), "the first lookup is a fact and writes through");
+
+        service.observeLookup(uuid, "Alice");
+
+        // observeLookup deliberately does not stamp seen times, so a repeat lookup changes nothing
+        // on disk — there is no timestamp left to damp, and marking it dirty would queue a write of
+        // nothing. Flagged by Master Mode: it is a different write path from observe().
+        assertFalse(service.hasUnwrittenChanges(), "an unchanged lookup must leave the document clean");
+    }
 }

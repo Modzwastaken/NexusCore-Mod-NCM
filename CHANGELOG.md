@@ -197,6 +197,14 @@ weaker position than it sounds once a balance depends on it.
   observation waits. And the flush on shutdown is what makes any of it safe — without it, damping
   would trade a real write-amplification problem for a quiet data-loss one on every clean stop.
 
+  **Two bounds, and neither alone is sufficient.** A shutdown flush does not fire on a crash, an
+  OOM kill, or a host losing power — the cases an operator actually worries about. And the time
+  bound never fires on an idle server, because damping runs on player events rather than on a
+  ticking clock: with no further joins or leaves, "30 seconds have elapsed" is never checked. So a
+  second bound caps the count: at most **20** damped updates may be outstanding, whatever the clock
+  does. The residual is stated with its numbers on the 1.1.4 row rather than left for a reader to
+  infer from the word "damped".
+
   The service also had **two clocks**: the damping window ran on the injected one while the
   timestamps it damped ran on `System.currentTimeMillis()`. That is now one clock throughout, and it
   is not a tidiness change — see below.

@@ -52,6 +52,9 @@ public final class IdentityService {
 
     /** How long a damped change may wait before it is written anyway. */
     private long flushIntervalMillis = DEFAULT_FLUSH_INTERVAL_MILLIS;
+
+    /** Damped changes not yet written. The bound that survives an idle server. */
+    private int dampedChanges;
     /** Lowercased current name to UUID. Rebuilt from the document, never persisted separately. */
     private final Map<String, UUID> nameIndex = new LinkedHashMap<>();
 
@@ -71,6 +74,15 @@ public final class IdentityService {
      * every leave — is the write amplification this bounds.
      */
     private static final long DEFAULT_FLUSH_INTERVAL_MILLIS = 30_000L;
+
+    /**
+     * Most damped updates that may be outstanding before one is forced through.
+     *
+     * <p>The bound that holds when nothing is happening. Damping runs on player events, so an idle
+     * server never reaches the time bound — but it also never accumulates, so capping the count caps
+     * what an unclean stop can lose regardless of how long the server sat still.</p>
+     */
+    static final int MAX_DAMPED_CHANGES = 20;
 
     /**
      * @param store the data store holding {@value #FILE}
@@ -160,9 +172,10 @@ public final class IdentityService {
         rebuildIndex();
         if (isNew || renamed) {
             saveNow();
-        } else {
-            saveDamped();
         }
+        // No else. A lookup that learns nothing new changed nothing on disk — observeLookup does
+        // not stamp seen times, so unlike observe() there is no timestamp left to damp, and marking
+        // the document dirty here would schedule a write of nothing.
     }
 
     /**
@@ -411,6 +424,7 @@ public final class IdentityService {
         document.schemaVersion = CURRENT_SCHEMA_VERSION;
         store.write(FILE, document);
         dirty = false;
+        dampedChanges = 0;
         lastWriteAt = clock.getAsLong();
     }
 
@@ -426,7 +440,13 @@ public final class IdentityService {
      */
     private void saveDamped() {
         dirty = true;
-        if (clock.getAsLong() - lastWriteAt >= flushIntervalMillis) {
+        dampedChanges++;
+        // TWO bounds, because the time one alone does not bound anything on a quiet server. This
+        // only runs when a player joins or leaves, so "30 seconds have passed" is checked at the
+        // next event and not by a clock ticking — with no further events a pending change would sit
+        // indefinitely. The count bound is what actually caps the exposure: at most
+        // MAX_DAMPED_CHANGES updates can be outstanding, whatever happens to the wall clock.
+        if (dampedChanges >= MAX_DAMPED_CHANGES || clock.getAsLong() - lastWriteAt >= flushIntervalMillis) {
             saveNow();
         }
     }
@@ -442,6 +462,13 @@ public final class IdentityService {
         if (dirty) {
             saveNow();
         }
+    }
+
+    /**
+     * @return true when a damped change has not yet reached disk
+     */
+    public boolean hasUnwrittenChanges() {
+        return dirty;
     }
 
     /**

@@ -246,7 +246,7 @@ the list below and is not yet fixed.
 | `config.json` silently loses operator keys | medium | `load()` rewrites the file from the typed object, deleting any key the schema does not know, while reporting `no problems found`. |
 | `players.json` rewritten in full on every login and logout | medium | Never pruned; each write copies a full `.bak` and fsyncs twice. |
 | Fabric death messages lose their cause | medium | Every styled death reads `<Player> died` on Fabric only. |
-| `/pardon` and `/banlist` strand vanilla ban state | medium | Pre-takeover vanilla bans become un-liftable, and `ban-ip`/`pardon-ip` are separate commands NexusCore never takes over, so IP bans are neither audited nor listed. |
+| `ban-ip`/`pardon-ip` stay vanilla commands | low | IP bans are now listed by `/banlist`, but their issue and lift still bypass NexusCore, so they are not audited. |
 | `/nexus reload` silently ignores two settings | low | `commandsPerMinute` and `permissionCacheSize` keep boot-time values while the reload reports success. `commandsPerMinute` is a rate limit, so a security control does not apply. |
 | Admin GUI acts on a stale `ServerPlayer` | low | A handler captured before the target logged out performs a no-op and audits it as `allowed`. |
 | Death-message edge cases | low | Reload double-broadcasts until restart; the dying player's own screen loses its cause; team `deathMessageVisibility` is ignored. |

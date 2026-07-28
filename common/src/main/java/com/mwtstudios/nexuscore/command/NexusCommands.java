@@ -24,6 +24,7 @@ import com.mwtstudios.nexuscore.message.MessageService;
 import com.mwtstudios.nexuscore.module.ModuleException;
 import com.mwtstudios.nexuscore.message.TimeText;
 import com.mwtstudios.nexuscore.moderation.ModerationService;
+import com.mwtstudios.nexuscore.moderation.VanillaBans;
 import com.mwtstudios.nexuscore.moderation.PunishmentMessages;
 import com.mwtstudios.nexuscore.permission.PermissionDecision;
 import com.mwtstudios.nexuscore.teleport.TeleportService;
@@ -1129,6 +1130,9 @@ public final class NexusCommands {
 
     private static Feedback liftPunishment(NexusServices services, CommandSourceStack source, ModerationService.Type type,
             String name, String messageKey) throws Refused {
+        if (type == ModerationService.Type.BAN) {
+            return liftBanEverywhere(services, source, name, messageKey);
+        }
         UUID target = resolve(source, services, name);
         UUID actor = source.getEntity() instanceof ServerPlayer player ? player.getUUID() : null;
 
@@ -1138,6 +1142,39 @@ public final class NexusCommands {
         }
         return Feedback.of(services.messages().render(messageKey, "target", name))
                 .withTarget("player", target.toString());
+    }
+
+    /**
+     * {@code /pardon} means "let this player back in", and vanilla still enforces its own list
+     * at login — so a ban must be lifted from <em>both</em> systems. A pre-takeover vanilla ban
+     * is also often the only local record of the player, so vanilla's entry is consulted for the
+     * UUID before any network lookup: without that, the one command able to free such a player
+     * would first demand a Mojang round-trip to learn who they are.
+     */
+    private static Feedback liftBanEverywhere(NexusServices services, CommandSourceStack source,
+            String name, String messageKey) throws Refused {
+        VanillaBans vanilla = VanillaBans.of(source.getServer());
+        UUID target = services.identity().resolve(source.getServer(), name)
+                .or(() -> vanilla.uuidOfBanned(name))
+                .orElse(null);
+        if (target == null) {
+            target = resolve(source, services, name);
+        }
+        UUID actor = source.getEntity() instanceof ServerPlayer player ? player.getUUID() : null;
+
+        VanillaBans.LiftOutcome outcome = VanillaBans.liftBan(
+                services.moderation(), vanilla, target, name, actor, source.getTextName());
+        return switch (outcome) {
+            case NOTHING_TO_LIFT -> throw new Refused(services.messages().raw("moderation.lift.none",
+                    "target", name, "type", "ban"));
+            case NEXUS_ONLY -> Feedback.of(services.messages().render(messageKey, "target", name))
+                    .withTarget("player", target.toString());
+            case VANILLA_ONLY -> Feedback.of(services.messages().render("moderation.lift.vanilla-only",
+                            "target", name))
+                    .withTarget("player", target.toString());
+            case BOTH -> Feedback.of(services.messages().render("moderation.lift.both", "target", name))
+                    .withTarget("player", target.toString());
+        };
     }
 
     private static LiteralArgumentBuilder<CommandSourceStack> warnNode(NexusServices services) {
@@ -1200,11 +1237,17 @@ public final class NexusCommands {
                 .executes(context -> run(context, services, "nexuscore.command.moderation.banlist", "moderation.banlist",
                         source -> {
                             List<ModerationService.Record> bans = services.moderation().activeBans();
-                            if (bans.isEmpty()) {
+                            VanillaBans vanilla = VanillaBans.of(source.getServer());
+                            // Pre-takeover entries and IP bans live in vanilla's lists, which
+                            // still enforce at login. A banlist that hides an enforced ban is
+                            // wrong in the way that matters most.
+                            List<String> legacy = VanillaBans.vanillaOnlyNames(bans, vanilla);
+                            List<String> ips = vanilla.bannedIps();
+                            if (bans.isEmpty() && legacy.isEmpty() && ips.isEmpty()) {
                                 return Feedback.of(services.messages().render("moderation.banlist.none"));
                             }
-                            StringBuilder text = new StringBuilder(
-                                    services.messages().raw("header.bans", "count", String.valueOf(bans.size())));
+                            StringBuilder text = new StringBuilder(services.messages().raw("header.bans",
+                                    "count", String.valueOf(bans.size() + legacy.size())));
                             for (ModerationService.Record record : bans) {
                                 text.append("\n&7- &c").append(record.targetName()).append(" &7")
                                         .append(record.reason()).append(" &8(")
@@ -1212,6 +1255,17 @@ public final class NexusCommands {
                                                 : TimeText.remaining(record.expiresAt(),
                                                         System.currentTimeMillis()))
                                         .append(')');
+                            }
+                            for (String legacyName : legacy) {
+                                text.append("\n&7- &c").append(legacyName)
+                                        .append(" &8(vanilla, pre-NexusCore — /pardon lifts it)");
+                            }
+                            if (!ips.isEmpty()) {
+                                text.append('\n').append(services.messages().raw("header.bans.ip",
+                                        "count", String.valueOf(ips.size())));
+                                for (String ip : ips) {
+                                    text.append("\n&7- &c").append(ip);
+                                }
                             }
                             return Feedback.of(Component.literal(MessageService.colourise(text.toString())));
                         }));

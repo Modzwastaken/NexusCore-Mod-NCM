@@ -93,6 +93,11 @@ them instead of carrying a second copy of the atomic-move protocol — including
 fixed in one copy and not the other.
 
 ### Fixed
+- `/pardon` lifts pre-NexusCore vanilla bans too — the takeover pardon only lifted NexusCore
+  records, leaving bans that predate the mod enforceable at login but liftable by nobody. It now
+  lifts both systems and says which it found; vanilla's own entry also supplies the UUID, so a
+  pre-takeover pardon works on the first attempt with no network lookup. `/banlist` now shows
+  vanilla-only entries and vanilla IP bans instead of hiding enforced bans.
 
 Six defects in the journal above — three of them serious enough to lose a committed transaction —
 all found by an adversarial review before anything was built on it. None had shipped, and the

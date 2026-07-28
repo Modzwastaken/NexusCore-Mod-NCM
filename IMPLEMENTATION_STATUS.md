@@ -34,6 +34,20 @@ complete it appears.
 > moved up. Its builds are `1.1.1`–`1.1.5`. What each later build is planned to contain is in
 > [The road to v1.5.0](#the-road-to-v150) below and, per §2.4, only there.
 
+> **The `§` references are being re-derived, and the provenance has changed.** Every `§` citation
+> in this repository — `§11.1` in the storage layer, `§9` in permissions, `§20.4`'s status
+> vocabulary above — points into an external specification **this repository has never contained
+> and cannot recover**. Those citations looked like references and functioned as assertions: no
+> reader could check them. At the owner's ruling (2026-07-27) the sections NexusCore actually
+> depends on are being rewritten as NexusCore's own, in [docs/spec/](docs/spec/), keeping the
+> inherited numbering so existing citations stay valid.
+>
+> **A re-derived section cannot be used to argue the code is correct** — it was derived from the
+> code, so agreement is circular. It fixes the requirement in place for what comes next.
+> [§11 — Storage and persistence](docs/spec/11-storage.md) is written, because the write-ahead
+> journal is built and M6's economy will be measured against it. The remaining sections are not,
+> and their absence is recorded here rather than in a placeholder there.
+
 ---
 
 ## The honest summary

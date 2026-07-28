@@ -338,7 +338,7 @@ sequence is open-ended, so nothing has to be crushed to fit.
 | **1.1.1** | `IdentityService.resolve()` blocking the server thread on a Mojang lookup (`getAsync` exists), the four vanish faults, and the multiple-active-punishments group — the highest-severity items left after 1.1.0's twelve fixes. | Each has a named regression test. The vanish faults need a real client, so any that cannot be reproduced headlessly are recorded as such rather than ticked. |
 | **1.1.2** | GameTests: teleport safety, home/warp persistence, punishment enforcement, permission gating. Plus the missing `AdminMenu` read-only container test. | The four GameTests named in M5 exist and pass, and a test proves items cannot enter or leave the admin menu. |
 | **1.1.3** | Sustained multi-player runtime verification — GUI rendering, vanish (four confirmed faults), chat muting, ban-at-login, teleport safety in practice. | Every item in the "never observed" column has been observed with at least two real players, or is recorded as still unobserved with the reason. |
-| **1.1.4** | Write-ahead journal for multi-file transactions (§11.1). The M2 gap, and M6's prerequisite. | **Met, ahead of its slot.** `JournalTest` crashes a three-file transaction after the first file lands, asserts the on-disk state is genuinely torn, and proves replay repairs it; all four crash points are covered, and the write-ahead property is proven to fail. Three loaders build. **The code landed during 1.1.1, not 1.1.4** — see below. |
+| **1.1.4** | **Storage is trustworthy.** The write-ahead journal (§11.1) — *done*; the four economy-blocking storage defects (`JsonStore` quarantining on `IOException` rather than on bad content, `JsonIOException` escaping that catch entirely, chain-aware audit rotation, `players.json` full-rewrite damping); and the two inherited durability ceilings closed **or ruled** as named platform limitations. | Journal: **met** — `JournalTest`, 34 tests on three loaders, crash at every point, `tools/mutate-journal.sh` proving the suite constrains the protocol. Remaining: each storage fix has a named regression test; each durability ceiling is closed with a test, or appears on the **published** defect list as a named platform limitation — not as a javadoc comment. **Runnable the day the work lands.** |
 | **1.1.5** | Migration fixtures and the schema-bump machinery. The week-long real-player run that is M5's actual exit criterion. | A 1.0.0 data directory loads through the migration path with exact expected results; a week of real-player use with no unrecorded defect. **M5 complete.** |
 
 > **1.1.4's deliverable was built during 1.1.1, out of order.** The owner directed it: v1.2.0's
@@ -349,14 +349,45 @@ sequence is open-ended, so nothing has to be crushed to fit.
 > **No 1.1.4 build has been cut.** The journal ships in whichever build is cut next, and what
 > 1.1.4's slot now holds is the owner's call, not this document's.
 
+> **1.1.4 was re-planned on 2026-07-28, and split.** Recorded here under this table's own overflow
+> rule — *"if a version's work needs more than five builds it moves up early and carries the
+> remainder — recorded when it happens"* — rather than edited quietly.
+>
+> The v1.2-line design brief proposed one widened 1.1.4 carrying the journal, a segmented ledger
+> substrate, the four storage fixes and the two durability ceilings, with an exit requiring replay
+> **"for a two-file money commit and an escrow item commit"**. That exit could not be run: escrow
+> is 1.2.3 content, so the gate for 1.1.4 depended on a feature three builds later. A rung whose
+> exit cannot be run until later is not a gate — it is a rung that gets ticked on faith, which
+> `RELEASE_CHECKLIST.md`'s "Milestones say when work landed; content says what to check" forbids in
+> as many words.
+>
+> So the rung is split, and each piece lands where its evidence can exist:
+>
+> - **1.1.4 keeps** the journal, the four storage fixes and the two durability ceilings — one
+>   coherent claim, *storage is trustworthy*, with an exit runnable the day the work lands.
+> - **The segmented ledger substrate moves to 1.2.1**, where the economy skeleton gives it its
+>   first writer. Building a ledger substrate a build before anything writes to it is how the
+>   journal ended up with no caller for a whole version; that is a mistake worth not repeating
+>   immediately after making it.
+> - **The escrow half of the exit moves to 1.2.3**, where escrow exists.
+>
+> The two durability ceilings are the gate before 1.2.2. `JsonStore.forceDirectory` is a silent
+> no-op on Windows and `JsonStore.move` falls back to a non-atomic replace where `ATOMIC_MOVE` is
+> refused, so §11.1-R4 does not hold there — see [the conformance table](docs/spec/11-storage.md).
+> They are inherited from the single-document write protocol and predate the journal, but the
+> journal is what makes them matter, because 1.2.2 is where money starts riding on them. **For
+> money, "we recorded the ceiling" is a weaker position than it sounds.** If one proves genuinely
+> unfixable — Windows directory fsync may be — it ships as a named platform limitation on the
+> published defect list, not as a comment in a javadoc.
+
 ### Version 1.2 — M6 economy
 
 | Build | Contents | Exit condition |
 |---|---|---|
 | **1.2.0** · *version* | The M5-complete milestone. | 1.1.x verified together; the unverified-claims register reflects what the real-player run established. |
-| **1.2.1** | Currency core: fixed-point integer minor units. | No `float` or `double` anywhere in currency code, asserted by a test that scans the sources — not by review. |
+| **1.2.1** | Currency core: fixed-point integer minor units. **Plus the segmented ledger substrate, moved here from 1.1.4** so it lands with its first writer. | No `float` or `double` anywhere in currency code, asserted by a test that scans the sources — not by review. |
 | **1.2.2** | Atomic transfer and idempotency keys, on 1.1.4's journal. | Debit and credit commit in one transaction boundary; an idempotency replay test proves one key yields exactly one committed transaction. |
-| **1.2.3** | Reversal as a compensating entry. | A reversal creates a new entry and no historical row is edited, asserted by a test. |
+| **1.2.3** | Reversal as a compensating entry. **Plus the item escrow vault and claim box** — new scope the printed M6 rows never named, because the journal covers multi-file JSON and items live in vanilla player NBT, outside its boundary. | A reversal creates a new entry and no historical row is edited, asserted by a test. **Plus the escrow custody invariant, moved here from 1.1.4** because it cannot be asserted before escrow exists: an item is in the inventory or in escrow after replay at every kill point — never both, never neither. Three conditions ride on it, recorded under *Confirmed defects* rather than assumed: the forced player-save's per-call cost is **measured** before market listing ships, vanilla's own `.dat_old` rollback is named as a residual duplication vector no custody test can observe, and a decode failure quarantines the item rather than discarding it. |
 | **1.2.4** | Shops. | A shop purchase is all-or-nothing under an injected mid-transaction failure. |
 | **1.2.5** | Economy commands and operator documentation. | All six §10.2 invariants have passing **named** tests; balances and history survive restart. **M6 complete.** |
 

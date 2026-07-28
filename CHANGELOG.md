@@ -267,6 +267,24 @@ weaker position than it sounds once a balance depends on it.
   `sequence` field, so one bounded segment is read instead of everything ever written. `tail()`
   reads back from the newest log and stops as soon as it has enough.
 
+- **One byte that was not UTF-8 in `audit.log` stopped the mod from starting.** `readAllLines`
+  decodes strictly, so a `MalformedInputException` reached the audit module's constructor — and
+  audit is a **core** module, so the whole mod refused to load. A torn final append from a power
+  loss is enough to produce it, on an append-only file, with no recovery path inside the mod. The
+  row called it `low`; a single byte denying boot with no way back in is not low, and it is retired
+  rather than reclassified because it is now fixed.
+
+  The audit log's reads decode leniently, replacing what will not decode. **The replacement is not a
+  repair and must not be mistaken for one** — nothing on disk is touched, and a substituted character
+  changes the line, so its SHA-256 changes, so `/nexus audit verify` reports the chain broken exactly
+  there. That is *true*, and it is the outcome an operator needs: the damage surfaced by the tool
+  built to surface it, rather than by a server that will not boot.
+
+  Only the log reads changed. `JsonStore.read` still decodes strictly, because bytes that are not
+  UTF-8 in a *document* mean it is not the thing it claims to be, and failing loudly is right there.
+  The difference is whether the server can start without it. **Proven to fail**: restoring strict
+  decoding fails all three new tests.
+
 - **`players.json` was rewritten in full on every join and every leave.** A rejoining player moves
   one timestamp; paying a whole-document serialise, a `.bak` copy and an fsync for that — twice per
   session, per player, forever — is the amplification. Last-seen updates are now damped behind a

@@ -244,7 +244,6 @@ the list below and is not yet fixed.
 | Fabric death messages lose their cause | medium | Every styled death reads `<Player> died` on Fabric only. |
 | `ban-ip`/`pardon-ip` stay vanilla commands | low | IP bans are now listed by `/banlist`, but their issue and lift still bypass NexusCore, so they are not audited. |
 | Death-message edge cases | low | Reload double-broadcasts until restart; the dying player's own screen loses its cause; team `deathMessageVisibility` is ignored. |
-| One non-UTF-8 byte in `audit.log` prevents startup | low | No recovery path inside the mod. |
 | Fabric login ban screen uses a startup snapshot | low | `/nexus reload` never changes it, unlike the other two loaders. |
 
 ---

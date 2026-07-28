@@ -5,6 +5,9 @@ import java.io.Reader;
 import java.io.Writer;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
@@ -302,6 +305,73 @@ public final class JsonStore {
         } catch (IOException e) {
             throw new StorageException("could not read " + file, e);
         }
+    }
+
+    /**
+     * Reads every line of an append-only log, replacing any byte that is not valid UTF-8.
+     *
+     * <p><b>Why this exists rather than being the default.</b> {@link #readLines} decodes strictly,
+     * and strict is right for a document: bytes that are not UTF-8 mean the file is not the thing it
+     * claims to be, and failing loudly is the honest answer. It is the wrong answer for a log the
+     * server cannot start without. One malformed byte in {@code audit.log} — a torn final append
+     * from a power loss is enough — made {@code Files.readAllLines} throw
+     * {@code MalformedInputException}, which reached the audit module's constructor, and audit is a
+     * <b>core</b> module. So a single bad byte in an append-only file stopped the whole mod from
+     * starting, with no recovery path inside it.</p>
+     *
+     * <p><b>The replacement is not a repair, and must not be mistaken for one.</b> Substituted
+     * characters change the line, so its SHA-256 changes, so {@code /nexus audit verify} reports the
+     * chain broken at exactly that record — which is true, and is the outcome an operator needs. The
+     * damage is surfaced by the tool built to surface it instead of by a server that will not boot.
+     * Nothing is rewritten on disk; the bytes stay exactly as they are.</p>
+     *
+     * @param name log file name relative to the data root
+     * @return the lines, oldest first; empty when the log does not exist
+     */
+    public List<String> readLinesLenient(String name) {
+        Path file = PathSafety.resolveWithin(root, name);
+        if (!Files.isRegularFile(file)) {
+            return List.of();
+        }
+
+        byte[] bytes;
+        try {
+            bytes = Files.readAllBytes(file);
+        } catch (IOException e) {
+            // A failure to read the bytes at all is a different problem from bytes that will not
+            // decode, and this one is not recoverable by being lenient.
+            throw new StorageException("could not read " + file, e);
+        }
+
+        CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPLACE)
+                .onUnmappableCharacter(CodingErrorAction.REPLACE);
+        String text;
+        try {
+            text = decoder.decode(ByteBuffer.wrap(bytes)).toString();
+        } catch (CharacterCodingException e) {
+            // Unreachable with REPLACE, which is why it is a StorageException rather than a silent
+            // fallback: if the JDK ever makes it reachable, that is a bug to see and not to absorb.
+            throw new StorageException("could not decode " + file + " even with replacement", e);
+        }
+
+        if (text.indexOf('�') >= 0) {
+            LOGGER.error("{} contains bytes that are not valid UTF-8. They have been replaced FOR READING "
+                    + "ONLY — the file on disk is untouched — so the server can start. Any record containing "
+                    + "them will fail `/nexus audit verify`, which is the correct result: the log really is "
+                    + "damaged at that point. Preserve a copy before repairing it.", file);
+        }
+
+        List<String> lines = new ArrayList<>();
+        for (String line : text.split("\n", -1)) {
+            lines.add(line.endsWith("\r") ? line.substring(0, line.length() - 1) : line);
+        }
+        // split() with a trailing newline leaves an empty final element that readAllLines would not
+        // have produced, and an empty line is not a record.
+        if (!lines.isEmpty() && lines.get(lines.size() - 1).isEmpty()) {
+            lines.remove(lines.size() - 1);
+        }
+        return lines;
     }
 
     // The three primitives below are package-private rather than private so JournalService can

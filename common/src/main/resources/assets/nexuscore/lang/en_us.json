@@ -65,6 +65,7 @@
   "audit.tail.none": "&e&lAUDIT &e» &7The audit log is empty.",
   "player.seen.online": "&a&lSEEN &a» &f{target} &7is &aonline &7right now.",
   "player.seen.offline": "&e&lSEEN &e» &f{target} &7was last seen &6{ago}&7 ago. &8— &7First joined: &e{first}",
+  "player.seen.never": "&e&lSEEN &e» &f{target} &7is a real account, but has never joined this server.",
   "player.list.header": "&b&lLIST &b» &7Online &6{count}&7/&6{max}&7:",
   "player.near.header": "&b&lNEAR &b» &6{count}&7 player(s) within &6{radius}&7 blocks:",
   "player.near.none": "&b&lNEAR &b» &7No other players within &6{radius}&7 blocks.",

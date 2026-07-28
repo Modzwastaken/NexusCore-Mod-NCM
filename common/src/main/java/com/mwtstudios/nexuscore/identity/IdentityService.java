@@ -8,6 +8,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.function.BooleanSupplier;
 
 import com.mwtstudios.nexuscore.storage.JsonStore;
 
@@ -22,9 +24,12 @@ import net.minecraft.server.level.ServerPlayer;
  * only to answer "who did the operator mean when they typed this name", and it is explicit
  * about the case where the answer is ambiguous.</p>
  *
- * <p>Lookup order for an offline name is deliberate: the live player list first, then
- * NexusCore's own record of players who have joined this server, then the vanilla profile
- * cache. The middle step is what makes {@code /ban SomeoneWhoLeftLastWeek} work.</p>
+ * <p>Lookup order for an offline name is deliberate, and it stops at sources that answer
+ * <em>instantly</em>: the live player list first, then NexusCore's own record of players who have
+ * joined this server. The middle step is what makes {@code /ban SomeoneWhoLeftLastWeek} work. The
+ * vanilla profile cache is <b>not</b> consulted by {@link #resolve} — it performs a synchronous
+ * Mojang HTTP request on a cache miss, on the server thread. It is reached only through
+ * {@link #resolveAsync}, off-thread.</p>
  */
 public final class IdentityService {
 
@@ -38,6 +43,16 @@ public final class IdentityService {
     private final Document document;
     /** Lowercased current name to UUID. Rebuilt from the document, never persisted separately. */
     private final Map<String, UUID> nameIndex = new LinkedHashMap<>();
+
+    /**
+     * Lowercased names a lookup reported as non-existent, and when. Deliberately in memory only
+     * and bounded: it exists so a retry can be told "no such account" instead of "still looking",
+     * not to be a durable record of every typo an operator has ever made.
+     */
+    private final Map<String, Long> recentMisses = new LinkedHashMap<>();
+
+    private static final long MISS_MEMORY_MILLIS = 10L * 60L * 1000L;
+    private static final int MAX_REMEMBERED_MISSES = 256;
 
     /**
      * @param store the data store holding {@value #FILE}
@@ -82,6 +97,63 @@ public final class IdentityService {
         }
         rebuildIndex();
         save();
+    }
+
+    /**
+     * Records a UUID/name pairing learned from a <em>lookup</em> rather than from a visit.
+     *
+     * <p>Deliberately does not touch first- or last-seen. {@link #observe} means "this player was
+     * here just now"; a lookup means only "this account exists and this is its name". Filing a
+     * pre-ban lookup through {@code observe} made {@code /seen} report a player who has never
+     * connected as first joining today and last seen moments ago.</p>
+     *
+     * @param uuid the player's UUID
+     * @param name their current name
+     */
+    public void observeLookup(UUID uuid, String name) {
+        Profile profile = document.players.computeIfAbsent(uuid.toString(), key -> new Profile());
+        if (profile.knownNames == null) {
+            profile.knownNames = new ArrayList<>();
+        }
+        boolean renamed = !name.equals(profile.currentName);
+        if (renamed && profile.currentName != null && !profile.knownNames.contains(profile.currentName)) {
+            profile.knownNames.add(profile.currentName);
+        }
+        profile.currentName = name;
+        recentMisses.remove(name.toLowerCase(Locale.ROOT));
+        rebuildIndex();
+        save();
+    }
+
+    /**
+     * Records that a lookup found no such account, so the next attempt can say so instead of
+     * promising again that one is under way.
+     */
+    private void recordMiss(String name) {
+        if (recentMisses.size() >= MAX_REMEMBERED_MISSES) {
+            var oldest = recentMisses.keySet().iterator();
+            if (oldest.hasNext()) {
+                oldest.next();
+                oldest.remove();
+            }
+        }
+        recentMisses.put(name.toLowerCase(Locale.ROOT), System.currentTimeMillis());
+    }
+
+    /**
+     * @param name the name as typed
+     * @return true when a recent lookup established that no account by this name exists
+     */
+    public boolean recentlyMissed(String name) {
+        Long at = recentMisses.get(name.toLowerCase(Locale.ROOT));
+        if (at == null) {
+            return false;
+        }
+        if (System.currentTimeMillis() - at > MISS_MEMORY_MILLIS) {
+            recentMisses.remove(name.toLowerCase(Locale.ROOT));
+            return false;
+        }
+        return true;
     }
 
     /** Records a player's departure time. */
@@ -165,19 +237,83 @@ public final class IdentityService {
         if (local.isPresent()) {
             return CompletableFuture.completedFuture(local);
         }
-        if (server.getProfileCache() == null) {
-            return CompletableFuture.completedFuture(Optional.empty());
-        }
-        return server.getProfileCache().getAsync(name).thenApply(profile -> {
-            if (profile.isEmpty()) {
+        return resolveAsync(vanillaLookup(server), server, server::isStopped, name);
+    }
+
+    /**
+     * The testable core of {@link #resolveAsync}: every dependency on a running server is a
+     * parameter, so a test can complete a lookup on demand and observe what gets filed.
+     *
+     * @param lookup where an unknown name is looked up, off-thread
+     * @param onServerThread runs a task on the server thread
+     * @param stopped whether the server has begun shutting down
+     * @param name the name as typed
+     * @return a future completing with the UUID, or empty when the name does not exist
+     */
+    CompletableFuture<Optional<UUID>> resolveAsync(ProfileLookup lookup, Executor onServerThread,
+            BooleanSupplier stopped, String name) {
+        return lookup.lookup(name).thenApply(resolved -> {
+            if (resolved.isEmpty()) {
+                // Vanilla caches only positive results, so without this the operator gets the
+                // same "looking it up" answer forever and can never tell a name that does not
+                // exist from one still in flight. Recorded on the server thread like any other
+                // mutation.
+                fileOnServerThread(onServerThread, stopped, () -> recordMiss(name));
                 return Optional.<UUID>empty();
             }
-            UUID uuid = profile.get().getId();
-            String resolved = profile.get().getName();
-            // Back to the server thread before touching the document or the index.
-            server.execute(() -> observe(uuid, resolved));
+            UUID uuid = resolved.get().uuid();
+            String canonical = resolved.get().name();
+            fileOnServerThread(onServerThread, stopped, () -> observeLookup(uuid, canonical));
             return Optional.of(uuid);
         });
+    }
+
+    /**
+     * Runs a document mutation on the server thread — unless the server is stopping, in which
+     * case it is dropped.
+     *
+     * <p>{@code MinecraftServer.execute} does <b>not</b> guarantee the server thread: the
+     * underlying event loop runs a task inline on the calling thread once {@code isStopped()}
+     * is true, and {@code stopped} is set before the shutdown save. A lookup completing in that
+     * window would therefore rewrite {@value #FILE} from a background thread while the server
+     * thread is saving the same file. Nothing is lost by dropping it: the record only caches a
+     * name lookup for a player who has not joined.</p>
+     */
+    private static void fileOnServerThread(Executor onServerThread, BooleanSupplier stopped, Runnable work) {
+        if (stopped.getAsBoolean()) {
+            return;
+        }
+        onServerThread.execute(() -> {
+            if (!stopped.getAsBoolean()) {
+                work.run();
+            }
+        });
+    }
+
+    /** Adapts the vanilla profile cache to {@link ProfileLookup}. */
+    private static ProfileLookup vanillaLookup(MinecraftServer server) {
+        var cache = server.getProfileCache();
+        if (cache == null) {
+            return name -> CompletableFuture.completedFuture(Optional.empty());
+        }
+        return name -> cache.getAsync(name)
+                .thenApply(profile -> profile.map(p -> new ResolvedName(p.getId(), p.getName())));
+    }
+
+    /** A name looked up successfully: the UUID, and the canonical spelling the source returned. */
+    public record ResolvedName(UUID uuid, String name) { }
+
+    /**
+     * Where a name NexusCore has never recorded is looked up. Production is the vanilla profile
+     * cache; a test supplies its own so the async path can be driven without a server.
+     */
+    @FunctionalInterface
+    public interface ProfileLookup {
+        /**
+         * @param name the name as typed
+         * @return a future completing with the resolved identity, or empty when no such account
+         */
+        CompletableFuture<Optional<ResolvedName>> lookup(String name);
     }
 
     /**

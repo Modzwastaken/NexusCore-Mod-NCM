@@ -1289,6 +1289,14 @@ public final class NexusCommands {
                                     var profile = services.identity().profileOf(target)
                                             .orElseThrow(() -> new Refused(services.messages()
                                                     .raw("error.unknown-player", "name", name)));
+                                    // A record filed by a lookup carries a name but no visit.
+                                    // Reporting "last seen just now" for someone who has never
+                                    // connected would be inventing the answer.
+                                    if (profile.lastSeenEpochMillis() == 0L) {
+                                        return Feedback.of(services.messages().render("player.seen.never",
+                                                        "target", profile.name()))
+                                                .withTarget("player", target.toString());
+                                    }
                                     return Feedback.of(services.messages().render("player.seen.offline",
                                                     "target", profile.name(),
                                                     "ago", TimeText.elapsed(
@@ -1444,6 +1452,12 @@ public final class NexusCommands {
         Optional<UUID> found = services.identity().resolve(source.getServer(), name);
         if (found.isPresent()) {
             return found.get();
+        }
+        // A lookup that already came back empty is a definitive answer, and saying so is the
+        // difference between "try again in a moment" forever and being told the account does
+        // not exist. Vanilla caches only positive results, so this memory is ours.
+        if (services.identity().recentlyMissed(name)) {
+            throw new Refused(services.messages().raw("error.unknown-player", "name", name));
         }
         services.identity().resolveAsync(source.getServer(), name);
         throw new Refused(services.messages().raw("error.unknown-player.looking-up", "name", name));

@@ -130,7 +130,7 @@ utilities, moderation with confirmations, and a working admin GUI.
 | `AuditService` with §15.2 fields and hash chaining | `tested` | `AuditServiceTest` — 11 tests including `editedRecordDetected`, `deletedRecordDetected`, `forgedAppendDetected`, `chainContinuesAcrossRestart`. |
 | Write-time redaction | `tested` | `sensitiveParametersRedactedAtWriteTime` — IPs, passwords, tokens never reach the file. |
 | Schema versions on every document | `implemented` | All six documents carry `schemaVersion`. |
-| Write-ahead journal for multi-file transactions | `tested` | `JournalTest` — 34 tests on **all three loaders**, including `crashMidTransactionIsRepairedByReplay` (three files, killed after the first is applied; the assertion checks the state really is torn before recovering it), `crashAtEveryPointIsRecoverable` (all four crash points) and `unreadableRecordRefusesEveryTime`. **Proven to fail reproducibly** by `tools/mutate-journal.sh`, which breaks the journal four ways and asserts a named test catches each — the earlier "proven to fail two ways" claim was hand-run and left no artifact, and a review rightly refused it. An adversarial review then found **six defects, three able to lose a committed transaction**; all six are fixed and each has a regression test. **This closes the M2 gap.** **Evidence ceiling (§20.4):** crashes are simulated in-process, so this proves ordering and recovery, **not durability** — deleting any `force()` call would still pass. `forceDirectory` is a silent no-op on Windows and `JsonStore.move` falls back to a non-atomic replace where `ATOMIC_MOVE` is refused; both are recorded in the class javadoc and neither is covered by a test. No production caller yet: M6's economy is the intended one, and 1.2.2 builds atomic transfer on it. |
+| Write-ahead journal for multi-file transactions | `tested` | `JournalTest` — 34 tests on **all three loaders**, including `crashMidTransactionIsRepairedByReplay` (three files, killed after the first is applied; the assertion checks the state really is torn before recovering it), `crashAtEveryPointIsRecoverable` (all four crash points) and `unreadableRecordRefusesEveryTime`. **Proven to fail reproducibly** by `tools/mutate-journal.sh`, which breaks the journal four ways and asserts a named test catches each — the earlier "proven to fail two ways" claim was hand-run and left no artifact, and a review rightly refused it. An adversarial review then found **six defects, three able to lose a committed transaction**; all six are fixed and each has a regression test. **This closes the M2 gap.** **Evidence ceiling (§20.4):** crashes are simulated in-process, so this proves ordering and recovery, **not durability** — deleting any `force()` call would still pass. **Both durability ceilings this row used to carry were resolved at 1.1.4** and no longer qualify it: `JsonStore.move` has no non-atomic fallback — it refuses, so §11.1-R4 holds or the write fails — and `forceDirectory`'s Windows no-op is now a named row on the published defect list, reported once per run at WARN rather than at DEBUG. What remains true is only the first sentence of this ceiling: the crashes are simulated in-process, so **durability itself is still argued rather than demonstrated**. No production caller yet: M6's economy is the intended one, and 1.2.2 builds atomic transfer on it. |
 | Migration fixtures from a prior version | `blocked` | There is no prior schema version to migrate from — every document is at v1. Fixtures become meaningful at the first bump. |
 | `/nexus doctor storage` | `planned` | M8. `/nexus system status` and `/nexus audit verify` cover part of the ground. |
 
@@ -367,14 +367,23 @@ sequence is open-ended, so nothing has to be crushed to fit.
 >   immediately after making it.
 > - **The escrow half of the exit moves to 1.2.3**, where escrow exists.
 >
-> The two durability ceilings are the gate before 1.2.2. `JsonStore.forceDirectory` is a silent
-> no-op on Windows and `JsonStore.move` falls back to a non-atomic replace where `ATOMIC_MOVE` is
-> refused, so §11.1-R4 does not hold there — see [the conformance table](docs/spec/11-storage.md).
-> They are inherited from the single-document write protocol and predate the journal, but the
-> journal is what makes them matter, because 1.2.2 is where money starts riding on them. **For
-> money, "we recorded the ceiling" is a weaker position than it sounds.** If one proves genuinely
-> unfixable — Windows directory fsync may be — it ships as a named platform limitation on the
-> published defect list, not as a comment in a javadoc.
+> **The two durability ceilings were the gate before 1.2.2, and both are now resolved** — one
+> closed, one ruled. They were inherited from the single-document write protocol and predated the
+> journal, but the journal is what made them matter, because 1.2.2 is where money starts riding on
+> them. **For money, "we recorded the ceiling" is a weaker position than it sounds.**
+>
+> - **`JsonStore.move` — closed.** The non-atomic fallback is gone; the write refuses instead, so
+>   §11.1-R4 holds or nothing happens. It could be closed rather than ruled because every atomic
+>   move in the codebase is same-directory, which made the fallback unreachable for NexusCore's own
+>   writes while still carrying the risk of silently weakening the guarantee.
+> - **`forceDirectory` — ruled.** Windows cannot open a directory as a channel and there is no
+>   equivalent to reach for, so it ships as a **named platform limitation on the published defect
+>   list**, reported once per run at WARN. Not a comment in a javadoc, which is what the ruling
+>   required.
+>
+> See [the conformance table](docs/spec/11-storage.md): R22 met by closing, R21 met by ruling. What
+> is *not* resolved, and is recorded on the journal row above rather than here, is that the crash
+> tests are in-process — so durability remains argued rather than demonstrated.
 
 ### Version 1.2 — M6 economy
 

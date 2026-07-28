@@ -80,12 +80,15 @@ Work toward the next build.
   at an injected point. That establishes the *order* of operations and that recovery repairs what a
   stopped process leaves. It does **not** establish durability: deleting any `force()` or
   `forceDirectory()` call would leave every one of these tests green, because nothing here loses
-  power. The fsync calls are argued for, not demonstrated. Two platform ceilings compound it and are
-  now recorded in the class javadoc rather than left to be discovered — `forceDirectory` swallows
-  its failure at DEBUG and **fails unconditionally on Windows**, making every directory fsync a
-  silent no-op there, and `JsonStore.move` falls back to a **non-atomic** replace on a filesystem
-  refusing `ATOMIC_MOVE`. Both are inherited from the single-document write protocol rather than
-  introduced here. Neither is covered by a test.
+  power. The fsync calls are argued for, not demonstrated, and that is still true at the end of this
+  build.
+
+  Two inherited platform ceilings compounded it when the journal landed — `forceDirectory`'s silent
+  Windows no-op, and a non-atomic fallback in `JsonStore.move`. **Both were resolved later in this
+  same build**, one closed and one ruled, under *Fixed* below. This paragraph is left describing the
+  state the journal landed in rather than rewritten to look tidier, because "the ceilings were
+  identified when the journal shipped and closed before anything rode on it" is the true sequence
+  and a reader following the 1.2.2 gate needs it.
 
 `JsonStore`'s `move`, `force` and `forceDirectory` became package-private so the journal reuses
 them instead of carrying a second copy of the atomic-move protocol — including the

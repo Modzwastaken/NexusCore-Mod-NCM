@@ -102,7 +102,7 @@ public final class AuditService {
 
     /** @return the last line of a log, or null if it is missing or empty */
     private String lastLineOf(String name) {
-        List<String> lines = store.readLines(name);
+        List<String> lines = store.readLinesLenient(name);
         return lines.isEmpty() ? null : lines.get(lines.size() - 1);
     }
 
@@ -235,7 +235,7 @@ public final class AuditService {
         // report "chain intact" over a history whose older half had been edited — which is worse
         // than no verification, because it answers the question wrongly rather than not at all.
         for (String segment : logsOldestFirst()) {
-            List<String> lines = store.readLines(segment);
+            List<String> lines = store.readLinesLenient(segment);
             for (String line : lines) {
                 String recorded;
                 try {
@@ -278,7 +278,7 @@ public final class AuditService {
         // Newest log first, and stop as soon as the limit is filled — a tail must not read the
         // whole history to show the last twenty lines.
         for (int log = logs.size() - 1; log >= 0 && out.size() < limit; log--) {
-            List<String> lines = store.readLines(logs.get(log));
+            List<String> lines = store.readLinesLenient(logs.get(log));
             for (int i = lines.size() - 1; i >= 0 && out.size() < limit; i--) {
                 out.add(lines.get(i));
             }

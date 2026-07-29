@@ -21,6 +21,30 @@
 # would — the registration is severed, the tests still compile and still exist — then
 # asserts verify-gametests.sh goes RED. Source is restored from a backup and compared
 # byte-for-byte, including if you interrupt it.
+#
+# THREE PROOFS, not one. Each pins a different way the gate could be worthless.
+#
+#   1. ANNOTATION SEVERED -> guard RED.        Registration dies, the guard notices.
+#   2. SHIM SEVERED       -> guard GREEN at 12. The redundancy is real, not folklore.
+#   3. ASSERTION MUTATED  -> guard RED on the FAILURE branch, not the zero branch.
+#
+# Why 2 exists. The holders are discovered twice: by @GameTestHolder annotation scan,
+# and by the explicit event.register(...) call in NexusGameTestRegistration. Proof 1
+# cuts the annotation. Proof 2 cuts the other side and asserts the run still executes
+# EXACTLY 12 — the count, not merely "still green". Asserting green alone would be
+# satisfied by a run that quietly dropped to 3, which is the same green-run-of-fewer
+# this repo keeps rediscovering. Only neoforge and forge have a shim; fabric's single
+# registration path is its entrypoint list, which proof 1 already cuts.
+#
+# Why 3 exists. verify-gametests.sh has a branch for "N required tests failed" that had
+# never fired for real — every observed firing was the zero-test branch. A branch nobody
+# has watched run is exactly what this script exists to distrust, so it is made to run:
+# one assertion is inverted, and the guard must go red AND name a failure rather than an
+# empty run. That also settles, empirically rather than by reading, that the count the
+# guard trusts describes tests that EXECUTED.
+#
+# Authorship: proofs 2 and 3 are Master Mode #1's amendment on Manager A's proposal,
+# implemented by Master Agent B under the 1.21.1/.gradle-build-lock protocol.
 
 set -u
 
@@ -100,6 +124,34 @@ PY
   esac
 }
 
+# Severs ONLY the explicit event.register(...) shim, leaving @GameTestHolder intact.
+# The mirror image of sever(): this must NOT change the outcome, because the annotation
+# scan is supposed to cover the same ground on its own. neoforge and forge only.
+sever_shim_only() {
+  local reg="$ROOT/$1/src/main/java/com/mwtstudios/nexuscore/gametest/NexusGameTestRegistration.java"
+  [ -f "$reg" ] || { echo "   no registration shim for $1 — skipping"; return 1; }
+  back_up "$reg"
+  sed -i 's|^\( *\)event\.register(|\1// MUTATED: event.register(|' "$reg"
+  grep -q "// MUTATED: event.register(" "$reg" || {
+    echo "   *** mutation did not apply to $1 — the shim's shape changed; fix this script"
+    return 1
+  }
+}
+
+# Inverts one assertion in a shared test so exactly one test FAILS while all 12 still
+# register and run. Cuts at the condition, not at succeed()/fail(), so the test still
+# executes its body — the point is a failing execution, not an absent one.
+mutate_assertion() {
+  local t="$ROOT/common/src/main/java/com/mwtstudios/nexuscore/gametest/NexusGameTests.java"
+  [ -f "$t" ] || { echo "   no shared test file — skipping"; return 1; }
+  back_up "$t"
+  sed -i '0,/helper\.assertTrue(services() != null,/s//helper.assertTrue(services() == null,/' "$t"
+  grep -q "helper\.assertTrue(services() == null," "$t" || {
+    echo "   *** mutation did not apply — harnessRuns' assertion changed shape; fix this script"
+    return 1
+  }
+}
+
 for loader in $LOADERS; do
   echo
   echo "=== $loader: severing registration, expecting the guard to go RED"
@@ -118,9 +170,63 @@ for loader in $LOADERS; do
   BACKUP="$(mktemp -d)"
 done
 
+# ---- PROOF 2: the shim is redundant, and the redundancy is REAL -------------------
+for loader in $LOADERS; do
+  case "$loader" in fabric) continue ;; esac   # no shim to sever
+  echo
+  echo "=== $loader: severing the SHIM only, expecting GREEN at exactly 12"
+  if ! sever_shim_only "$loader"; then
+    restore; trap restore EXIT INT TERM; BACKUP="$(mktemp -d)"; FAILURES=$((FAILURES + 1)); continue
+  fi
+
+  out="$("$ROOT/tools/verify-gametests.sh" "$loader" --expect 12 2>&1)"; rc=$?
+  if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q "executed 12 test(s)"; then
+    echo "   redundancy holds: annotation scan alone executed 12"
+  else
+    echo "   *** REDUNDANCY IS NOT REAL — with the shim severed, $loader did not run 12."
+    echo "       The belt-and-braces comment in NexusGameTestRegistration would be false,"
+    echo "       and one of the two registration paths is load-bearing after all. exit=$rc"
+    printf '%s\n' "$out" | tail -6 | sed 's/^/       /'
+    FAILURES=$((FAILURES + 1))
+  fi
+
+  restore
+  trap restore EXIT INT TERM
+  BACKUP="$(mktemp -d)"
+done
+
+# ---- PROOF 3: the FAILURE branch fires, and is distinguishable from the zero branch
+for loader in $LOADERS; do
+  echo
+  echo "=== $loader: inverting one assertion, expecting RED naming a FAILURE"
+  if ! mutate_assertion; then
+    restore; trap restore EXIT INT TERM; BACKUP="$(mktemp -d)"; FAILURES=$((FAILURES + 1)); continue
+  fi
+
+  out="$("$ROOT/tools/verify-gametests.sh" "$loader" --expect 12 2>&1)"; rc=$?
+  if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -qE "FAIL: [0-9]+ test\(s\) failed"; then
+    echo "   detected: $(printf '%s' "$out" | grep -oE 'FAIL: [0-9]+ test\(s\) failed on [a-z]+' | head -1)"
+    echo "   took the FAILURE branch, not the zero-test branch — which is the whole point:"
+    echo "   the count the guard trusts describes tests that EXECUTED and were judged."
+  elif [ "$rc" -ne 0 ]; then
+    echo "   *** RED, but NOT on the failure branch. The guard cannot tell a failing run"
+    echo "       from an empty one, which is a defect in the guard itself:"
+    printf '%s\n' "$out" | head -6 | sed 's/^/       /'
+    FAILURES=$((FAILURES + 1))
+  else
+    echo "   *** NOT DETECTED — a genuinely failing test passed the guard. The gate is"
+    echo "       reporting green on a suite that did not hold."
+    FAILURES=$((FAILURES + 1))
+  fi
+
+  restore
+  trap restore EXIT INT TERM
+  BACKUP="$(mktemp -d)"
+done
+
 echo
 if [ "$FAILURES" -gt 0 ]; then
-  echo "RESULT: $FAILURES loader(s) NOT detected — the guard does not constrain them"
+  echo "RESULT: $FAILURES proof(s) did not hold — the guard does not constrain what it claims"
   exit 1
 fi
-echo "RESULT: every loader's empty run was refused"
+echo "RESULT: all three proofs held — empty runs refused, redundancy real, failures named"

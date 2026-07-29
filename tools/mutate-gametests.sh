@@ -49,6 +49,31 @@
 set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# REFUSE TO START IF A PREVIOUS RUN LEFT THE TREE MUTATED.
+#
+# The EXIT/INT/TERM trap below restores everything — unless the process is killed
+# hard. SIGKILL runs no trap, and an outer `timeout` or a CI step limit will deliver
+# one: on 2026-07-29 a 10-minute cap killed a run mid-Forge and left
+# NexusWorldGameTestsHolder.java carrying a commented-out @GameTestHolder. The tree
+# looked fine to a casual glance and would have made the NEXT run measure a loader
+# that was already sabotaged — a mutation harness poisoning the baseline it exists to
+# test against. Checked here because a clean start is a precondition, not a courtesy.
+if git -C "$ROOT" status --porcelain 2>/dev/null | grep -q .; then
+  # tools/ is excluded because this script and its siblings contain the marker string
+  # as literal text — scanning them reports the scanner itself, which is a false
+  # positive of exactly the kind this file keeps finding elsewhere.
+  leftover=$(git -C "$ROOT" diff --name-only 2>/dev/null | grep -v '^tools/' \
+             | xargs -r grep -ln "MUTATED" 2>/dev/null)
+  if [ -n "$leftover" ]; then
+    echo "REFUSING: the working tree still carries MUTATED markers from an earlier run."
+    echo "$leftover" | sed 's/^/  /'
+    echo "  Restore them first:  git -C $ROOT checkout -- <file>"
+    exit 2
+  fi
+  echo "note: working tree is dirty (no MUTATED markers). Proceeding, but a mutation"
+  echo "      run against uncommitted changes proves things about a state nobody else has."
+fi
 BACKUP="$(mktemp -d)"
 LOADERS="${1:-neoforge fabric forge}"
 FAILURES=0

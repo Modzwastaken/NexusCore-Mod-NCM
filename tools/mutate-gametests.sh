@@ -182,12 +182,25 @@ for loader in $LOADERS; do
   echo "=== $loader: severing registration, expecting the guard to go RED"
   if ! sever "$loader"; then continue; fi
 
-  if "$ROOT/tools/verify-gametests.sh" "$loader" > /dev/null 2>&1; then
+  # Distinguish a VERDICT from a corpse. Exit 124 means the run was killed for
+  # exceeding its own timeout — the guard never judged anything, and counting that as
+  # a detection is how a hang gets recorded as proof. Measured 2026-07-29: severing
+  # forge's holders hangs the server, and the earlier version of this script called
+  # that "detected" purely because the exit was non-zero.
+  "$ROOT/tools/verify-gametests.sh" "$loader" > /dev/null 2>&1
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
     echo "   *** NOT DETECTED — the guard PASSED a run that registered nothing."
     echo "       That is the defect the guard exists for, present in the guard itself."
     FAILURES=$((FAILURES + 1))
+  elif [ "$rc" -eq 124 ]; then
+    echo "   INCONCLUSIVE: the run TIMED OUT rather than being judged."
+    echo "       The guard reported no verdict, so this proves nothing about it. On Forge"
+    echo "       an empty registration hangs the server, which is a real property worth"
+    echo "       knowing — but it is not evidence that the zero-test branch works."
+    FAILURES=$((FAILURES + 1))
   else
-    echo "   detected: guard failed the empty run, as it must"
+    echo "   detected: guard failed the empty run, as it must (exit $rc)"
   fi
 
   restore

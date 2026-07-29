@@ -24,6 +24,26 @@
 # THE GUARD MUST BE PROVEN TO FIRE. `tools/mutate-gametests.sh` un-registers the
 # tests on a loader and asserts this script goes red. A zero-test guard nobody has
 # watched trigger is the same species as the check that silently vanishes.
+#
+# WHICH BRANCH FIRES DEPENDS ON HOW REGISTRATION DIES, and the three are not
+# interchangeable. Corrected 2026-07-29 after the header above was read as claiming all
+# three loaders exercise the same path — they do not:
+#
+#   ZERO-count  (line ~114)  A count is printed and it is 0. This is the shipped-defect
+#                            shape: @GameTestHolder missing -> namespace falls back to
+#                            "minecraft" -> enabledGameTestNamespaces drops everything ->
+#                            the server runs, reports zero, exits 0. Green and empty.
+#   NO-count    (line ~105)  The run died before printing any count. Emptying fabric's
+#                            entrypoint list lands HERE, not on the zero branch: with no
+#                            test functions, GameTestServer.create throws and no count is
+#                            ever produced. Refused because an unmeasured run is not a
+#                            passing one — but it is a DIFFERENT refusal.
+#   TIMEOUT     (line ~68)   No verdict at all. Forge, measured: severing the holders
+#                            hangs the server rather than failing it.
+#
+# So mutate-gametests.sh proves the guard rejects three distinct broken states. It does
+# NOT prove all three loaders reach the zero-count branch, and the earlier framing of
+# "the guard fires on all three" quietly implied that it did.
 
 set -u
 
@@ -50,9 +70,29 @@ REPORT="$ROOT/fabric/build/gametest-report.xml"
 # for the current run's.
 if [ "$LOADER" = "fabric" ]; then rm -f "$REPORT"; fi
 
-echo "== $LOADER: $TASK"
-( cd "$ROOT/$LOADER" && ./gradlew "$TASK" --offline ) > "$LOG" 2>&1
+# TIMEOUT LIVES INSIDE THE GATE, not in whoever calls it.
+#
+# A Forge GameTest server whose registration is empty throws inside the server spin
+# lambda and never reaches exit — it HANGS. Measured 2026-07-29: a severed-holder run
+# sat for the full 560s cap and was killed with 124. While the timeout was the
+# caller's job, that hang read as an ordinary non-zero exit to anything checking $?,
+# so a harness could record it as "the guard fired" when nothing had been judged at
+# all. A gate whose liveness depends on the caller remembering a wrapper is not a
+# gate. Override with GAMETEST_TIMEOUT for a slow machine.
+GAMETEST_TIMEOUT="${GAMETEST_TIMEOUT:-480}"
+
+echo "== $LOADER: $TASK (timeout ${GAMETEST_TIMEOUT}s)"
+( cd "$ROOT/$LOADER" && timeout "$GAMETEST_TIMEOUT" ./gradlew "$TASK" --offline ) > "$LOG" 2>&1
 GRADLE_STATUS=$?
+
+if [ "$GRADLE_STATUS" -eq 124 ]; then
+  echo "FAIL: $LOADER did not finish within ${GAMETEST_TIMEOUT}s — TIMED OUT."
+  echo "      This is a distinct outcome from a failing run and must not be read as one."
+  echo "      An empty registration on Forge throws inside the server spin and never"
+  echo "      exits, so a hang here usually means ZERO tests registered."
+  tail -15 "$LOG"
+  exit 124
+fi
 
 # ---- what the run itself reported -------------------------------------------------
 #

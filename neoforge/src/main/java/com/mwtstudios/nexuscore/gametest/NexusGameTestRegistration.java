@@ -23,7 +23,13 @@ import net.neoforged.neoforge.event.RegisterGameTestsEvent;
  * not inherited. A subclass of a shared holder would therefore register nothing and report a green
  * run of zero tests, which is why the tests are registered where they are declared.</p>
  */
-@EventBusSubscriber(modid = NexusServices.MOD_ID)
+/* bus = MOD is load-bearing, not decoration. RegisterGameTestsEvent implements
+   IModBusEvent, and @EventBusSubscriber defaults to the GAME bus — so without this the
+   subscriber registers on a bus that never fires this event, no tests are registered,
+   and the run exits 0 having executed NOTHING. That is precisely the green-run-of-zero
+   this move was designed to avoid, and it shipped anyway; tools/verify-gametests.sh
+   caught it on its first run. */
+@EventBusSubscriber(modid = NexusServices.MOD_ID, bus = EventBusSubscriber.Bus.MOD)
 public final class NexusGameTestRegistration {
 
     private NexusGameTestRegistration() {

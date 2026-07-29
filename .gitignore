@@ -53,6 +53,18 @@ forgeserver/
 *.log.gz
 logs/
 
+# The root checksums file describes the CURRENT build, so it cannot be a tracked
+# record — owner ruling 2026-07-29. Committed, it was frozen at a commit while the
+# jars it names changed on every build, so it drifted permanently and by design: it
+# went stale twice on 2026-07-29 alone, each time within minutes of a build, and
+# both times the file was *correct when written*. A record and its subject must be
+# pinned to the same thing; this one could not be.
+# Regenerate locally with tools/regen-checksums.sh when you want it.
+# NOTE what still guarantees released bytes, because this is NOT that: the archived
+# release checksums below, verified by verify-release-jar.sh and by studio-control's
+# build/jar.*.sha256 — archived-vs-archived, frozen on both sides.
+/checksums.txt
+
 # Released artifacts ARE tracked on purpose: archived/ is the record of what shipped.
 !archived/
 !archived/**

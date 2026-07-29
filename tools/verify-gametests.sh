@@ -41,6 +41,15 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOG="$(mktemp)"
 trap 'rm -f "$LOG"' EXIT
 
+REPORT="$ROOT/fabric/build/gametest-report.xml"
+
+# Delete any previous report BEFORE running. Nothing cleans it, so a run that dies
+# early leaves the LAST run's file in place — and a cross-check that reads it is
+# comparing this run against a different one. That is not hypothetical: a report from
+# before the namespace fix, carrying a failure, survived long enough to be mistaken
+# for the current run's.
+if [ "$LOADER" = "fabric" ]; then rm -f "$REPORT"; fi
+
 echo "== $LOADER: $TASK"
 ( cd "$ROOT/$LOADER" && ./gradlew "$TASK" --offline ) > "$LOG" 2>&1
 GRADLE_STATUS=$?
@@ -53,6 +62,19 @@ GRADLE_STATUS=$?
 #
 passed=$(grep -oE "All ([0-9]+) required tests passed" "$LOG" | grep -oE "[0-9]+" | tail -1)
 failed=$(grep -oE "([0-9]+) required tests failed"     "$LOG" | grep -oE "[0-9]+" | tail -1)
+
+# An OPTIONAL test (required = false) failing prints a different line, and
+# System.exit(getFailedRequiredCount()) stays 0 — so the run is green, the required
+# count is untouched, and nothing here would notice. Unreachable while all 12 use a
+# bare @GameTest (required defaults true), but it becomes live the first time someone
+# writes required = false, which is exactly when nobody is looking for it.
+optional_failed=$(grep -oE "([0-9]+) optional tests failed" "$LOG" | grep -oE "[0-9]+" | tail -1)
+if [ -n "${optional_failed:-}" ] && [ "${optional_failed:-0}" -gt 0 ]; then
+  echo "FAIL: $optional_failed OPTIONAL test(s) failed on $LOADER"
+  echo "      The run still exits 0 because only REQUIRED failures set the exit code."
+  grep -iE "failed at" "$LOG" | head -10
+  exit 1
+fi
 
 if [ -n "${failed:-}" ] && [ "${failed:-0}" -gt 0 ]; then
   echo "FAIL: $failed test(s) failed on $LOADER"
@@ -86,16 +108,36 @@ if [ -n "$EXPECT" ] && [ "$passed" -ne "$EXPECT" ]; then
 fi
 
 # ---- cross-check against the loader's own report, where it writes one --------------
-REPORT="$ROOT/fabric/build/gametest-report.xml"
-if [ "$LOADER" = "fabric" ] && [ -f "$REPORT" ]; then
-  reported=$(grep -oE 'tests="[0-9]+"' "$REPORT" | grep -oE '[0-9]+' | head -1)
-  if [ -n "${reported:-}" ] && [ "$reported" != "$passed" ]; then
-    echo "FAIL: fabric's log says $passed but its report file says $reported."
+# Cross-check against fabric's own report.
+#
+# THIS COMPARED NOTHING UNTIL 2026-07-29 and said it agreed anyway. It grepped
+# tests="N", an attribute the format does not have, so the count came back EMPTY, the
+# -n guard skipped the comparison, and every run printed "report file agrees: " with
+# nothing after the colon. A correct parse would have agreed, which is why it survived
+# unnoticed — the check was absent, not wrong, and absence reads exactly like a pass.
+# The comment below it claimed two sources were being compared while source B was
+# never read. Counting the elements that actually exist is the fix.
+if [ "$LOADER" = "fabric" ]; then
+  if [ ! -f "$REPORT" ]; then
+    echo "FAIL: fabric ran but wrote no report at $REPORT."
+    echo "      The run is unconfirmed by its own second source."
+    exit 1
+  fi
+  reported=$(grep -o "<testcase" "$REPORT" | wc -l | tr -d ' ')
+  report_failures=$(grep -o "<failure" "$REPORT" | wc -l | tr -d ' ')
+
+  if [ "$reported" != "$passed" ]; then
+    echo "FAIL: fabric's log says $passed test(s) but its report holds $reported."
     echo "      Two sources disagreeing about the same run means one of them is not"
     echo "      describing this run."
     exit 1
   fi
-  echo "   report file agrees: $reported"
+  if [ "$report_failures" -gt 0 ]; then
+    echo "FAIL: fabric's log reported no failures but its report holds $report_failures."
+    grep -o '<failure message="[^"]*"' "$REPORT" | head -5
+    exit 1
+  fi
+  echo "   report file agrees: $reported testcase(s), $report_failures failure(s)"
 fi
 
 if [ $GRADLE_STATUS -ne 0 ]; then

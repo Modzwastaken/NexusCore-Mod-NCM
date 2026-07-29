@@ -15,7 +15,11 @@
   "icon": "nexuscore.png",
   "environment": "*",
   "entrypoints": {
-    "main": ["com.mwtstudios.nexuscore.fabric.NexusCoreFabric"]
+    "main": ["com.mwtstudios.nexuscore.fabric.NexusCoreFabric"],
+    "fabric-gametest": [
+      "com.mwtstudios.nexuscore.gametest.NexusGameTests",
+      "com.mwtstudios.nexuscore.gametest.NexusWorldGameTests"
+    ]
   },
   "depends": {
     "fabricloader": ">=${fabric_loader_version}",

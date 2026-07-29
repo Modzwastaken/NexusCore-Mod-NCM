@@ -144,6 +144,21 @@ loom {
                 programArgs '--quickPlaySingleplayer', project.property('quickPlay').toString()
             }
         }
+
+        // Runs the SHARED GameTests headlessly and exits non-zero on failure, the same job
+        // neoforge's runGameTestServer does. Until 1.1.2 this did not exist on Fabric at all: the
+        // tests compiled here and were exercised only on NeoForge, which is the "three loaders
+        // compile it, one runs it" shape that hid for four builds in the unit suite.
+        //
+        // fabric-api.gametest is what switches the server into test mode; the report file is what
+        // makes a run countable afterwards rather than merely green.
+        gametest {
+            server()
+            name = 'Game Test'
+            vmArg '-Dfabric-api.gametest'
+            vmArg "-Dfabric-api.gametest.report-file=${project.layout.buildDirectory.get()}/gametest-report.xml"
+            runDir 'build/gametest'
+        }
     }
 }
 

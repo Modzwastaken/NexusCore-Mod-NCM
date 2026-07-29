@@ -29,7 +29,13 @@ public final class NexusGameTestRegistration {
      */
     @SubscribeEvent
     public static void register(RegisterGameTestsEvent event) {
-        event.register(NexusGameTests.class);
-        event.register(NexusWorldGameTests.class);
+        // The HOLDERS, not the shared classes. Forge also discovers @GameTestHolder classes by
+        // annotation scan, so this event registration is belt-and-braces — the methods land in a
+        // HashSet, so the duplicate is deduplicated, and the explicit path keeps this loader's
+        // wiring shaped like NeoForge's. The shared classes must NOT be registered here: their
+        // test names carry no "nexuscore." prefix, and Forge's enabledGameTestNamespaces filter
+        // matches names, so they are dropped — a green run of zero tests.
+        event.register(NexusGameTestsHolder.class);
+        event.register(NexusWorldGameTestsHolder.class);
     }
 }

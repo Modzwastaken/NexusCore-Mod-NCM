@@ -28,6 +28,31 @@ Five builds fill a version, then the minor moves up: `1.0.5` is followed by `1.1
 Work toward the next build.
 
 ### Added
+- **The GameTests genuinely run on all three loaders.** The move to `common/` shared the twelve
+  test bodies, but discovery is the part the loaders do not share, and for a window on `main`
+  NeoForge and Forge each registered ZERO tests while their tasks exited green —
+  `tools/verify-gametests.sh` caught it, and the fix is what that entry named: per-loader holder
+  classes that *declare* the twelve methods (vanilla registers `getDeclaredMethods()` only,
+  so nothing inherited counts) and delegate to the shared bodies.
+
+  The holders differ because the loaders differ, each rule read from that loader's own sources:
+  NeoForge namespaces a test from `@GameTestHolder` and needs `@PrefixGameTestTemplate(false)`
+  or the structure name grows a class prefix; **Forge's `enabledGameTestNamespaces` property
+  filters test NAMES, not template namespaces** (`ForgeGameTestHooks.addTest`), so the holder's
+  `@GameTestHolder` value is what carries its tests past the filter, and its templates keep the
+  full `nexuscore:empty` form because Forge uses a colon-bearing template verbatim; Fabric
+  instantiates the shared classes directly as `fabric-gametest` entrypoints and needed no holder
+  at all.
+
+  The first Forge execution ever then failed two tests, and the failures were the tests' own:
+  the suffocation and lava cases left part of the search space to harness geometry, which is
+  loader-specific in BOTH directions — Forge's structures float over a platform with a two-block
+  air gap below, and are encased in barrier blocks above, so a barrier two above the lava was
+  solid ground for a candidate three up. Each geometry was probed rather than assumed, and in
+  each case `SafeDestination` had correctly reported the pocket it found — the feature working,
+  misread by the test as the check failing. Both tests now fill every position the search can
+  visit, so they assert about the check rather than about the scenery. 12 / 12 / 12 via
+  `tools/verify-gametests.sh --expect 12` on every loader.
 - **The in-server harness now covers teleport safety, home persistence and the admin panel.**
   `NexusWorldGameTests` holds the tests that need a real world or a real player: a destination
   buried in stone and one standing in lava are both refused with a reason, ordinary solid

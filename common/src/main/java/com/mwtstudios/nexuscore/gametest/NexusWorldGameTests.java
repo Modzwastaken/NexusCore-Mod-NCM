@@ -50,9 +50,13 @@ public final class NexusWorldGameTests {
         ServerLevel level = helper.getLevel();
         BlockPos base = helper.absolutePos(new BlockPos(1, 1, 1));
 
-        // A solid column: feet and head both inside stone, with stone above so the upward search
-        // finds no pocket either.
-        for (int y = 0; y < 6; y++) {
+        // A solid column spanning EVERY position the search can visit — 4 below through 4 above,
+        // and the head block above those. The downward half is not decoration: what sits under a
+        // test structure is harness geometry and differs per loader. On Forge the structure
+        // floats — probed on 2026-07-29: base-1 and base-2 are air over a platform at base-3 —
+        // so a column that starts at the feet leaves a real safe pocket two below, and
+        // SafeDestination correctly finds it, which is the feature working, not the test.
+        for (int y = -4; y < 6; y++) {
             level.setBlockAndUpdate(base.above(y), Blocks.STONE.defaultBlockState());
         }
 
@@ -99,8 +103,17 @@ public final class NexusWorldGameTests {
     public void teleportRefusesLava(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         BlockPos floor = helper.absolutePos(new BlockPos(1, 1, 1));
-        level.setBlockAndUpdate(floor, Blocks.LAVA.defaultBlockState());
-        level.setBlockAndUpdate(floor.above(), Blocks.LAVA.defaultBlockState());
+        // Lava fills EVERY candidate the 2-block search can visit — from one below the search's
+        // lowest reach to its highest. Anything less asserts about the loader's harness geometry
+        // rather than about the check: what surrounds a test structure is loader-specific, and
+        // both directions have produced a real pocket on Forge. Downward its structures float
+        // over a platform; upward it encases them in barrier blocks, and a barrier at floor+2
+        // is solid ground for a candidate at floor+3 — probed on 2026-07-29, with
+        // SafeDestination correctly reporting that spot safe and the test wrongly reading the
+        // feature working as the check failing.
+        for (int y = -1; y <= 3; y++) {
+            level.setBlockAndUpdate(floor.above(y), Blocks.LAVA.defaultBlockState());
+        }
 
         SafeDestination.Result result = SafeDestination.find(
                 level, floor.getX() + 0.5, floor.getY() + 1, floor.getZ() + 0.5, 2);

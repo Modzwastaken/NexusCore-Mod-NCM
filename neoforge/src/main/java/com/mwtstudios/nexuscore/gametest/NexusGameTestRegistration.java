@@ -41,7 +41,10 @@ public final class NexusGameTestRegistration {
      */
     @SubscribeEvent
     public static void register(RegisterGameTestsEvent event) {
-        event.register(NexusGameTests.class);
-        event.register(NexusWorldGameTests.class);
+        // The HOLDERS, not the shared classes: the shared classes cannot carry @GameTestHolder
+        // (a NeoForge annotation), so their methods derive namespace "minecraft" and the
+        // enabled-namespace filter drops all of them — a green run of zero tests.
+        event.register(NexusGameTestsHolder.class);
+        event.register(NexusWorldGameTestsHolder.class);
     }
 }
